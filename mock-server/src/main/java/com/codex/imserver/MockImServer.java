@@ -1,6 +1,10 @@
 package com.codex.imserver;
 
 import com.codex.imserver.auth.AuthService;
+import com.codex.imserver.auth.PasswordHasher;
+import com.codex.imserver.auth.SecureSaltGenerator;
+import com.codex.imserver.auth.TokenService;
+import com.codex.imserver.auth.UserStore;
 import com.codex.imserver.netty.HttpAuthHandler;
 import com.codex.imserver.netty.WebSocketFrameHandler;
 import com.codex.imserver.session.ClientSessionRegistry;
@@ -26,8 +30,13 @@ public final class MockImServer {
 
     public void start(int port) throws InterruptedException {
         ClientSessionRegistry registry = new ClientSessionRegistry();
-        MessageRouter messageRouter = new MessageRouter(registry);
-        AuthService authService = new AuthService();
+        TokenService tokenService = TokenService.defaultService();
+        MessageRouter messageRouter = new MessageRouter(registry, tokenService);
+        AuthService authService = new AuthService(
+                new UserStore(java.nio.file.Path.of("data", "mock-im-users.sqlite")),
+                new PasswordHasher(new SecureSaltGenerator()),
+                tokenService
+        );
         EventLoopGroup bossGroup = new NioEventLoopGroup(1);
         EventLoopGroup workerGroup = new NioEventLoopGroup();
         try {

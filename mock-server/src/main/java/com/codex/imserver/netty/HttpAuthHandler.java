@@ -41,8 +41,22 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
             if (request.method() == HttpMethod.POST && ("/login".equals(request.uri()) || "/register".equals(request.uri()))) {
                 String body = request.content().toString(CharsetUtil.UTF_8);
                 JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
-                String username = json.has("username") ? json.get("username").getAsString() : "u1";
-                String response = "/register".equals(request.uri()) ? authService.register(username) : authService.login(username);
+                String phone = readString(json, "phone", readString(json, "username", ""));
+                String password = readString(json, "password", "");
+                String response = "/register".equals(request.uri())
+                        ? authService.register(phone, password)
+                        : authService.login(phone, password);
+                writeJson(context, request, HttpResponseStatus.OK, response);
+                return;
+            }
+
+            if (request.method() == HttpMethod.POST && ("/refresh".equals(request.uri()) || "/logout".equals(request.uri()))) {
+                String body = request.content().toString(CharsetUtil.UTF_8);
+                JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
+                String refreshToken = readString(json, "refreshToken", "");
+                String response = "/refresh".equals(request.uri())
+                        ? authService.refresh(refreshToken)
+                        : authService.logout(refreshToken);
                 writeJson(context, request, HttpResponseStatus.OK, response);
                 return;
             }
@@ -65,5 +79,9 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
             response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
         }
         context.writeAndFlush(response);
+    }
+
+    private String readString(JsonObject json, String name, String fallback) {
+        return json.has(name) && !json.get(name).isJsonNull() ? json.get(name).getAsString() : fallback;
     }
 }

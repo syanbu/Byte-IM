@@ -1,5 +1,6 @@
 package com.codex.imserver.session;
 
+import com.codex.imserver.auth.TokenService;
 import com.codex.imserver.protocol.ImCommand;
 import com.codex.imserver.protocol.ImPacket;
 import com.google.gson.JsonObject;
@@ -10,10 +11,16 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class MessageRouter {
     private final ClientSessionRegistry registry;
+    private final TokenService tokenService;
     private final AtomicLong serverSeq = new AtomicLong(1000);
 
     public MessageRouter(ClientSessionRegistry registry) {
+        this(registry, TokenService.defaultService());
+    }
+
+    public MessageRouter(ClientSessionRegistry registry, TokenService tokenService) {
         this.registry = registry;
+        this.tokenService = tokenService;
     }
 
     public void handleSendMessage(String senderUserId, ImPacket packet) {
@@ -67,7 +74,11 @@ public final class MessageRouter {
     }
 
     public void handleAuth(String token, OutboundClient client) {
-        String userId = token.startsWith("mock-token-") ? token.substring("mock-token-".length()) : token;
+        String userId = tokenService.verify(token).orElse(null);
+        if (userId == null) {
+            System.out.println("[IM] AUTH rejected invalid or expired token");
+            return;
+        }
         registry.register(userId, client);
         JsonObject body = new JsonObject();
         body.addProperty("userId", userId);

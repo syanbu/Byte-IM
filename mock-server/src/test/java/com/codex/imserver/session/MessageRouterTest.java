@@ -2,6 +2,7 @@ package com.codex.imserver.session;
 
 import com.codex.imserver.protocol.ImCommand;
 import com.codex.imserver.protocol.ImPacket;
+import com.codex.imserver.auth.TokenService;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.Test;
@@ -15,32 +16,42 @@ public class MessageRouterTest {
     @Test
     public void sendMessageProducesAckForSenderAndReceiveMessageForOnlineReceiver() {
         ClientSessionRegistry registry = new ClientSessionRegistry();
-        CapturingClient alice = new CapturingClient();
-        CapturingClient bob = new CapturingClient();
-        registry.register("alice", alice);
-        registry.register("bob", bob);
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
         MessageRouter router = new MessageRouter(registry);
 
-        router.handleSendMessage("alice", packet("""
+        router.handleSendMessage("13800113800", packet("""
             {
               "messageId":"m1",
-              "conversationId":"single:alice:bob",
-              "senderId":"alice",
-              "receiverId":"bob",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
               "clientSeq":1,
               "content":"hello",
               "timestamp":1000
             }
             """));
 
-        assertEquals(ImCommand.MESSAGE_ACK.value(), alice.sentPackets.get(0).cmd());
-        assertEquals(ImCommand.RECEIVE_MESSAGE.value(), bob.sentPackets.get(0).cmd());
-        JsonObject ack = body(alice.sentPackets.get(0));
+        assertEquals(ImCommand.MESSAGE_ACK.value(), sender.sentPackets.get(0).cmd());
+        assertEquals(ImCommand.RECEIVE_MESSAGE.value(), receiver.sentPackets.get(0).cmd());
+        JsonObject ack = body(sender.sentPackets.get(0));
         assertEquals("m1", ack.get("messageId").getAsString());
         assertEquals(1, ack.get("clientSeq").getAsLong());
-        JsonObject received = body(bob.sentPackets.get(0));
+        JsonObject received = body(receiver.sentPackets.get(0));
         assertEquals("hello", received.get("content").getAsString());
-        assertEquals("alice", received.get("senderId").getAsString());
+        assertEquals("13800113800", received.get("senderId").getAsString());
+    }
+
+    @Test
+    public void authRejectsLegacyTokenWithoutRegisteringUser() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        MessageRouter router = new MessageRouter(registry, new TokenService("test-secret", () -> 1_000L, 60_000L));
+
+        router.handleAuth("mock-token-13800113800", new CapturingClient());
+
+        assertEquals(0, registry.find("13800113800").stream().count());
     }
 
     private static ImPacket packet(String json) {

@@ -11,10 +11,10 @@ public class ChannelOutboundClientTest {
     public void registryCanRemoveEquivalentClientForSameChannel() {
         EmbeddedChannel channel = new EmbeddedChannel();
         ClientSessionRegistry registry = new ClientSessionRegistry();
-        registry.register("alice", new ChannelOutboundClient(channel));
+        registry.register("13800138000", new ChannelOutboundClient(channel));
 
         registry.remove(new ChannelOutboundClient(channel));
 
-        assertTrue(registry.find("alice").isEmpty());
+        assertTrue(registry.find("13800138000").isEmpty());
     }
 }
