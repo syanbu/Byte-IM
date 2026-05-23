@@ -85,6 +85,34 @@ class MessageRepositoryTest {
         assertEquals(1, conversation.unreadCount)
     }
 
+    @Test
+    fun incomingMessageForOpenConversationDoesNotIncrementUnread() {
+        val fixture = Fixture()
+        fixture.repository.openConversation(currentUserId = "u1", peerId = "u2")
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-open-1",
+                      "conversationId":"single:u2:u1",
+                      "senderId":"u2",
+                      "receiverId":"u1",
+                      "clientSeq":8,
+                      "serverSeq":91,
+                      "content":"already reading",
+                      "timestamp":1600
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        val conversation = fixture.conversationDao.listConversations(limit = 20).single()
+        assertEquals("already reading", conversation.lastMessagePreview)
+        assertEquals(0, conversation.unreadCount)
+    }
+
     private class Fixture {
         val messageDao = InMemoryMessageDao()
         val conversationDao = InMemoryConversationDao()

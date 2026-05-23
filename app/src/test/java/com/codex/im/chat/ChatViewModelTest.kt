@@ -76,14 +76,17 @@ class ChatViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun connectionStateIsExposedAsStatusText() = runTest {
+    fun connectionStateChangesDoNotChangeChatUiState() = runTest {
         val fixture = Fixture(this)
 
         fixture.viewModel.start()
+        runCurrent()
+        val before = fixture.viewModel.state.value
+
         fixture.connection.state.value = ConnectionState.Authenticated
         runCurrent()
 
-        assertEquals("Authenticated", fixture.viewModel.state.value.connectionStatus)
+        assertEquals(before, fixture.viewModel.state.value)
     }
 
     private class Fixture(scope: TestScope) {

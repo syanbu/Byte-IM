@@ -12,6 +12,9 @@ import com.codex.im.storage.PendingMessage
 import com.codex.im.storage.PendingMessageDao
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 class MessageRepository(
     private val messageDao: MessageDao,
@@ -21,6 +24,11 @@ class MessageRepository(
     private val messageIdGenerator: MessageIdGenerator,
     private val seqGenerator: SeqGenerator
 ) {
+    @Volatile
+    private var activeConversationId: String? = null
+    private val mutableConversationUpdates = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
+    val conversationUpdates: SharedFlow<Unit> = mutableConversationUpdates.asSharedFlow()
+
     fun sendText(senderId: String, receiverId: String, content: String, now: Long): ChatMessage {
         val conversationId = conversationIdFor(senderId, receiverId)
         val message = ChatMessage(
@@ -38,6 +46,7 @@ class MessageRepository(
         )
         messageDao.insertOrIgnore(message)
         conversationDao.upsertFromMessage(message, incrementUnread = false)
+        notifyConversationChanged()
 
         val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = message.toSendBody().toByteArray())
         pendingMessageDao.upsert(
@@ -63,6 +72,20 @@ class MessageRepository(
 
     fun messagesWith(userId: String, peerId: String, beforeTime: Long? = null, limit: Int = 50): List<ChatMessage> {
         return messageDao.queryPage(conversationIdFor(userId, peerId), beforeTime, limit)
+    }
+
+    fun conversations(limit: Int = 50) = conversationDao.listConversations(limit)
+
+    fun openConversation(currentUserId: String, peerId: String): String {
+        val conversationId = conversationIdFor(currentUserId, peerId)
+        activeConversationId = conversationId
+        conversationDao.clearUnread(conversationId)
+        notifyConversationChanged()
+        return conversationId
+    }
+
+    fun closeConversation() {
+        activeConversationId = null
     }
 
     fun conversationIdFor(firstUserId: String, secondUserId: String): String {
@@ -99,8 +122,16 @@ class MessageRepository(
         )
         val inserted = messageDao.insertOrIgnore(message)
         if (inserted) {
-            conversationDao.upsertFromMessage(message, incrementUnread = true)
+            conversationDao.upsertFromMessage(
+                message = message,
+                incrementUnread = message.conversationId != activeConversationId
+            )
+            notifyConversationChanged()
         }
+    }
+
+    private fun notifyConversationChanged() {
+        mutableConversationUpdates.tryEmit(Unit)
     }
 
     private fun ChatMessage.toSendBody(): String {

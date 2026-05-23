@@ -13,7 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.codex.im.app.AppInfo
@@ -25,6 +27,8 @@ import com.codex.im.auth.SharedPreferencesTokenStore
 import com.codex.im.chat.ChatScreen
 import com.codex.im.chat.ChatViewModel
 import com.codex.im.connection.OkHttpImConnection
+import com.codex.im.conversation.ConversationListScreen
+import com.codex.im.conversation.ConversationListViewModel
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
@@ -90,25 +94,50 @@ fun SelfHostedImApp(
             }
             val session = state.session
             if (state.isAuthenticated && session != null && messageRepository != null && connection != null) {
-                val defaultPeer = DefaultPeerResolver.resolve(session.userId)
-                val chatViewModel = remember(session.userId) {
-                    ChatViewModel(
+                var selectedPeerId by remember(session.userId) { mutableStateOf<String?>(null) }
+                val logout: suspend () -> Unit = {
+                    messageRepository.closeConversation()
+                    connection.disconnect()
+                    loginViewModel.logout()
+                }
+                val peerId = selectedPeerId
+                if (peerId == null) {
+                    val conversationListViewModel = remember(session.userId) {
+                        ConversationListViewModel(
+                            session = session,
+                            repository = messageRepository,
+                            connection = connection,
+                            defaultPeerResolver = DefaultPeerResolver::resolve
+                        )
+                    }
+                    val conversationState by conversationListViewModel.state.collectAsState()
+                    ConversationListScreen(
                         session = session,
-                        repository = messageRepository,
-                        connection = connection,
-                        initialPeerId = defaultPeer
+                        viewModel = conversationListViewModel,
+                        state = conversationState,
+                        onOpenConversation = { selectedPeerId = it },
+                        onLogout = logout
+                    )
+                } else {
+                    val chatViewModel = remember(session.userId, peerId) {
+                        ChatViewModel(
+                            session = session,
+                            repository = messageRepository,
+                            connection = connection,
+                            initialPeerId = peerId
+                        )
+                    }
+                    val chatState by chatViewModel.state.collectAsState()
+                    ChatScreen(
+                        session = session,
+                        viewModel = chatViewModel,
+                        state = chatState,
+                        onBack = {
+                            messageRepository.closeConversation()
+                            selectedPeerId = null
+                        }
                     )
                 }
-                val chatState by chatViewModel.state.collectAsState()
-                ChatScreen(
-                    session = session,
-                    viewModel = chatViewModel,
-                    state = chatState,
-                    onLogout = {
-                        connection.disconnect()
-                        loginViewModel.logout()
-                    }
-                )
             } else {
                 LoginScreen(
                     state = state,

@@ -33,7 +33,7 @@ fun ChatScreen(
     viewModel: ChatViewModel,
     state: ChatUiState,
     modifier: Modifier = Modifier,
-    onLogout: suspend () -> Unit = {}
+    onBack: (() -> Unit)? = null
 ) {
     var peerId by remember(state.peerId) { mutableStateOf(state.peerId) }
     var draft by remember { mutableStateOf("") }
@@ -55,10 +55,11 @@ fun ChatScreen(
         ) {
             Column {
                 Text(text = "Logged in as ${session.username}", style = MaterialTheme.typography.titleMedium)
-                Text(text = "Connection: ${state.connectionStatus}", style = MaterialTheme.typography.bodyMedium)
             }
-            Button(onClick = { scope.launch { onLogout() } }) {
-                Text("Logout")
+            if (onBack != null) {
+                Button(onClick = onBack) {
+                    Text("Back")
+                }
             }
         }
         OutlinedTextField(

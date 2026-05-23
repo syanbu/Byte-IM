@@ -17,8 +17,7 @@ import kotlinx.coroutines.withContext
 
 data class ChatUiState(
     val peerId: String = "13900113900",
-    val messages: List<ChatMessage> = emptyList(),
-    val connectionStatus: String = "Disconnected"
+    val messages: List<ChatMessage> = emptyList()
 )
 
 class ChatViewModel(
@@ -38,12 +37,8 @@ class ChatViewModel(
             return
         }
         started = true
-        connection.connect(session.token)
-        scope.launch(dispatcher) {
-            connection.states.collect { state ->
-                mutableState.value = mutableState.value.copy(connectionStatus = state.toStatusText())
-            }
-        }
+        repository.openConversation(session.userId, mutableState.value.peerId)
+        connectIfNeeded()
         scope.launch(dispatcher) {
             connection.incomingPackets.collect { packet ->
                 repository.handlePacket(packet)
@@ -56,8 +51,12 @@ class ChatViewModel(
     }
 
     fun selectPeer(peerId: String) {
-        mutableState.value = mutableState.value.copy(peerId = peerId.trim())
+        val trimmedPeerId = peerId.trim()
+        mutableState.value = mutableState.value.copy(peerId = trimmedPeerId)
         scope.launch(dispatcher) {
+            if (trimmedPeerId.isNotEmpty()) {
+                repository.openConversation(session.userId, trimmedPeerId)
+            }
             refresh()
         }
     }
@@ -85,13 +84,13 @@ class ChatViewModel(
         )
     }
 
-    private fun ConnectionState.toStatusText(): String {
-        return when (this) {
-            ConnectionState.Disconnected -> "Disconnected"
-            ConnectionState.Connecting -> "Connecting"
-            ConnectionState.Connected -> "Connected"
-            ConnectionState.Authenticated -> "Authenticated"
-            is ConnectionState.Failed -> "Failed: $reason"
+    private fun connectIfNeeded() {
+        when (connection.states.value) {
+            ConnectionState.Disconnected,
+            is ConnectionState.Failed -> connection.connect(session.token)
+            ConnectionState.Connecting,
+            ConnectionState.Connected,
+            ConnectionState.Authenticated -> Unit
         }
     }
 }

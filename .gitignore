@@ -65,6 +65,5 @@ fastlane/test_output
 fastlane/readme.md
 
 .idea/
-docs/2026-engine.pdf
 mock-server/target/
 mock-server/data/
