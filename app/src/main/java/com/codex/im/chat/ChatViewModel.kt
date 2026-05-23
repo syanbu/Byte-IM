@@ -8,6 +8,7 @@ import com.codex.im.storage.ChatMessage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +18,11 @@ import kotlinx.coroutines.withContext
 
 data class ChatUiState(
     val peerId: String = "13900113900",
-    val messages: List<ChatMessage> = emptyList()
+    val messages: List<ChatMessage> = emptyList(),
+    val isLoadingMore: Boolean = false,
+    val hasMoreLocal: Boolean = true,
+    val isHistoryMemoryLimitReached: Boolean = false,
+    val errorMessage: String? = null
 )
 
 class ChatViewModel(
@@ -31,6 +36,7 @@ class ChatViewModel(
     private val mutableState = MutableStateFlow(ChatUiState(peerId = initialPeerId))
     val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
     private var started = false
+    private val jobs = mutableListOf<Job>()
 
     fun start() {
         if (started) {
@@ -39,25 +45,46 @@ class ChatViewModel(
         started = true
         repository.openConversation(session.userId, mutableState.value.peerId)
         connectIfNeeded()
-        scope.launch(dispatcher) {
-            connection.incomingPackets.collect { packet ->
-                repository.handlePacket(packet)
-                refresh()
+        jobs += scope.launch(dispatcher) {
+            try {
+                connection.incomingPackets.collect { packet ->
+                    repository.handlePacket(packet)
+                    refreshKeepingHistory()
+                }
+            } finally {
+                repository.closeConversation()
             }
         }
-        scope.launch(dispatcher) {
-            refresh()
+        jobs += scope.launch(dispatcher) {
+            refreshInitialPage()
         }
+    }
+
+    fun stop() {
+        if (!started) {
+            return
+        }
+        jobs.forEach { it.cancel() }
+        jobs.clear()
+        repository.closeConversation()
+        started = false
     }
 
     fun selectPeer(peerId: String) {
         val trimmedPeerId = peerId.trim()
-        mutableState.value = mutableState.value.copy(peerId = trimmedPeerId)
+        mutableState.value = mutableState.value.copy(
+            peerId = trimmedPeerId,
+            messages = emptyList(),
+            isLoadingMore = false,
+            hasMoreLocal = true,
+            isHistoryMemoryLimitReached = false,
+            errorMessage = null
+        )
         scope.launch(dispatcher) {
             if (trimmedPeerId.isNotEmpty()) {
                 repository.openConversation(session.userId, trimmedPeerId)
             }
-            refresh()
+            refreshInitialPage()
         }
     }
 
@@ -73,15 +100,92 @@ class ChatViewModel(
                 content = trimmed,
                 now = now
             )
-            refresh()
+            refreshKeepingHistory()
         }
     }
 
-    private fun refresh() {
+    suspend fun loadMoreHistory() {
+        val current = mutableState.value
+        if (current.isLoadingMore || !current.hasMoreLocal || current.messages.isEmpty()) {
+            return
+        }
+        if (current.messages.size >= MAX_RETAINED_MESSAGES) {
+            mutableState.value = current.copy(isHistoryMemoryLimitReached = true)
+            return
+        }
+        mutableState.value = current.copy(isLoadingMore = true, errorMessage = null)
+        withContext(dispatcher) {
+            val peerId = mutableState.value.peerId
+            val beforeTime = mutableState.value.messages.minOf { it.createdAt }
+            try {
+                val page = repository.historyPage(
+                    userId = session.userId,
+                    peerId = peerId,
+                    beforeTime = beforeTime,
+                    limit = HISTORY_PAGE_SIZE
+                )
+                val mergedMessages = mergeMessages(mutableState.value.messages, page)
+                mutableState.value = mutableState.value.copy(
+                    messages = mergedMessages,
+                    isLoadingMore = false,
+                    isHistoryMemoryLimitReached = mergedMessages.size >= MAX_RETAINED_MESSAGES && page.isNotEmpty(),
+                    hasMoreLocal = page.size == HISTORY_PAGE_SIZE,
+                    errorMessage = null
+                )
+            } catch (error: RuntimeException) {
+                mutableState.value = mutableState.value.copy(
+                    isLoadingMore = false,
+                    errorMessage = error.message ?: "Failed to load history"
+                )
+            }
+        }
+    }
+
+    private fun refreshInitialPage() {
         val peerId = mutableState.value.peerId
-        mutableState.value = mutableState.value.copy(
-            messages = repository.messagesWith(session.userId, peerId)
+        if (peerId.isEmpty()) {
+            mutableState.value = mutableState.value.copy(messages = emptyList(), hasMoreLocal = false)
+            return
+        }
+        val messages = repository.historyPage(
+            userId = session.userId,
+            peerId = peerId,
+            beforeTime = null,
+            limit = HISTORY_PAGE_SIZE
         )
+        mutableState.value = mutableState.value.copy(
+            messages = messages,
+            hasMoreLocal = messages.size == HISTORY_PAGE_SIZE,
+            isHistoryMemoryLimitReached = false,
+            errorMessage = null
+        )
+    }
+
+    private fun refreshKeepingHistory() {
+        val peerId = mutableState.value.peerId
+        if (peerId.isEmpty()) {
+            return
+        }
+        val currentMessages = mutableState.value.messages
+        val limit = maxOf(HISTORY_PAGE_SIZE, currentMessages.size)
+        val latestMessages = repository.historyPage(
+            userId = session.userId,
+            peerId = peerId,
+            beforeTime = null,
+            limit = limit
+        )
+        mutableState.value = mutableState.value.copy(
+            messages = mergeMessages(currentMessages, latestMessages),
+            errorMessage = null
+        )
+    }
+
+    private fun mergeMessages(current: List<ChatMessage>, incoming: List<ChatMessage>): List<ChatMessage> {
+        return (current + incoming)
+            .associateBy { it.messageId }
+            .values
+            .sortedWith(compareByDescending<ChatMessage> { it.createdAt }.thenByDescending { it.messageId })
+            .take(MAX_RETAINED_MESSAGES)
     }
 
     private fun connectIfNeeded() {
@@ -92,5 +196,10 @@ class ChatViewModel(
             ConnectionState.Connected,
             ConnectionState.Authenticated -> Unit
         }
+    }
+
+    private companion object {
+        const val HISTORY_PAGE_SIZE = 20
+        const val MAX_RETAINED_MESSAGES = 2_000
     }
 }

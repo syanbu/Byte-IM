@@ -27,6 +27,8 @@ Done for the current local single-chat scope.
 - Tapping a conversation opens `ChatScreen`.
 - Entering a conversation clears that conversation's unread count.
 - Incoming messages for the currently open conversation do not increment unread.
+- Conversation list rows refresh from `MessageRepository.conversationUpdates`, so messages handled by the chat screen update the list preview without requiring the user to re-enter the list.
+- Connection/auth status and logout are only displayed on the conversation list; chat detail keeps only back navigation.
 - The fixed mock peer from `DefaultPeerResolver` remains visible when there are no conversations yet.
 - The existing two demo accounts remain compatible:
   - `13800113800 / 123456`
@@ -41,6 +43,7 @@ Done for the current local single-chat scope.
 | 2026-05-23 | B3 UI/navigation | `gradle-9.0.0\bin\gradle.bat :app:testDebugUnitTest --console=plain` | Passed: conversation list ViewModel, fixed mock contact, navigation target, unread clearing, and active-conversation unread suppression are covered. |
 | 2026-05-23 | B3 Android build | `gradle-9.0.0\bin\gradle.bat :app:assembleDebug --console=plain` | Passed: debug APK assembles with the conversation list route and chat navigation flow. |
 | 2026-05-23 | B3 refresh fix | `gradle-9.0.0\bin\gradle.bat :app:testDebugUnitTest --console=plain`; `gradle-9.0.0\bin\gradle.bat :app:assembleDebug --console=plain` | Passed: conversation list refreshes from Repository conversation update events, including messages processed outside the list VM. |
+| 2026-05-23 | B3 manual acceptance | User two-client manual test | Passed: conversation list preview refreshes correctly, chat detail hides connection status, and logout is only available from the conversation list. |
 
 ## Next Implementation Slice
 

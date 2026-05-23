@@ -71,6 +71,10 @@ class MessageRepository(
     }
 
     fun messagesWith(userId: String, peerId: String, beforeTime: Long? = null, limit: Int = 50): List<ChatMessage> {
+        return historyPage(userId, peerId, beforeTime, limit)
+    }
+
+    fun historyPage(userId: String, peerId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
         return messageDao.queryPage(conversationIdFor(userId, peerId), beforeTime, limit)
     }
 

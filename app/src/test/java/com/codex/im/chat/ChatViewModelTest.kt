@@ -8,9 +8,12 @@ import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
 import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
+import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
+import com.codex.im.storage.MessageDirection
+import com.codex.im.storage.MessageStatus
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -21,6 +24,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class ChatViewModelTest {
@@ -42,6 +46,71 @@ class ChatViewModelTest {
 
         assertEquals(listOf("hello"), fixture.viewModel.state.value.messages.map { it.content })
         assertEquals("13900113900", fixture.viewModel.state.value.peerId)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startLoadsLatestTwentyLocalMessages() = runTest {
+        val fixture = Fixture(this)
+        fixture.seedMessages(25)
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(20, fixture.viewModel.state.value.messages.size)
+        assertEquals((25 downTo 6).map { "local-$it" }, fixture.viewModel.state.value.messages.map { it.messageId })
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun loadMoreHistoryUsesOldestMessageTimeAndMergesEarlierPage() = runTest {
+        val fixture = Fixture(this)
+        fixture.seedMessages(45)
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.loadMoreHistory()
+
+        assertEquals(40, fixture.viewModel.state.value.messages.size)
+        assertEquals((45 downTo 6).map { "local-$it" }, fixture.viewModel.state.value.messages.map { it.messageId })
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun repeatedLoadMoreHistoryDoesNotDuplicateMessagesAndStopsAtLocalEnd() = runTest {
+        val fixture = Fixture(this)
+        fixture.seedMessages(25)
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.loadMoreHistory()
+        fixture.viewModel.loadMoreHistory()
+
+        val messageIds = fixture.viewModel.state.value.messages.map { it.messageId }
+        assertEquals((25 downTo 1).map { "local-$it" }, messageIds)
+        assertEquals(messageIds.distinct(), messageIds)
+        assertFalse(fixture.viewModel.state.value.hasMoreLocal)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun loadMoreHistoryStopsAtMemoryLimitWithoutDroppingLoadedMessages() = runTest {
+        val fixture = Fixture(this)
+        fixture.seedMessages(2_025)
+        fixture.viewModel.start()
+        runCurrent()
+
+        repeat(100) {
+            fixture.viewModel.loadMoreHistory()
+        }
+
+        val state = fixture.viewModel.state.value
+        assertEquals(2_000, state.messages.size)
+        assertEquals("local-2025", state.messages.first().messageId)
+        assertEquals("local-26", state.messages.last().messageId)
+        assertEquals(state.messages.map { it.messageId }.distinct(), state.messages.map { it.messageId })
+        assertEquals(true, state.isHistoryMemoryLimitReached)
+        assertEquals(true, state.hasMoreLocal)
     }
 
     @Test
@@ -76,6 +145,40 @@ class ChatViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun incomingPacketKeepsPreviouslyLoadedHistory() = runTest {
+        val fixture = Fixture(this)
+        fixture.seedMessages(25)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.loadMoreHistory()
+
+        fixture.connection.incoming.emit(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-latest",
+                      "conversationId":"single:13800113800:13900113900",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"newest incoming",
+                      "timestamp":30000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        runCurrent()
+
+        val messageIds = fixture.viewModel.state.value.messages.map { it.messageId }
+        assertEquals("remote-latest", messageIds.first())
+        assertEquals("local-1", messageIds.last())
+        assertEquals(26, messageIds.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun connectionStateChangesDoNotChangeChatUiState() = runTest {
         val fixture = Fixture(this)
 
@@ -87,6 +190,36 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(before, fixture.viewModel.state.value)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun stopCancelsIncomingPacketCollection() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.stop()
+        fixture.connection.incoming.emit(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-after-stop",
+                      "conversationId":"single:13800113800:13900113900",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"after stop",
+                      "timestamp":2000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        runCurrent()
+
+        assertEquals(emptyList<String>(), fixture.viewModel.state.value.messages.map { it.content })
     }
 
     private class Fixture(scope: TestScope) {
@@ -107,6 +240,28 @@ class ChatViewModelTest {
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )
+
+        fun seedMessages(count: Int) {
+            repeat(count) { index ->
+                val number = index + 1
+                val createdAt = number * 1_000L
+                messageDao.insertOrIgnore(
+                    ChatMessage(
+                        messageId = "local-$number",
+                        conversationId = "single:13800113800:13900113900",
+                        senderId = "13800113800",
+                        receiverId = "13900113900",
+                        clientSeq = number.toLong(),
+                        serverSeq = null,
+                        content = "message $number",
+                        status = MessageStatus.SENT,
+                        direction = MessageDirection.OUTGOING,
+                        createdAt = createdAt,
+                        updatedAt = createdAt
+                    )
+                )
+            }
+        }
     }
 
     private class FakeConnection : ImConnection {
