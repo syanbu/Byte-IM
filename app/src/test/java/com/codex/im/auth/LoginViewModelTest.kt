@@ -10,17 +10,18 @@ class LoginViewModelTest {
     @Test
     fun loginSuccessExposesAuthenticatedState() = runTest {
         val repository = AuthRepository(
-            FakeAuthApi(AuthResult.Success(AuthSession("token-a", "u1", "alice"))),
-            InMemoryTokenStore()
+            FakeAuthApi(AuthResult.Success(AuthSession("token-a", "13800138000", "13800138000", expiresAtMillis = 2_000L))),
+            InMemoryTokenStore(),
+            nowMillis = { 1_000L }
         )
         val viewModel = LoginViewModel(repository)
 
-        viewModel.login("alice", "password")
+        viewModel.login("13800138000", "password")
 
         val state = viewModel.state.value
         assertTrue(state.isAuthenticated)
         assertFalse(state.isLoading)
-        assertEquals("alice", state.session?.username)
+        assertEquals("13800138000", state.session?.username)
         assertEquals(null, state.errorMessage)
     }
 
@@ -32,7 +33,7 @@ class LoginViewModelTest {
         )
         val viewModel = LoginViewModel(repository)
 
-        viewModel.login("alice", "wrong")
+        viewModel.login("13800138000", "wrong")
 
         val state = viewModel.state.value
         assertFalse(state.isAuthenticated)
@@ -41,8 +42,12 @@ class LoginViewModelTest {
     }
 
     private class FakeAuthApi(private val result: AuthResult) : AuthApi {
-        override suspend fun login(username: String, password: String): AuthResult = result
+        override suspend fun login(phone: String, password: String): AuthResult = result
 
-        override suspend fun register(username: String, password: String): AuthResult = result
+        override suspend fun register(phone: String, password: String): AuthResult = result
+
+        override suspend fun refresh(refreshToken: String): AuthResult = result
+
+        override suspend fun logout(refreshToken: String): AuthResult = AuthResult.LoggedOut
     }
 }

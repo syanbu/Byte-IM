@@ -30,25 +30,25 @@ class ChatViewModelTest {
 
         fixture.viewModel.start()
 
-        assertEquals("mock-token-alice", fixture.connection.connectedToken)
+        assertEquals("mock-token-13800113800", fixture.connection.connectedToken)
     }
 
     @Test
     fun sendTextRefreshesVisibleMessages() = runTest {
         val fixture = Fixture(this)
-        fixture.viewModel.selectPeer("bob")
+        fixture.viewModel.selectPeer("13900113900")
 
         fixture.viewModel.sendText("hello", now = 1_000L)
 
         assertEquals(listOf("hello"), fixture.viewModel.state.value.messages.map { it.content })
-        assertEquals("bob", fixture.viewModel.state.value.peerId)
+        assertEquals("13900113900", fixture.viewModel.state.value.peerId)
     }
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
     fun incomingPacketRefreshesVisibleMessages() = runTest {
         val fixture = Fixture(this)
-        fixture.viewModel.selectPeer("bob")
+        fixture.viewModel.selectPeer("13900113900")
         fixture.viewModel.start()
         runCurrent()
 
@@ -58,12 +58,12 @@ class ChatViewModelTest {
                 body = """
                     {
                       "messageId":"remote-1",
-                      "conversationId":"single:bob:alice",
-                      "senderId":"bob",
-                      "receiverId":"alice",
+                      "conversationId":"single:13800113800:13900113900",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
                       "clientSeq":1,
                       "serverSeq":2,
-                      "content":"hi alice",
+                      "content":"hi 13800113800",
                       "timestamp":2000
                     }
                 """.trimIndent().toByteArray()
@@ -71,7 +71,19 @@ class ChatViewModelTest {
         )
         runCurrent()
 
-        assertEquals(listOf("hi alice"), fixture.viewModel.state.value.messages.map { it.content })
+        assertEquals(listOf("hi 13800113800"), fixture.viewModel.state.value.messages.map { it.content })
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun connectionStateIsExposedAsStatusText() = runTest {
+        val fixture = Fixture(this)
+
+        fixture.viewModel.start()
+        fixture.connection.state.value = ConnectionState.Authenticated
+        runCurrent()
+
+        assertEquals("Authenticated", fixture.viewModel.state.value.connectionStatus)
     }
 
     private class Fixture(scope: TestScope) {
@@ -86,7 +98,7 @@ class ChatViewModelTest {
             seqGenerator = SeqGenerator()
         )
         val viewModel = ChatViewModel(
-            session = AuthSession("mock-token-alice", "alice", "alice"),
+            session = AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L),
             repository = repository,
             connection = connection,
             scope = scope.backgroundScope,
@@ -97,7 +109,8 @@ class ChatViewModelTest {
     private class FakeConnection : ImConnection {
         var connectedToken: String? = null
         val incoming = MutableSharedFlow<ImPacket>()
-        override val states: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Disconnected)
+        val state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+        override val states: StateFlow<ConnectionState> = state
         override val incomingPackets: SharedFlow<ImPacket> = incoming
 
         override fun connect(token: String) {

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -84,9 +85,12 @@ fun SelfHostedImApp(
             }
         } else {
             val state by loginViewModel.state.collectAsState()
+            LaunchedEffect(loginViewModel) {
+                loginViewModel.restoreSession()
+            }
             val session = state.session
             if (state.isAuthenticated && session != null && messageRepository != null && connection != null) {
-                val defaultPeer = if (session.userId == "alice") "bob" else "alice"
+                val defaultPeer = DefaultPeerResolver.resolve(session.userId)
                 val chatViewModel = remember(session.userId) {
                     ChatViewModel(
                         session = session,
@@ -96,7 +100,15 @@ fun SelfHostedImApp(
                     )
                 }
                 val chatState by chatViewModel.state.collectAsState()
-                ChatScreen(session = session, viewModel = chatViewModel, state = chatState)
+                ChatScreen(
+                    session = session,
+                    viewModel = chatViewModel,
+                    state = chatState,
+                    onLogout = {
+                        connection.disconnect()
+                        loginViewModel.logout()
+                    }
+                )
             } else {
                 LoginScreen(
                     state = state,

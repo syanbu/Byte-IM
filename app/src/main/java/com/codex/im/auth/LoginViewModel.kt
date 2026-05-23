@@ -12,17 +12,31 @@ data class LoginUiState(
 )
 
 class LoginViewModel(private val repository: AuthRepository) {
+    private val restoredSession = repository.currentSession()
     private val mutableState = MutableStateFlow(
         LoginUiState(
-            isAuthenticated = repository.currentSession() != null,
-            session = repository.currentSession()
+            isLoading = restoredSession == null && repository.hasStoredSession(),
+            isAuthenticated = restoredSession != null,
+            session = restoredSession
         )
     )
     val state: StateFlow<LoginUiState> = mutableState.asStateFlow()
 
-    suspend fun login(username: String, password: String) {
+    suspend fun restoreSession() {
+        if (mutableState.value.isAuthenticated) {
+            return
+        }
+        val session = repository.restoreSession()
+        mutableState.value = if (session == null) {
+            LoginUiState()
+        } else {
+            LoginUiState(isAuthenticated = true, session = session)
+        }
+    }
+
+    suspend fun login(phone: String, password: String) {
         mutableState.value = mutableState.value.copy(isLoading = true, errorMessage = null)
-        when (val result = repository.login(username.trim(), password)) {
+        when (val result = repository.login(phone.trim(), password)) {
             is AuthResult.Success -> {
                 mutableState.value = LoginUiState(
                     isAuthenticated = true,
@@ -32,12 +46,15 @@ class LoginViewModel(private val repository: AuthRepository) {
             is AuthResult.Failure -> {
                 mutableState.value = LoginUiState(errorMessage = result.message)
             }
+            AuthResult.LoggedOut -> {
+                mutableState.value = LoginUiState()
+            }
         }
     }
 
-    suspend fun register(username: String, password: String) {
+    suspend fun register(phone: String, password: String) {
         mutableState.value = mutableState.value.copy(isLoading = true, errorMessage = null)
-        when (val result = repository.register(username.trim(), password)) {
+        when (val result = repository.register(phone.trim(), password)) {
             is AuthResult.Success -> {
                 mutableState.value = LoginUiState(
                     isAuthenticated = true,
@@ -47,10 +64,13 @@ class LoginViewModel(private val repository: AuthRepository) {
             is AuthResult.Failure -> {
                 mutableState.value = LoginUiState(errorMessage = result.message)
             }
+            AuthResult.LoggedOut -> {
+                mutableState.value = LoginUiState()
+            }
         }
     }
 
-    fun logout() {
+    suspend fun logout() {
         repository.logout()
         mutableState.value = LoginUiState()
     }

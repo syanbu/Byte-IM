@@ -4,5 +4,6 @@ sealed class ConnectionState {
     data object Disconnected : ConnectionState()
     data object Connecting : ConnectionState()
     data object Connected : ConnectionState()
+    data object Authenticated : ConnectionState()
     data class Failed(val reason: String) : ConnectionState()
 }

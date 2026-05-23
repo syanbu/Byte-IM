@@ -30,3 +30,14 @@ Use these addresses:
 - Windows/Postman: `http://127.0.0.1:8080`, `ws://127.0.0.1:8080/ws`
 - Android emulator: `http://10.0.2.2:8080`, `ws://10.0.2.2:8080/ws`
 
+Register users before logging in. Suggested local test accounts:
+
+- `13800113800 / 123456`
+- `13900113900 / 123456`
+
+Login/register returns a signed local mock access JWT with a 15-minute expiry
+and a refresh token with a 7-day expiry. The Android client restores a saved
+session directly when the access token is still valid, silently refreshes when
+only the access token has expired, and returns to login when the refresh token is
+expired or revoked.
+

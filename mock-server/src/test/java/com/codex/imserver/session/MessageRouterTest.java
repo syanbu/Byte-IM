@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class MessageRouterTest {
     @Test
@@ -54,6 +55,18 @@ public class MessageRouterTest {
         assertEquals(0, registry.find("13800113800").stream().count());
     }
 
+    @Test
+    public void authAckRecordsSingleAuthenticatedStatusEvent() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        MessageRouter router = new MessageRouter(registry, tokenService);
+        CapturingClient client = new CapturingClient();
+
+        router.handleAuth(tokenService.issue("13800138000").token(), client);
+
+        assertEquals(List.of("AUTHENTICATED userId=13800138000 authAck=sent"), client.statusEvents);
+    }
+
     private static ImPacket packet(String json) {
         return new ImPacket(ImCommand.SEND_MESSAGE.value(), json.getBytes(StandardCharsets.UTF_8));
     }
@@ -64,10 +77,16 @@ public class MessageRouterTest {
 
     private static final class CapturingClient implements OutboundClient {
         private final List<ImPacket> sentPackets = new java.util.ArrayList<>();
+        private final List<String> statusEvents = new java.util.ArrayList<>();
 
         @Override
         public void send(ImPacket packet) {
             sentPackets.add(packet);
+        }
+
+        @Override
+        public void recordStatus(String status) {
+            statusEvents.add(status);
         }
     }
 }

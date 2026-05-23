@@ -25,6 +25,7 @@ public final class ClientSessionRegistry {
         String userId = userIdsByClient.remove(client);
         if (userId != null) {
             clientsByUserId.remove(userId, client);
+            client.recordStatus("DISCONNECTED userId=" + userId);
         }
     }
 }

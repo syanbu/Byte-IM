@@ -2,7 +2,6 @@ package com.codex.im.auth
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,10 +31,14 @@ fun LoginScreen(
     onRegister: suspend (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var username by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var localErrorMessage by remember { mutableStateOf<String?>(null) }
+    var isRegisterMode by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val canSubmit = username.isNotBlank() && password.isNotBlank() && !state.isLoading
+    val canLogin = phone.isNotBlank() && password.isNotBlank() && !state.isLoading
+    val canRegister = phone.isNotBlank() && password.isNotBlank() && confirmPassword.isNotBlank() && !state.isLoading
 
     Column(
         modifier = modifier
@@ -44,42 +47,98 @@ fun LoginScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(text = "SelfHostedIM", style = MaterialTheme.typography.headlineMedium)
-        Text(text = "Sign in to the training mock server", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = if (isRegisterMode) "Create an account with a mainland China phone number" else "Sign in with a mainland China phone number",
+            style = MaterialTheme.typography.bodyMedium
+        )
         Spacer(modifier = Modifier.height(24.dp))
         OutlinedTextField(
-            value = username,
-            onValueChange = { username = it },
+            value = phone,
+            onValueChange = { phone = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Username") },
+            label = { Text("Phone number") },
             singleLine = true
         )
         Spacer(modifier = Modifier.height(12.dp))
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it },
+            onValueChange = {
+                password = it
+                localErrorMessage = null
+            },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Password") },
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true
         )
+        if (isRegisterMode) {
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = confirmPassword,
+                onValueChange = {
+                    confirmPassword = it
+                    localErrorMessage = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Confirm password") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (isRegisterMode) {
             Button(
-                enabled = canSubmit,
-                onClick = { scope.launch { onLogin(username, password) } }
+                enabled = canRegister,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    val validationError = RegistrationInputValidator.validate(password, confirmPassword)
+                    if (validationError != null) {
+                        localErrorMessage = validationError
+                    } else {
+                        scope.launch { onRegister(phone, password) }
+                    }
+                }
+            ) {
+                Text("Register")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                enabled = !state.isLoading,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    isRegisterMode = false
+                    confirmPassword = ""
+                    localErrorMessage = null
+                }
+            ) {
+                Text("Back to login")
+            }
+        } else {
+            Button(
+                enabled = canLogin,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { scope.launch { onLogin(phone, password) } }
             ) {
                 Text("Login")
             }
+            Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(
-                enabled = canSubmit,
-                onClick = { scope.launch { onRegister(username, password) } }
+                enabled = !state.isLoading,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    isRegisterMode = true
+                    localErrorMessage = null
+                }
             ) {
-                Text("Register")
+                Text("Create account")
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
         if (state.isLoading) {
             CircularProgressIndicator()
+        }
+        localErrorMessage?.let {
+            Text(text = it, color = MaterialTheme.colorScheme.error)
         }
         state.errorMessage?.let {
             Text(text = it, color = MaterialTheme.colorScheme.error)

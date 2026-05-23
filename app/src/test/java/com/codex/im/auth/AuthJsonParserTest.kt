@@ -7,28 +7,43 @@ import org.junit.Test
 class AuthJsonParserTest {
     @Test
     fun parsesFlatSuccessResponse() {
-        val json = """{"token":"jwt-1","userId":"u1","username":"alice"}"""
+        val json = """{"accessToken":"jwt-1","refreshToken":"refresh-1","userId":"13800138000","username":"13800138000","accessExpiresAt":2000,"refreshExpiresAt":8000}"""
 
         val result = AuthJsonParser.parse(json)
 
         assertTrue(result is AuthResult.Success)
         val session = (result as AuthResult.Success).session
-        assertEquals("jwt-1", session.token)
-        assertEquals("u1", session.userId)
-        assertEquals("alice", session.username)
+        assertEquals("jwt-1", session.accessToken)
+        assertEquals("refresh-1", session.refreshToken)
+        assertEquals("13800138000", session.userId)
+        assertEquals("13800138000", session.username)
+        assertEquals(2_000L, session.accessExpiresAtMillis)
+        assertEquals(8_000L, session.refreshExpiresAtMillis)
     }
 
     @Test
     fun parsesNestedSuccessResponse() {
-        val json = """{"code":0,"message":"ok","data":{"token":"jwt-2","userId":"u2","username":"bob"}}"""
+        val json = """{"code":0,"message":"ok","data":{"accessToken":"jwt-2","refreshToken":"refresh-2","userId":"13900139000","username":"13900139000","accessExpiresAt":3000,"refreshExpiresAt":9000}}"""
 
         val result = AuthJsonParser.parse(json)
 
         assertTrue(result is AuthResult.Success)
         val session = (result as AuthResult.Success).session
-        assertEquals("jwt-2", session.token)
-        assertEquals("u2", session.userId)
-        assertEquals("bob", session.username)
+        assertEquals("jwt-2", session.accessToken)
+        assertEquals("refresh-2", session.refreshToken)
+        assertEquals("13900139000", session.userId)
+        assertEquals("13900139000", session.username)
+        assertEquals(3_000L, session.accessExpiresAtMillis)
+        assertEquals(9_000L, session.refreshExpiresAtMillis)
+    }
+
+    @Test
+    fun rejectsSuccessResponseWithoutTokenExpiry() {
+        val json = """{"token":"jwt-1","userId":"13800138000","username":"13800138000"}"""
+
+        val result = AuthJsonParser.parse(json)
+
+        assertEquals(AuthResult.Failure("Invalid authentication response"), result)
     }
 
     @Test

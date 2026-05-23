@@ -12,17 +12,29 @@ class OkHttpAuthApi(
     private val baseUrl: String,
     private val client: OkHttpClient = OkHttpClient()
 ) : AuthApi {
-    override suspend fun login(username: String, password: String): AuthResult {
-        return postAuth("/login", username, password)
+    override suspend fun login(phone: String, password: String): AuthResult {
+        return postAuth("/login", phone, password)
     }
 
-    override suspend fun register(username: String, password: String): AuthResult {
-        return postAuth("/register", username, password)
+    override suspend fun register(phone: String, password: String): AuthResult {
+        return postAuth("/register", phone, password)
     }
 
-    private suspend fun postAuth(path: String, username: String, password: String): AuthResult {
+    override suspend fun refresh(refreshToken: String): AuthResult {
+        return postRefreshToken("/refresh", refreshToken)
+    }
+
+    override suspend fun logout(refreshToken: String): AuthResult {
+        return when (val result = postRefreshToken("/logout", refreshToken)) {
+            is AuthResult.Failure -> result
+            is AuthResult.Success -> AuthResult.LoggedOut
+            AuthResult.LoggedOut -> AuthResult.LoggedOut
+        }
+    }
+
+    private suspend fun postAuth(path: String, phone: String, password: String): AuthResult {
         return withContext(Dispatchers.IO) {
-            val body = """{"username":"${username.escapeJson()}","password":"${password.escapeJson()}"}"""
+            val body = """{"phone":"${phone.escapeJson()}","password":"${password.escapeJson()}"}"""
                 .toRequestBody(JSON)
             val request = Request.Builder()
                 .url(baseUrl.trimEnd('/') + path)
@@ -37,6 +49,37 @@ class OkHttpAuthApi(
                             AuthJsonParser.parse(responseBody).failureMessageOrNull()
                                 ?: "HTTP ${response.code}"
                         )
+                    }
+                    AuthJsonParser.parse(responseBody)
+                }
+            } catch (error: IOException) {
+                AuthResult.Failure(error.message ?: "Network error")
+            } catch (error: RuntimeException) {
+                AuthResult.Failure(error.message ?: "Network error")
+            }
+        }
+    }
+
+    private suspend fun postRefreshToken(path: String, refreshToken: String): AuthResult {
+        return withContext(Dispatchers.IO) {
+            val body = """{"refreshToken":"${refreshToken.escapeJson()}"}"""
+                .toRequestBody(JSON)
+            val request = Request.Builder()
+                .url(baseUrl.trimEnd('/') + path)
+                .post(body)
+                .build()
+
+            try {
+                client.newCall(request).execute().use { response ->
+                    val responseBody = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        return@withContext AuthResult.Failure(
+                            AuthJsonParser.parse(responseBody).failureMessageOrNull()
+                                ?: "HTTP ${response.code}"
+                        )
+                    }
+                    if (path == "/logout") {
+                        return@withContext AuthResult.LoggedOut
                     }
                     AuthJsonParser.parse(responseBody)
                 }

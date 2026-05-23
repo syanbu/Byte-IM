@@ -55,7 +55,9 @@ class OkHttpImConnection(
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
             try {
-                mutableIncomingPackets.tryEmit(ImPacketCodec.decode(bytes.toByteArray()))
+                val packet = ImPacketCodec.decode(bytes.toByteArray())
+                ConnectionStateReducer.stateAfterIncomingPacket(packet)?.let { mutableStates.value = it }
+                mutableIncomingPackets.tryEmit(packet)
             } catch (error: ProtocolException) {
                 mutableStates.value = ConnectionState.Failed(error.message ?: "protocol error")
             }

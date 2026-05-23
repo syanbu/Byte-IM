@@ -13,14 +13,32 @@ object AuthJsonParser {
             }
 
             val payload = root.optionalObject("data") ?: root
-            val token = payload.optionalString("token")
+            val accessToken = payload.optionalString("accessToken") ?: payload.optionalString("token")
+            val refreshToken = payload.optionalString("refreshToken")
             val userId = payload.optionalString("userId") ?: payload.optionalString("user_id")
             val username = payload.optionalString("username") ?: payload.optionalString("name")
+            val accessExpiresAt = payload.optionalLong("accessExpiresAt")
+                ?: payload.optionalLong("accessExpiresAtMillis")
+                ?: payload.optionalLong("expiresAt")
+                ?: payload.optionalLong("expiresAtMillis")
+                ?: payload.optionalLong("expires_at")
+            val refreshExpiresAt = payload.optionalLong("refreshExpiresAt")
+                ?: payload.optionalLong("refreshExpiresAtMillis")
+                ?: payload.optionalLong("refresh_expires_at")
 
-            if (token.isNullOrBlank() || userId.isNullOrBlank() || username.isNullOrBlank()) {
+            if (accessToken.isNullOrBlank() || refreshToken.isNullOrBlank() || userId.isNullOrBlank() || username.isNullOrBlank() || accessExpiresAt == null || refreshExpiresAt == null) {
                 AuthResult.Failure(root.optionalString("message") ?: "Invalid authentication response")
             } else {
-                AuthResult.Success(AuthSession(token = token, userId = userId, username = username))
+                AuthResult.Success(
+                    AuthSession(
+                        accessToken = accessToken,
+                        refreshToken = refreshToken,
+                        userId = userId,
+                        username = username,
+                        accessExpiresAtMillis = accessExpiresAt,
+                        refreshExpiresAtMillis = refreshExpiresAt
+                    )
+                )
             }
         } catch (_: RuntimeException) {
             AuthResult.Failure("Invalid authentication response")
@@ -40,5 +58,10 @@ object AuthJsonParser {
     private fun JsonObject.optionalInt(name: String): Int? {
         val value = get(name) ?: return null
         return if (value.isJsonPrimitive && value.asJsonPrimitive.isNumber) value.asInt else null
+    }
+
+    private fun JsonObject.optionalLong(name: String): Long? {
+        val value = get(name) ?: return null
+        return if (value.isJsonPrimitive && value.asJsonPrimitive.isNumber) value.asLong else null
     }
 }

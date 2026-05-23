@@ -84,7 +84,7 @@ public final class MessageRouter {
         body.addProperty("userId", userId);
         body.addProperty("serverTime", System.currentTimeMillis());
         client.send(packet(ImCommand.AUTH_ACK, body));
-        System.out.printf("[IM] AUTH userId=%s%n", userId);
+        client.recordStatus("AUTHENTICATED userId=" + userId + " authAck=sent");
     }
 
     private ImPacket packet(ImCommand command, JsonObject body) {
