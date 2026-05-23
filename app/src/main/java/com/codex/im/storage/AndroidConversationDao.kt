@@ -34,7 +34,7 @@ class AndroidConversationDao(private val database: SQLiteDatabase) : Conversatio
             null,
             null,
             null,
-            "last_message_time DESC",
+            "last_message_time DESC, conversation_id ASC",
             limit.toString()
         ).use { cursor ->
             buildList {

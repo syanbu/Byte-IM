@@ -7,6 +7,7 @@ import com.codex.im.connection.ImConnection
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
+import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
@@ -129,8 +130,39 @@ class ConversationListViewModelTest {
         assertEquals(null, fixture.viewModel.state.value.navigationTargetPeerId)
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun stopCancelsIncomingPacketCollection() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.stop()
+        fixture.connection.incoming.emit(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-after-stop",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":5,
+                      "serverSeq":9,
+                      "content":"after stop",
+                      "timestamp":4000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals("", item.lastMessagePreview)
+        assertEquals(0, item.unreadCount)
+    }
+
     private class Fixture(scope: TestScope) {
-        private val connection = FakeConnection()
+        val connection = FakeConnection()
         private val conversationDao = InMemoryConversationDao()
         val repository = MessageRepository(
             messageDao = InMemoryMessageDao(),
@@ -152,8 +184,9 @@ class ConversationListViewModelTest {
 
     private class FakeConnection : ImConnection {
         var connectedToken: String? = null
+        val incoming = MutableSharedFlow<ImPacket>()
         override val states: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Disconnected)
-        override val incomingPackets: SharedFlow<ImPacket> = MutableSharedFlow()
+        override val incomingPackets: SharedFlow<ImPacket> = incoming
 
         override fun connect(token: String) {
             connectedToken = token

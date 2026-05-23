@@ -32,7 +32,7 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             args,
             null,
             null,
-            "created_at DESC",
+            "created_at DESC, message_id DESC",
             limit.toString()
         ).use { cursor ->
             buildList {

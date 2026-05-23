@@ -15,6 +15,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -39,6 +40,11 @@ fun ConversationListScreen(
 
     LaunchedEffect(viewModel) {
         viewModel.start()
+    }
+    DisposableEffect(viewModel) {
+        onDispose {
+            viewModel.stop()
+        }
     }
     LaunchedEffect(state.navigationTargetPeerId) {
         state.navigationTargetPeerId?.let { peerId ->

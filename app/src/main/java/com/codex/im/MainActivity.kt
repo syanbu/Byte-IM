@@ -13,13 +13,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.codex.im.app.AppInfo
 import com.codex.im.auth.AuthRepository
+import com.codex.im.auth.AuthSession
 import com.codex.im.auth.LoginScreen
 import com.codex.im.auth.LoginViewModel
 import com.codex.im.auth.OkHttpAuthApi
@@ -94,50 +98,16 @@ fun SelfHostedImApp(
             }
             val session = state.session
             if (state.isAuthenticated && session != null && messageRepository != null && connection != null) {
-                var selectedPeerId by remember(session.userId) { mutableStateOf<String?>(null) }
-                val logout: suspend () -> Unit = {
-                    messageRepository.closeConversation()
-                    connection.disconnect()
-                    loginViewModel.logout()
-                }
-                val peerId = selectedPeerId
-                if (peerId == null) {
-                    val conversationListViewModel = remember(session.userId) {
-                        ConversationListViewModel(
-                            session = session,
-                            repository = messageRepository,
-                            connection = connection,
-                            defaultPeerResolver = DefaultPeerResolver::resolve
-                        )
+                AuthenticatedImNavHost(
+                    session = session,
+                    messageRepository = messageRepository,
+                    connection = connection,
+                    onLogout = {
+                        messageRepository.closeConversation()
+                        connection.disconnect()
+                        loginViewModel.logout()
                     }
-                    val conversationState by conversationListViewModel.state.collectAsState()
-                    ConversationListScreen(
-                        session = session,
-                        viewModel = conversationListViewModel,
-                        state = conversationState,
-                        onOpenConversation = { selectedPeerId = it },
-                        onLogout = logout
-                    )
-                } else {
-                    val chatViewModel = remember(session.userId, peerId) {
-                        ChatViewModel(
-                            session = session,
-                            repository = messageRepository,
-                            connection = connection,
-                            initialPeerId = peerId
-                        )
-                    }
-                    val chatState by chatViewModel.state.collectAsState()
-                    ChatScreen(
-                        session = session,
-                        viewModel = chatViewModel,
-                        state = chatState,
-                        onBack = {
-                            messageRepository.closeConversation()
-                            selectedPeerId = null
-                        }
-                    )
-                }
+                )
             } else {
                 LoginScreen(
                     state = state,
@@ -145,6 +115,73 @@ fun SelfHostedImApp(
                     onRegister = loginViewModel::register
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun AuthenticatedImNavHost(
+    session: AuthSession,
+    messageRepository: MessageRepository,
+    connection: OkHttpImConnection,
+    onLogout: suspend () -> Unit
+) {
+    val navController = rememberNavController()
+
+    NavHost(
+        navController = navController,
+        startDestination = SelfHostedImRoute.Conversations.route
+    ) {
+        composable(SelfHostedImRoute.Conversations.route) {
+            val conversationListViewModel = remember(session.userId) {
+                ConversationListViewModel(
+                    session = session,
+                    repository = messageRepository,
+                    connection = connection,
+                    defaultPeerResolver = DefaultPeerResolver::resolve
+                )
+            }
+            val conversationState by conversationListViewModel.state.collectAsState()
+            ConversationListScreen(
+                session = session,
+                viewModel = conversationListViewModel,
+                state = conversationState,
+                onOpenConversation = { peerUserId ->
+                    SelfHostedImRoute.Chat.createRoute(peerUserId)?.let(navController::navigate)
+                },
+                onLogout = onLogout
+            )
+        }
+
+        composable(
+            route = SelfHostedImRoute.Chat.pattern,
+            arguments = listOf(
+                navArgument(SelfHostedImRoute.Chat.PEER_USER_ID_ARG) {
+                    type = NavType.StringType
+                }
+            )
+        ) { backStackEntry ->
+            val peerUserId = backStackEntry.arguments
+                ?.getString(SelfHostedImRoute.Chat.PEER_USER_ID_ARG)
+                .orEmpty()
+            val chatViewModel = remember(session.userId, peerUserId) {
+                ChatViewModel(
+                    session = session,
+                    repository = messageRepository,
+                    connection = connection,
+                    initialPeerId = peerUserId
+                )
+            }
+            val chatState by chatViewModel.state.collectAsState()
+            ChatScreen(
+                session = session,
+                viewModel = chatViewModel,
+                state = chatState,
+                onBack = {
+                    messageRepository.closeConversation()
+                    navController.popBackStack()
+                }
+            )
         }
     }
 }

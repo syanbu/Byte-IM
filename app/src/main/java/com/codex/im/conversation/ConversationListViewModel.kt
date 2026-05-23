@@ -8,6 +8,7 @@ import com.codex.im.storage.Conversation
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +41,7 @@ class ConversationListViewModel(
     private val mutableState = MutableStateFlow(ConversationListUiState())
     val state: StateFlow<ConversationListUiState> = mutableState.asStateFlow()
     private var started = false
+    private val jobs = mutableListOf<Job>()
 
     fun start() {
         if (started) {
@@ -48,25 +50,34 @@ class ConversationListViewModel(
         }
         started = true
         connectIfNeeded()
-        scope.launch(dispatcher) {
+        jobs += scope.launch(dispatcher) {
             connection.states.collect { state ->
                 mutableState.value = mutableState.value.copy(connectionStatus = state.toStatusText())
             }
         }
-        scope.launch(dispatcher) {
+        jobs += scope.launch(dispatcher) {
             connection.incomingPackets.collect { packet ->
                 repository.handlePacket(packet)
                 refresh()
             }
         }
-        scope.launch(dispatcher) {
+        jobs += scope.launch(dispatcher) {
             repository.conversationUpdates.collect {
                 refresh()
             }
         }
-        scope.launch(dispatcher) {
+        jobs += scope.launch(dispatcher) {
             refresh()
         }
+    }
+
+    fun stop() {
+        if (!started) {
+            return
+        }
+        jobs.forEach { it.cancel() }
+        jobs.clear()
+        started = false
     }
 
     fun openConversation(peerId: String) {
