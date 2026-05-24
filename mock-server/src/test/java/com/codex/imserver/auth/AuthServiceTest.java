@@ -33,10 +33,67 @@ public class AuthServiceTest {
         assertEquals(data.get("accessExpiresAt").getAsLong(), data.get("expiresAt").getAsLong());
         assertEquals("13800138000", data.get("userId").getAsString());
         assertEquals("13800138000", data.get("username").getAsString());
+        assertEquals("13800138000", data.get("phone").getAsString());
+        assertEquals("13800138000", data.get("nickname").getAsString());
+        assertTrue(data.get("avatarUrl").isJsonNull());
         assertTrue(stored.isPresent());
         assertEquals("fixed-salt", stored.get().salt());
+        assertEquals("13800138000", stored.get().nickname());
         assertNotEquals("P@ssw0rd", stored.get().passwordHash());
         assertFalse(stored.get().passwordHash().contains("P@ssw0rd"));
+    }
+
+    @Test
+    public void updateProfileChangesNicknameAndAvatarUrl() throws Exception {
+        UserStore store = new UserStore(tempDb());
+        AuthService service = new AuthService(store, new PasswordHasher(new FixedSaltGenerator("fixed-salt")), fixedTokenService());
+        service.register("13800138005", "P@ssw0rd");
+
+        JsonObject updated = JsonParser.parseString(
+                service.updateProfile(
+                        "13800138005",
+                        "Syan",
+                        "https://im-byte.oss-cn-shenzhen.aliyuncs.com/avatars/13800138005/2000.jpg",
+                        "avatars/13800138005/2000.jpg"
+                )
+        ).getAsJsonObject();
+        JsonObject data = updated.getAsJsonObject("data");
+
+        assertEquals(0, updated.get("code").getAsInt());
+        assertEquals("Syan", data.get("nickname").getAsString());
+        assertEquals("https://im-byte.oss-cn-shenzhen.aliyuncs.com/avatars/13800138005/2000.jpg", data.get("avatarUrl").getAsString());
+        assertEquals("avatars/13800138005/2000.jpg", data.get("avatarObjectKey").getAsString());
+    }
+
+    @Test
+    public void loginKeepsUsernameAsPhoneAfterNicknameChanges() throws Exception {
+        UserStore store = new UserStore(tempDb());
+        AuthService service = new AuthService(store, new PasswordHasher(new FixedSaltGenerator("fixed-salt")), fixedTokenService());
+        service.register("13900139000", "P@ssw0rd");
+        service.updateProfile("13900139000", "Megumi", null, null);
+
+        JsonObject login = JsonParser.parseString(service.login("13900139000", "P@ssw0rd")).getAsJsonObject();
+        JsonObject data = login.getAsJsonObject("data");
+
+        assertEquals(0, login.get("code").getAsInt());
+        assertEquals("13900139000", data.get("username").getAsString());
+        assertEquals("Megumi", data.get("nickname").getAsString());
+    }
+
+    @Test
+    public void batchProfilesReturnsKnownUsers() throws Exception {
+        UserStore store = new UserStore(tempDb());
+        AuthService service = new AuthService(store, new PasswordHasher(new FixedSaltGenerator("fixed-salt")), fixedTokenService());
+        service.register("13800138006", "P@ssw0rd");
+        service.register("13900139006", "P@ssw0rd");
+        service.updateProfile("13900139006", "Megumi", null, null);
+
+        JsonObject result = JsonParser.parseString(service.profiles(java.util.List.of("13800138006", "13900139006", "13700137006"))).getAsJsonObject();
+
+        assertEquals(0, result.get("code").getAsInt());
+        assertEquals(2, result.getAsJsonObject("data").getAsJsonArray("profiles").size());
+        assertEquals("13800138006", result.getAsJsonObject("data").getAsJsonArray("profiles").get(0).getAsJsonObject().get("nickname").getAsString());
+        assertEquals("Megumi", result.getAsJsonObject("data").getAsJsonArray("profiles").get(1).getAsJsonObject().get("nickname").getAsString());
     }
 
     @Test

@@ -1,8 +1,10 @@
 package com.codex.imserver.auth;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -50,11 +52,17 @@ public final class AuthService {
             return failure(400, "Password must be at least 6 characters");
         }
         PasswordHasher.HashedPassword hashedPassword = passwordHasher.hash(password);
+        long now = System.currentTimeMillis();
         boolean inserted = userStore.insert(new UserRecord(
                 phone,
                 hashedPassword.salt(),
                 hashedPassword.hash(),
-                System.currentTimeMillis()
+                phone,
+                null,
+                null,
+                0L,
+                now,
+                now
         ));
         if (!inserted) {
             return failure(409, "User already registered");
@@ -93,7 +101,83 @@ public final class AuthService {
         return root.toString();
     }
 
+    public Optional<String> verifyAccessToken(String accessToken) {
+        return tokenService.verify(accessToken);
+    }
+
+    public String profile(String phone) {
+        Optional<UserRecord> record = userStore.findByPhone(phone);
+        if (record.isEmpty()) {
+            return failure(404, "User not found");
+        }
+        JsonObject root = new JsonObject();
+        root.addProperty("code", 0);
+        root.addProperty("message", "ok");
+        root.add("data", profileJson(record.get()));
+        return root.toString();
+    }
+
+    public String profiles(List<String> phones) {
+        JsonArray profiles = new JsonArray();
+        for (UserRecord record : userStore.findByPhones(phones)) {
+            profiles.add(profileJson(record));
+        }
+        JsonObject data = new JsonObject();
+        data.add("profiles", profiles);
+        JsonObject root = new JsonObject();
+        root.addProperty("code", 0);
+        root.addProperty("message", "ok");
+        root.add("data", data);
+        return root.toString();
+    }
+
+    public String updateProfile(String phone, String nickname, String avatarUrl, String avatarObjectKey) {
+        System.out.printf(
+                "[IM] PROFILE_UPDATE_REQUEST userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s%n",
+                phone,
+                nickname,
+                avatarUrl,
+                avatarObjectKey
+        );
+        Optional<UserRecord> record = userStore.updateProfile(
+                phone,
+                nickname,
+                blankToNull(avatarUrl),
+                blankToNull(avatarObjectKey),
+                tokenService.currentTimeMillis()
+        );
+        if (record.isEmpty()) {
+            System.out.printf("[IM] PROFILE_UPDATE_FAILED userId=%s reason=user-not-found%n", phone);
+            return failure(404, "User not found");
+        }
+        UserRecord updated = record.get();
+        System.out.printf(
+                "[IM] PROFILE_UPDATED userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s updatedAt=%d%n",
+                updated.phone(),
+                updated.nickname(),
+                updated.avatarUrl(),
+                updated.avatarObjectKey(),
+                updated.updatedAt()
+        );
+        JsonObject root = new JsonObject();
+        root.addProperty("code", 0);
+        root.addProperty("message", "ok");
+        root.add("data", profileJson(updated));
+        return root.toString();
+    }
+
     private String success(String phone, TokenService.IssuedToken accessToken, String refreshToken, long refreshExpiresAt) {
+        UserRecord record = userStore.findByPhone(phone).orElse(new UserRecord(
+                phone,
+                "",
+                "",
+                phone,
+                null,
+                null,
+                0L,
+                tokenService.currentTimeMillis(),
+                tokenService.currentTimeMillis()
+        ));
         JsonObject data = new JsonObject();
         data.addProperty("accessToken", accessToken.token());
         data.addProperty("accessExpiresAt", accessToken.expiresAtMillis());
@@ -103,6 +187,7 @@ public final class AuthService {
         data.addProperty("expiresAt", accessToken.expiresAtMillis());
         data.addProperty("userId", phone);
         data.addProperty("username", phone);
+        addProfileFields(data, record);
 
         JsonObject root = new JsonObject();
         root.addProperty("code", 0);
@@ -124,5 +209,34 @@ public final class AuthService {
 
     private boolean isValidPhone(String phone) {
         return phone != null && MAINLAND_CHINA_PHONE.matcher(phone).matches();
+    }
+
+    private JsonObject profileJson(UserRecord record) {
+        JsonObject data = new JsonObject();
+        addProfileFields(data, record);
+        return data;
+    }
+
+    private void addProfileFields(JsonObject data, UserRecord record) {
+        data.addProperty("userId", record.phone());
+        data.addProperty("phone", record.phone());
+        data.addProperty("nickname", record.nickname());
+        if (record.avatarUrl() == null) {
+            data.add("avatarUrl", com.google.gson.JsonNull.INSTANCE);
+        } else {
+            data.addProperty("avatarUrl", record.avatarUrl());
+        }
+        if (record.avatarObjectKey() == null) {
+            data.add("avatarObjectKey", com.google.gson.JsonNull.INSTANCE);
+        } else {
+            data.addProperty("avatarObjectKey", record.avatarObjectKey());
+        }
+        data.addProperty("avatarUpdatedAt", record.avatarUpdatedAt());
+        data.addProperty("profileUpdatedAt", record.updatedAt());
+        data.addProperty("updatedAt", record.updatedAt());
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

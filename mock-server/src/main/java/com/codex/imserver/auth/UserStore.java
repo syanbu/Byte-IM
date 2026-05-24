@@ -7,7 +7,11 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public final class UserStore {
     private final String jdbcUrl;
@@ -28,12 +32,22 @@ public final class UserStore {
     public synchronized boolean insert(UserRecord record) {
         try (Connection connection = connect();
              PreparedStatement statement = connection.prepareStatement(
-                     "INSERT OR IGNORE INTO users(phone, salt, password_hash, created_at) VALUES(?, ?, ?, ?)"
+                     """
+                     INSERT OR IGNORE INTO users(
+                       phone, salt, password_hash, nickname, avatar_url, avatar_object_key,
+                       avatar_updated_at, updated_at, created_at
+                     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     """
              )) {
             statement.setString(1, record.phone());
             statement.setString(2, record.salt());
             statement.setString(3, record.passwordHash());
-            statement.setLong(4, record.createdAt());
+            statement.setString(4, record.nickname());
+            statement.setString(5, record.avatarUrl());
+            statement.setString(6, record.avatarObjectKey());
+            statement.setLong(7, record.avatarUpdatedAt());
+            statement.setLong(8, record.updatedAt());
+            statement.setLong(9, record.createdAt());
             return statement.executeUpdate() == 1;
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to insert user", error);
@@ -43,22 +57,60 @@ public final class UserStore {
     public synchronized Optional<UserRecord> findByPhone(String phone) {
         try (Connection connection = connect();
              PreparedStatement statement = connection.prepareStatement(
-                     "SELECT phone, salt, password_hash, created_at FROM users WHERE phone = ?"
+                     """
+                     SELECT phone, salt, password_hash, nickname, avatar_url, avatar_object_key,
+                            avatar_updated_at, updated_at, created_at
+                     FROM users
+                     WHERE phone = ?
+                     """
              )) {
             statement.setString(1, phone);
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
                     return Optional.empty();
                 }
-                return Optional.of(new UserRecord(
-                        resultSet.getString("phone"),
-                        resultSet.getString("salt"),
-                        resultSet.getString("password_hash"),
-                        resultSet.getLong("created_at")
-                ));
+                return Optional.of(readUser(resultSet));
             }
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to find user", error);
+        }
+    }
+
+    public synchronized List<UserRecord> findByPhones(List<String> phones) {
+        List<UserRecord> records = new ArrayList<>();
+        for (String phone : phones) {
+            findByPhone(phone).ifPresent(records::add);
+        }
+        return records;
+    }
+
+    public synchronized Optional<UserRecord> updateProfile(String phone, String nickname, String avatarUrl, String avatarObjectKey, long nowMillis) {
+        Optional<UserRecord> current = findByPhone(phone);
+        if (current.isEmpty()) {
+            return Optional.empty();
+        }
+        String nextNickname = nickname == null || nickname.isBlank() ? current.get().nickname() : nickname.trim();
+        long avatarUpdatedAt = avatarUrl == null || avatarUrl.equals(current.get().avatarUrl())
+                ? current.get().avatarUpdatedAt()
+                : nowMillis;
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement(
+                     """
+                     UPDATE users
+                     SET nickname = ?, avatar_url = ?, avatar_object_key = ?, avatar_updated_at = ?, updated_at = ?
+                     WHERE phone = ?
+                     """
+             )) {
+            statement.setString(1, nextNickname);
+            statement.setString(2, avatarUrl);
+            statement.setString(3, avatarObjectKey);
+            statement.setLong(4, avatarUpdatedAt);
+            statement.setLong(5, nowMillis);
+            statement.setString(6, phone);
+            statement.executeUpdate();
+            return findByPhone(phone);
+        } catch (SQLException error) {
+            throw new IllegalStateException("Unable to update user profile", error);
         }
     }
 
@@ -125,11 +177,17 @@ public final class UserStore {
                        phone VARCHAR(11) PRIMARY KEY,
                        salt VARCHAR(128) NOT NULL,
                        password_hash VARCHAR(512) NOT NULL,
+                       nickname VARCHAR(128),
+                       avatar_url TEXT,
+                       avatar_object_key TEXT,
+                       avatar_updated_at BIGINT NOT NULL DEFAULT 0,
+                       updated_at BIGINT NOT NULL DEFAULT 0,
                        created_at BIGINT NOT NULL
                      )
                      """
              )) {
             statement.executeUpdate();
+            ensureUserProfileColumns(connection);
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to initialize user database", error);
         }
@@ -153,5 +211,57 @@ public final class UserStore {
 
     private Connection connect() throws SQLException {
         return DriverManager.getConnection(jdbcUrl);
+    }
+
+    private UserRecord readUser(ResultSet resultSet) throws SQLException {
+        String phone = resultSet.getString("phone");
+        String nickname = resultSet.getString("nickname");
+        long createdAt = resultSet.getLong("created_at");
+        long updatedAt = resultSet.getLong("updated_at");
+        return new UserRecord(
+                phone,
+                resultSet.getString("salt"),
+                resultSet.getString("password_hash"),
+                nickname == null || nickname.isBlank() ? phone : nickname,
+                resultSet.getString("avatar_url"),
+                resultSet.getString("avatar_object_key"),
+                resultSet.getLong("avatar_updated_at"),
+                updatedAt == 0L ? createdAt : updatedAt,
+                createdAt
+        );
+    }
+
+    private void ensureUserProfileColumns(Connection connection) throws SQLException {
+        Set<String> columns = new HashSet<>();
+        try (PreparedStatement statement = connection.prepareStatement("PRAGMA table_info(users)");
+             ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                columns.add(resultSet.getString("name"));
+            }
+        }
+        addColumnIfMissing(connection, columns, "nickname", "ALTER TABLE users ADD COLUMN nickname VARCHAR(128)");
+        addColumnIfMissing(connection, columns, "avatar_url", "ALTER TABLE users ADD COLUMN avatar_url TEXT");
+        addColumnIfMissing(connection, columns, "avatar_object_key", "ALTER TABLE users ADD COLUMN avatar_object_key TEXT");
+        addColumnIfMissing(connection, columns, "avatar_updated_at", "ALTER TABLE users ADD COLUMN avatar_updated_at BIGINT NOT NULL DEFAULT 0");
+        addColumnIfMissing(connection, columns, "updated_at", "ALTER TABLE users ADD COLUMN updated_at BIGINT NOT NULL DEFAULT 0");
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE users SET nickname = phone WHERE nickname IS NULL OR nickname = ''"
+        )) {
+            statement.executeUpdate();
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE users SET updated_at = created_at WHERE updated_at = 0"
+        )) {
+            statement.executeUpdate();
+        }
+    }
+
+    private void addColumnIfMissing(Connection connection, Set<String> columns, String column, String sql) throws SQLException {
+        if (columns.contains(column)) {
+            return;
+        }
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.executeUpdate();
+        }
     }
 }
