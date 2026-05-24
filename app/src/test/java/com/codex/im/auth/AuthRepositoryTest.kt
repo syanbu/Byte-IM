@@ -22,6 +22,29 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun loginStoresReturnedSessionWhenNicknameIsNotPhoneNumber() = runTest {
+        val session = AuthSession(
+            accessToken = "token-a",
+            refreshToken = "refresh-a",
+            userId = "13900139000",
+            username = "13900139000",
+            phone = "13900139000",
+            nickname = "Megumi",
+            accessExpiresAtMillis = 2_000L,
+            refreshExpiresAtMillis = 2_000L
+        )
+        val api = FakeAuthApi(loginResult = AuthResult.Success(session))
+        val tokenStore = InMemoryTokenStore()
+        val repository = AuthRepository(api, tokenStore, nowMillis = { 1_000L })
+
+        val result = repository.login("13900139000", "password")
+
+        assertTrue(result is AuthResult.Success)
+        assertEquals("13900139000", tokenStore.currentSession()?.username)
+        assertEquals("Megumi", tokenStore.currentSession()?.nickname)
+    }
+
+    @Test
     fun loginFailureDoesNotOverwriteExistingSession() = runTest {
         val api = FakeAuthApi(loginResult = AuthResult.Failure("bad credentials"))
         val tokenStore = InMemoryTokenStore()

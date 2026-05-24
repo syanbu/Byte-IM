@@ -34,6 +34,15 @@ data class PendingMessage(
     val createdAt: Long
 )
 
+data class UserProfile(
+    val userId: String,
+    val phone: String,
+    val nickname: String,
+    val avatarUrl: String?,
+    val avatarUpdatedAt: Long,
+    val updatedAt: Long
+)
+
 enum class MessageStatus {
     SENDING,
     SENT,

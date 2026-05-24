@@ -5,6 +5,8 @@ Detailed notes are split by feature under `docs/status/`.
 
 Design roadmap: `docs/superpowers/plans/2026-05-21-im-client-roadmap.md`.
 
+Development constraints: [`docs/DEVELOPMENT-CONSTRAINTS.md`](DEVELOPMENT-CONSTRAINTS.md).
+
 ## Current Progress
 
 | Feature | Requirement | Status | Detail |
@@ -22,9 +24,22 @@ Design roadmap: `docs/superpowers/plans/2026-05-21-im-client-roadmap.md`.
 | Mock server | Local Netty server for auth and WebSocket tests | Done for current B1/B2 path | [mock-server.md](status/mock-server.md) |
 | B10-B13 | Group chat, image messages, recall/read receipts, push | Deferred | Later optional scope |
 
+## Recent Self-Design Work
+
+These items are recent product/UI improvements that sit outside the original B-prefixed roadmap.
+
+| Feature | Scope | Status | Detail |
+|---|---|---|---|
+| Chat back navigation | Navigation Compose route stack for `Conversations -> Chat -> Conversations`; chat top Back, Android system Back, and gesture Back return to the conversation list. | Implemented | [self-design-chat-back-navigation-status.md](status/self-design-chat-back-navigation-status.md), [self-design-chat-back-navigation-development-plan.md](status/self-design-chat-back-navigation-development-plan.md) |
+| Chat UI interaction cleanup | Removed noisy chat row/status text and history-end text from the chat UI interaction pass. | Implemented | [self-design-chat-ui-interaction-status.md](status/self-design-chat-ui-interaction-status.md) |
+| Profile edit and avatar upload | Edit nickname/avatar from `Me`, compress selected avatar image, request OSS upload target, upload avatar bytes, and persist profile updates. | Implemented; emulator/real OSS verification still recommended | [self-desgin-profile-edit-development-status.md](status/self-desgin-profile-edit-development-status.md) |
+| Profile-aware chat UI | Added Messages/Me tabs, local profile cache, peer nicknames/avatars in conversations and chat, vector tab icons, avatar caching, chat composer polish, WeChat-style profile detail flow, and unified profile Back semantics. | Implemented; manual UI checklist still recommended | [self-desgin-profile-chat-ui-development-status.md](status/self-desgin-profile-chat-ui-development-status.md) |
+
 ## Next Step
 
 Continue B4 only if server-backed history is required; the local chat history pagination path is implemented.
+
+For the recent self-design work, the next step is manual emulator verification of profile/avatar flows, chat visual behavior, vector tab icons, and Back semantics against the checklist in [self-desgin-profile-chat-ui-development-status.md](status/self-desgin-profile-chat-ui-development-status.md).
 
 B3 is now complete for the current local single-chat scope:
 
@@ -56,10 +71,13 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 - B5 SQLite persistence foundation is complete.
 - B6 binary protocol codec is complete and documented in `docs/WEBSOCKET_PROTOCOL_AND_STATES.md`.
 - Local Java/Netty mock server supports the current auth and single-chat WebSocket path.
+- Self-design chat/profile UI work is implemented, including Messages/Me tabs, profile display/edit, avatar upload plumbing, peer nickname/avatar display, vector tab icons, avatar caching, chat composer polish, and corrected Back semantics.
+- Project-level development constraints are documented in `docs/DEVELOPMENT-CONSTRAINTS.md`.
 
 ## In Progress
 
 - B4 server-backed history is not wired yet. The protocol commands `HISTORY_QUERY` and `HISTORY_RESULT` remain the intended integration path if remote history fetch is added.
+- Manual emulator verification remains for the latest self-design profile/chat UI slice.
 
 ## Not Started
 

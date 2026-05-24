@@ -5,6 +5,11 @@ data class AuthSession(
     val refreshToken: String,
     val userId: String,
     val username: String,
+    val phone: String = userId,
+    val nickname: String = username,
+    val avatarUrl: String? = null,
+    val avatarUpdatedAt: Long = 0L,
+    val profileUpdatedAt: Long = 0L,
     val accessExpiresAtMillis: Long,
     val refreshExpiresAtMillis: Long
 ) {
@@ -13,6 +18,11 @@ data class AuthSession(
         refreshToken = "refresh-$token",
         userId = userId,
         username = username,
+        phone = userId,
+        nickname = username,
+        avatarUrl = null,
+        avatarUpdatedAt = 0L,
+        profileUpdatedAt = 0L,
         accessExpiresAtMillis = expiresAtMillis,
         refreshExpiresAtMillis = expiresAtMillis
     )

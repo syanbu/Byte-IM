@@ -8,12 +8,18 @@ import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
 import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
+import com.codex.im.profile.ProfileApi
+import com.codex.im.profile.ProfileBatchResult
+import com.codex.im.profile.ProfileRepository
+import com.codex.im.profile.ProfileResult
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
+import com.codex.im.storage.InMemoryUserProfileDao
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
+import com.codex.im.storage.UserProfile
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -46,6 +52,28 @@ class ChatViewModelTest {
 
         assertEquals(listOf("hello"), fixture.viewModel.state.value.messages.map { it.content })
         assertEquals("13900113900", fixture.viewModel.state.value.peerId)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startExposesPeerNicknameAndAvatarFromProfileCache() = runTest {
+        val fixture = Fixture(this)
+        fixture.profileDao.upsert(
+            UserProfile(
+                userId = "13900113900",
+                phone = "13900113900",
+                nickname = "Megumi",
+                avatarUrl = "https://example.com/megumi.jpg",
+                avatarUpdatedAt = 2_000L,
+                updatedAt = 2_000L
+            )
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals("Megumi", fixture.viewModel.state.value.peerName)
+        assertEquals("https://example.com/megumi.jpg", fixture.viewModel.state.value.peerAvatarUrl)
     }
 
     @Test
@@ -225,6 +253,8 @@ class ChatViewModelTest {
     private class Fixture(scope: TestScope) {
         val connection = FakeConnection()
         private val messageDao = InMemoryMessageDao()
+        val profileDao = InMemoryUserProfileDao()
+        private val profileRepository = ProfileRepository(profileDao, FakeProfileApi())
         private val repository = MessageRepository(
             messageDao = messageDao,
             conversationDao = InMemoryConversationDao(),
@@ -237,6 +267,7 @@ class ChatViewModelTest {
             session = AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L),
             repository = repository,
             connection = connection,
+            profileRepository = profileRepository,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )
@@ -278,5 +309,22 @@ class ChatViewModelTest {
         override fun disconnect() = Unit
 
         override fun send(packet: ImPacket): Boolean = true
+    }
+
+    private class FakeProfileApi : ProfileApi {
+        override suspend fun me(accessToken: String): ProfileResult = ProfileResult.Failure("unused")
+
+        override suspend fun user(accessToken: String, userId: String): ProfileResult = ProfileResult.Failure("unused")
+
+        override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
+            return ProfileBatchResult.Success(emptyList())
+        }
+
+        override suspend fun updateMe(
+            accessToken: String,
+            nickname: String,
+            avatarUrl: String?,
+            avatarObjectKey: String?
+        ): ProfileResult = ProfileResult.Failure("unused")
     }
 }

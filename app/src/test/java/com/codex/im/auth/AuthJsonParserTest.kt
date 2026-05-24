@@ -38,6 +38,22 @@ class AuthJsonParserTest {
     }
 
     @Test
+    fun parsesProfileFieldsFromSuccessResponse() {
+        val json = """{"code":0,"message":"ok","data":{"accessToken":"jwt-3","refreshToken":"refresh-3","userId":"13800138000","phone":"13800138000","username":"13800138000","nickname":"Syan","avatarUrl":"https://im-byte.oss-cn-shenzhen.aliyuncs.com/avatars/13800138000/2000.jpg","avatarUpdatedAt":2000,"profileUpdatedAt":3000,"accessExpiresAt":4000,"refreshExpiresAt":9000}}"""
+
+        val result = AuthJsonParser.parse(json)
+
+        assertTrue(result is AuthResult.Success)
+        val session = (result as AuthResult.Success).session
+        assertEquals("13800138000", session.phone)
+        assertEquals("13800138000", session.username)
+        assertEquals("Syan", session.nickname)
+        assertEquals("https://im-byte.oss-cn-shenzhen.aliyuncs.com/avatars/13800138000/2000.jpg", session.avatarUrl)
+        assertEquals(2_000L, session.avatarUpdatedAt)
+        assertEquals(3_000L, session.profileUpdatedAt)
+    }
+
+    @Test
     fun rejectsSuccessResponseWithoutTokenExpiry() {
         val json = """{"token":"jwt-1","userId":"13800138000","username":"13800138000"}"""
 

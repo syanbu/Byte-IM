@@ -16,7 +16,21 @@ object AuthJsonParser {
             val accessToken = payload.optionalString("accessToken") ?: payload.optionalString("token")
             val refreshToken = payload.optionalString("refreshToken")
             val userId = payload.optionalString("userId") ?: payload.optionalString("user_id")
-            val username = payload.optionalString("username") ?: payload.optionalString("name")
+            val nickname = payload.optionalString("nickname")
+                ?: payload.optionalString("username")
+                ?: payload.optionalString("name")
+                ?: userId
+            val username = payload.optionalString("username") ?: nickname
+            val phone = payload.optionalString("phone") ?: userId
+            val avatarUrl = payload.optionalString("avatarUrl") ?: payload.optionalString("avatar_url")
+            val avatarUpdatedAt = payload.optionalLong("avatarUpdatedAt")
+                ?: payload.optionalLong("avatar_updated_at")
+                ?: 0L
+            val profileUpdatedAt = payload.optionalLong("profileUpdatedAt")
+                ?: payload.optionalLong("profile_updated_at")
+                ?: payload.optionalLong("updatedAt")
+                ?: payload.optionalLong("updated_at")
+                ?: 0L
             val accessExpiresAt = payload.optionalLong("accessExpiresAt")
                 ?: payload.optionalLong("accessExpiresAtMillis")
                 ?: payload.optionalLong("expiresAt")
@@ -26,7 +40,7 @@ object AuthJsonParser {
                 ?: payload.optionalLong("refreshExpiresAtMillis")
                 ?: payload.optionalLong("refresh_expires_at")
 
-            if (accessToken.isNullOrBlank() || refreshToken.isNullOrBlank() || userId.isNullOrBlank() || username.isNullOrBlank() || accessExpiresAt == null || refreshExpiresAt == null) {
+            if (accessToken.isNullOrBlank() || refreshToken.isNullOrBlank() || userId.isNullOrBlank() || username.isNullOrBlank() || phone.isNullOrBlank() || nickname.isNullOrBlank() || accessExpiresAt == null || refreshExpiresAt == null) {
                 AuthResult.Failure(root.optionalString("message") ?: "Invalid authentication response")
             } else {
                 AuthResult.Success(
@@ -35,6 +49,11 @@ object AuthJsonParser {
                         refreshToken = refreshToken,
                         userId = userId,
                         username = username,
+                        phone = phone,
+                        nickname = nickname,
+                        avatarUrl = avatarUrl,
+                        avatarUpdatedAt = avatarUpdatedAt,
+                        profileUpdatedAt = profileUpdatedAt,
                         accessExpiresAtMillis = accessExpiresAt,
                         refreshExpiresAtMillis = refreshExpiresAt
                     )

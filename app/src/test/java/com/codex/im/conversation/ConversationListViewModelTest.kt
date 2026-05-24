@@ -12,6 +12,12 @@ import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
+import com.codex.im.storage.InMemoryUserProfileDao
+import com.codex.im.storage.UserProfile
+import com.codex.im.profile.ProfileApi
+import com.codex.im.profile.ProfileBatchResult
+import com.codex.im.profile.ProfileRepository
+import com.codex.im.profile.ProfileResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,8 +42,33 @@ class ConversationListViewModelTest {
         val item = fixture.viewModel.state.value.items.single()
         assertEquals("13900113900", item.peerId)
         assertEquals("13900113900", item.peerName)
+        assertEquals(null, item.peerAvatarUrl)
         assertEquals("", item.lastMessagePreview)
         assertEquals(0, item.unreadCount)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startUsesProfileNicknameAndAvatarForConversationRows() = runTest {
+        val fixture = Fixture(this)
+        fixture.profileDao.upsert(
+            UserProfile(
+                userId = "13900113900",
+                phone = "13900113900",
+                nickname = "Megumi",
+                avatarUrl = "https://example.com/megumi.jpg",
+                avatarUpdatedAt = 2_000L,
+                updatedAt = 2_000L
+            )
+        )
+        fixture.repository.sendText("13800113800", "13900113900", "hello", now = 1_000L)
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals("Megumi", item.peerName)
+        assertEquals("https://example.com/megumi.jpg", item.peerAvatarUrl)
     }
 
     @Test
@@ -55,6 +86,20 @@ class ConversationListViewModelTest {
             fixture.viewModel.state.value.items.map { it.peerId }
         )
         assertEquals("newer", fixture.viewModel.state.value.items.first().lastMessagePreview)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startDoesNotAddDuplicateDefaultConversationWhenCanonicalConversationAlreadyExists() = runTest {
+        val fixture = Fixture(this)
+        fixture.repository.sendText("13900113900", "13800113800", "hello from other login", now = 1_000L)
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val items = fixture.viewModel.state.value.items
+        assertEquals(items.map { it.conversationId }.distinct(), items.map { it.conversationId })
+        assertEquals(listOf("13900113900"), items.map { it.peerId })
     }
 
     @Test
@@ -164,6 +209,8 @@ class ConversationListViewModelTest {
     private class Fixture(scope: TestScope) {
         val connection = FakeConnection()
         private val conversationDao = InMemoryConversationDao()
+        val profileDao = InMemoryUserProfileDao()
+        private val profileRepository = ProfileRepository(profileDao, FakeProfileApi())
         val repository = MessageRepository(
             messageDao = InMemoryMessageDao(),
             conversationDao = conversationDao,
@@ -177,6 +224,7 @@ class ConversationListViewModelTest {
             repository = repository,
             connection = connection,
             defaultPeerResolver = DefaultPeerResolver::resolve,
+            profileRepository = profileRepository,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )
@@ -195,5 +243,22 @@ class ConversationListViewModelTest {
         override fun disconnect() = Unit
 
         override fun send(packet: ImPacket): Boolean = true
+    }
+
+    private class FakeProfileApi : ProfileApi {
+        override suspend fun me(accessToken: String): ProfileResult = ProfileResult.Failure("unused")
+
+        override suspend fun user(accessToken: String, userId: String): ProfileResult = ProfileResult.Failure("unused")
+
+        override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
+            return ProfileBatchResult.Success(emptyList())
+        }
+
+        override suspend fun updateMe(
+            accessToken: String,
+            nickname: String,
+            avatarUrl: String?,
+            avatarObjectKey: String?
+        ): ProfileResult = ProfileResult.Failure("unused")
     }
 }

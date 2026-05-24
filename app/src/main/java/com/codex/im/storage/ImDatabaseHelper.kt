@@ -6,6 +6,13 @@ import android.database.sqlite.SQLiteOpenHelper
 
 class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
     override fun onCreate(db: SQLiteDatabase) {
+        createMessagesTable(db)
+        createConversationsTable(db)
+        createPendingMessagesTable(db)
+        createUserProfilesTable(db)
+    }
+
+    private fun createMessagesTable(db: SQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE messages (
@@ -26,6 +33,9 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
         )
         db.execSQL("CREATE INDEX idx_messages_conversation_time ON messages(conversation_id, created_at DESC)")
         db.execSQL("CREATE INDEX idx_messages_conversation_seq ON messages(conversation_id, server_seq ASC)")
+    }
+
+    private fun createConversationsTable(db: SQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE conversations (
@@ -41,6 +51,9 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
             """.trimIndent()
         )
         db.execSQL("CREATE INDEX idx_conversations_last_time ON conversations(last_message_time DESC)")
+    }
+
+    private fun createPendingMessagesTable(db: SQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE pending_messages (
@@ -56,8 +69,28 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
         db.execSQL("CREATE INDEX idx_pending_next_retry ON pending_messages(next_retry_at ASC)")
     }
 
+    private fun createUserProfilesTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS user_profiles (
+              user_id TEXT PRIMARY KEY,
+              phone TEXT NOT NULL,
+              nickname TEXT NOT NULL,
+              avatar_url TEXT,
+              avatar_updated_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+    }
+
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            createUserProfilesTable(db)
+            return
+        }
         db.execSQL("DROP TABLE IF EXISTS pending_messages")
+        db.execSQL("DROP TABLE IF EXISTS user_profiles")
         db.execSQL("DROP TABLE IF EXISTS conversations")
         db.execSQL("DROP TABLE IF EXISTS messages")
         onCreate(db)
@@ -65,6 +98,6 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 1
+        const val DATABASE_VERSION = 2
     }
 }

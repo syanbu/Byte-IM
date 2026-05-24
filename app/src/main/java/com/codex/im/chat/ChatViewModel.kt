@@ -4,6 +4,7 @@ import com.codex.im.auth.AuthSession
 import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
 import com.codex.im.message.MessageRepository
+import com.codex.im.profile.ProfileRepository
 import com.codex.im.storage.ChatMessage
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -18,6 +19,9 @@ import kotlinx.coroutines.withContext
 
 data class ChatUiState(
     val peerId: String = "13900113900",
+    val peerName: String = peerId,
+    val peerAvatarUrl: String? = null,
+    val currentUserAvatarUrl: String? = null,
     val messages: List<ChatMessage> = emptyList(),
     val isLoadingMore: Boolean = false,
     val hasMoreLocal: Boolean = true,
@@ -29,6 +33,7 @@ class ChatViewModel(
     private val session: AuthSession,
     private val repository: MessageRepository,
     private val connection: ImConnection,
+    private val profileRepository: ProfileRepository,
     initialPeerId: String = "13900113900",
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -56,6 +61,7 @@ class ChatViewModel(
             }
         }
         jobs += scope.launch(dispatcher) {
+            refreshProfiles()
             refreshInitialPage()
         }
     }
@@ -74,6 +80,8 @@ class ChatViewModel(
         val trimmedPeerId = peerId.trim()
         mutableState.value = mutableState.value.copy(
             peerId = trimmedPeerId,
+            peerName = trimmedPeerId,
+            peerAvatarUrl = null,
             messages = emptyList(),
             isLoadingMore = false,
             hasMoreLocal = true,
@@ -84,6 +92,7 @@ class ChatViewModel(
             if (trimmedPeerId.isNotEmpty()) {
                 repository.openConversation(session.userId, trimmedPeerId)
             }
+            refreshProfiles()
             refreshInitialPage()
         }
     }
@@ -158,6 +167,21 @@ class ChatViewModel(
             hasMoreLocal = messages.size == HISTORY_PAGE_SIZE,
             isHistoryMemoryLimitReached = false,
             errorMessage = null
+        )
+    }
+
+    private suspend fun refreshProfiles() {
+        profileRepository.bootstrapSession(session)
+        val peerId = mutableState.value.peerId
+        if (peerId.isNotBlank()) {
+            profileRepository.refreshProfiles(session.accessToken, listOf(session.userId, peerId))
+        }
+        val peerProfile = profileRepository.localProfile(peerId)
+        val currentUserProfile = profileRepository.localProfile(session.userId)
+        mutableState.value = mutableState.value.copy(
+            peerName = peerProfile?.nickname ?: peerId,
+            peerAvatarUrl = peerProfile?.avatarUrl,
+            currentUserAvatarUrl = currentUserProfile?.avatarUrl
         )
     }
 

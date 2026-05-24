@@ -7,37 +7,31 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Badge
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.codex.im.auth.AuthSession
-import kotlinx.coroutines.launch
+import com.codex.im.ui.AvatarImage
 import java.text.DateFormat
 import java.util.Date
 
 @Composable
 fun ConversationListScreen(
-    session: AuthSession,
     viewModel: ConversationListViewModel,
     state: ConversationListUiState,
     modifier: Modifier = Modifier,
-    onOpenConversation: (String) -> Unit,
-    onLogout: suspend () -> Unit = {}
+    onOpenConversation: (String) -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-
     LaunchedEffect(viewModel) {
         viewModel.start()
     }
@@ -59,19 +53,7 @@ fun ConversationListScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(text = "Conversations", style = MaterialTheme.typography.headlineSmall)
-                Text(text = "${session.username} · ${state.connectionStatus}", style = MaterialTheme.typography.bodyMedium)
-            }
-            Button(onClick = { scope.launch { onLogout() } }) {
-                Text("Logout")
-            }
-        }
+        Text(text = "Messages", style = MaterialTheme.typography.headlineSmall)
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(state.items, key = { it.conversationId }) { item ->
                 ConversationRow(
@@ -97,6 +79,11 @@ private fun ConversationRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        AvatarImage(
+            avatarUrl = item.peerAvatarUrl,
+            displayName = item.peerName,
+            modifier = Modifier.size(48.dp)
+        )
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
