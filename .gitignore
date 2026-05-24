@@ -67,3 +67,4 @@ fastlane/readme.md
 .idea/
 mock-server/target/
 mock-server/data/
+.vscode
