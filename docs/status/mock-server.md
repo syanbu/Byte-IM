@@ -20,14 +20,13 @@ Done for the current B1/B2 local verification path.
 - WebSocket `AUTH` validates access token signature and expiry.
 - WebSocket protocol matches Android frame format.
 - Handles `AUTH`, `HEARTBEAT`, and `SEND_MESSAGE`.
-- Sends `AUTH_ACK`, `HEARTBEAT_ACK`, `MESSAGE_ACK`, and online receiver `RECEIVE_MESSAGE`.
+- Sends `AUTH_ACK`, `HEARTBEAT_ACK`, `MESSAGE_ACK`, online receiver `RECEIVE_MESSAGE`, and queued offline `RECEIVE_MESSAGE` after the receiver authenticates.
 - Logs connection-path events and packet errors for local diagnostics.
 - Removes channel session state when clients disconnect.
 
-## Verification
-
 | Date | Command | Result |
 |---|---|---|
+| 2026-05-25 | `mvn -q -Dtest=MessageRouterTest test`; `mvn -q test` in `mock-server` | Passed: messages sent to an offline receiver are queued in memory and delivered as `RECEIVE_MESSAGE` immediately after that receiver authenticates. |
 | 2026-05-22 | `mvn -q test` in `mock-server` | Passed: protocol codec, auth response, message ACK/forward routing, and channel session removal tests. |
 | 2026-05-22 | `mvn -q package` in `mock-server` | Passed: Java/Netty mock server packaged successfully. |
 | 2026-05-22 | Java process smoke test + `Invoke-RestMethod` | Superseded by B1 phone-account auth; use registered phone accounts such as `13800113800 / 123456`. |

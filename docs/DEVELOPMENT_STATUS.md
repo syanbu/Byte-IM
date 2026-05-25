@@ -50,7 +50,7 @@ B3 is now complete for the current local single-chat scope:
 - Entering a conversation clears unread.
 - Incoming messages for the currently open conversation refresh the preview without incrementing unread.
 - Conversation rows refresh from Repository conversation update events, including messages processed by the chat screen.
-- A fixed mock contact entry remains available for the two local demo accounts.
+- Empty conversation lists no longer show a fixed mock contact; the two local demo accounts are exposed through the separate `Contacts` tab.
 - Connection/auth status and logout are only shown on the conversation list; the chat screen keeps only the back navigation.
 
 B4 local history pagination is implemented for the current SQLite-backed chat path:

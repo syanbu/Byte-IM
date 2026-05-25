@@ -117,6 +117,12 @@ Implement the approved self-desgin profile/chat UI slice:
 | Profile back semantics GREEN | `gradle-9.0.0\bin\gradle.bat :app:testDebugUnitTest --tests com.codex.im.profile.MeBackPolicyTest --console=plain` | Passed after defining Me top-level, Profile detail, and Name editor back actions. |
 | Profile back semantics post-fix Android full JVM | `gradle-9.0.0\bin\gradle.bat :app:testDebugUnitTest --console=plain` | Passed. |
 | Profile back semantics post-fix Android debug build | `gradle-9.0.0\bin\gradle.bat :app:assembleDebug --console=plain` | Passed. |
+| Empty Messages / Contacts RED | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.contacts.ContactListViewModelTest --tests com.codex.im.BottomNavigationSpecTest --tests com.codex.im.SelfHostedImRouteTest --tests com.codex.im.TopLevelBackPolicyTest --tests com.codex.im.chat.ChatViewModelTest --console=plain` | Failed before implementation because Contacts route/tab/icon/ViewModel did not exist and `ConversationListViewModel` still required the default peer resolver. |
+| Empty Messages / Contacts targeted GREEN | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.contacts.ContactListViewModelTest --tests com.codex.im.BottomNavigationSpecTest --tests com.codex.im.SelfHostedImRouteTest --tests com.codex.im.TopLevelBackPolicyTest --tests com.codex.im.chat.ChatViewModelTest --console=plain` | Passed after removing the default conversation fallback and adding Contacts. |
+| Empty Messages / Contacts Android full JVM | `.\gradlew.bat :app:testDebugUnitTest --console=plain` | Passed. |
+| Empty Messages / Contacts Android debug build | `.\gradlew.bat :app:assembleDebug --console=plain` | Passed. |
+| Offline message conversation refresh RED | `mvn -q -Dtest=MessageRouterTest test`; `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListViewModelTest --console=plain` | Failed before implementation: mock-server skipped offline receivers, and Android could miss packets emitted during connect before the conversation-list collector was active. |
+| Offline message conversation refresh GREEN | `mvn -q -Dtest=MessageRouterTest test`; `mvn -q test`; `.\gradlew.bat :app:testDebugUnitTest --console=plain`; `.\gradlew.bat :app:assembleDebug --console=plain` | Passed after adding in-memory offline delivery on mock-server auth and starting Android conversation-list collectors before connecting. |
 
 ## Bug Fix Log
 
@@ -262,7 +268,7 @@ Fix:
 
 - Resolve the peer from canonical `single:<a>:<b>` conversation IDs relative to the current session user.
 - Deduplicate visible rows by `conversationId`.
-- Add the default peer only when the default canonical `conversationId` is absent.
+- The later empty `Messages` / `Contacts` separation removed this default peer fallback entirely; demo peer discovery now belongs to the `Contacts` tab.
 
 ## Session Issue Summary
 
@@ -337,6 +343,26 @@ This session found and fixed the following product/UI issues:
    - Cause: `MainActivity` registered the `Me` top-level exit BackHandler after `MeScreen`, so it took priority over the profile subpage handler.
    - Fix: Added `MeBackPolicy` and routed both left-top back buttons and `BackHandler` through the same `MeScreen` `handleBack`; `MainActivity` no longer registers a competing `Me` route BackHandler.
    - Verification: Added `MeBackPolicyTest`; full Android JVM tests and debug build passed.
+
+11. Empty Messages and Contacts separation
+
+   - Goal: Stop showing a fixed demo peer in `Messages` before any real chat message exists, and add a separate `Contacts` tab for demo friend discovery.
+   - Conversation list behavior: `ConversationListViewModel` now renders only rows returned from persisted conversation state. It no longer adds a default peer fallback row when `ConversationDao` is empty.
+   - Contacts tab: Added `Contacts` as a top-level bottom navigation item between `Messages` and `Me`.
+   - Demo contact rule: `13800113800` sees `13900113900`; `13900113900` sees `13800113800`; other accounts see no demo contacts.
+   - Chat entry behavior: Tapping a contact navigates to `chat/{peerUserId}`. Entering chat clears/marks the active conversation but does not create a conversation row; only `MessageRepository.sendText` or an incoming `RECEIVE_MESSAGE` upserts conversation state.
+   - Files changed: `MainActivity.kt`, `SelfHostedImRoute.kt`, `BottomNavigationSpec.kt`, `TopLevelBackPolicy.kt`, `ConversationListViewModel.kt`, `ChatViewModel.kt`, `contacts/ContactListViewModel.kt`, `contacts/ContactListScreen.kt`, `contacts/DemoContactResolver.kt`, `ic_nav_contacts.xml`, and related unit tests.
+   - Current status: Implemented.
+   - Verified: targeted JVM tests cover empty `Messages`, demo contact resolution, Contacts navigation target, three-tab order, top-level Back policy, and removal of the hard-coded chat default peer.
+   - Follow-up: Manual emulator verification is still useful for visual spacing, bottom navigation switching, and the full two-device send/receive demo path.
+
+12. Offline message delivery into Messages
+
+   - Problem: If `13900113900` sent a message while `13800113800` was offline, the mock server logged `RECEIVE_MESSAGE skipped receiver offline`, so `13800113800` did not receive the message after login and `Messages` stayed empty.
+   - Root cause: mock-server had no offline queue, and Android registered the conversation-list packet collector after calling `connect()`, leaving a small race for immediate auth-time delivery.
+   - Fix: `MessageRouter` now keeps an in-memory per-receiver offline queue and sends queued messages as `RECEIVE_MESSAGE` immediately after `AUTH_ACK`. `ConversationListViewModel.start()` now installs state and packet collectors before connecting.
+   - Verification: Added `MessageRouterTest.sendMessageQueuesReceiveMessageForOfflineReceiverUntilAuth` and `ConversationListViewModelTest.startHandlesIncomingPacketEmittedDuringConnect`; full mock-server tests, Android JVM tests, and debug build passed.
+   - Limitation: The offline queue is in-memory demo support. Messages already skipped by a previously running server are not recoverable; restart the server with this code and resend the message for manual verification.
 
 ## Remaining Risks
 

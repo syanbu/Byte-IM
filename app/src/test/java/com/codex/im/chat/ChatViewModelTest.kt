@@ -44,6 +44,13 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun defaultChatStateDoesNotHardcodeDemoPeer() = runTest {
+        val fixture = Fixture(this, initialPeerId = null)
+
+        assertEquals("", fixture.viewModel.state.value.peerId)
+    }
+
+    @Test
     fun sendTextRefreshesVisibleMessages() = runTest {
         val fixture = Fixture(this)
         fixture.viewModel.selectPeer("13900113900")
@@ -250,7 +257,7 @@ class ChatViewModelTest {
         assertEquals(emptyList<String>(), fixture.viewModel.state.value.messages.map { it.content })
     }
 
-    private class Fixture(scope: TestScope) {
+    private class Fixture(scope: TestScope, initialPeerId: String? = "13900113900") {
         val connection = FakeConnection()
         private val messageDao = InMemoryMessageDao()
         val profileDao = InMemoryUserProfileDao()
@@ -263,14 +270,26 @@ class ChatViewModelTest {
             messageIdGenerator = MessageIdGenerator(startCounter = 1),
             seqGenerator = SeqGenerator()
         )
-        val viewModel = ChatViewModel(
-            session = AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L),
-            repository = repository,
-            connection = connection,
-            profileRepository = profileRepository,
-            scope = scope.backgroundScope,
-            dispatcher = StandardTestDispatcher(scope.testScheduler)
-        )
+        val viewModel = if (initialPeerId == null) {
+            ChatViewModel(
+                session = AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L),
+                repository = repository,
+                connection = connection,
+                profileRepository = profileRepository,
+                scope = scope.backgroundScope,
+                dispatcher = StandardTestDispatcher(scope.testScheduler)
+            )
+        } else {
+            ChatViewModel(
+                session = AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L),
+                repository = repository,
+                connection = connection,
+                profileRepository = profileRepository,
+                initialPeerId = initialPeerId,
+                scope = scope.backgroundScope,
+                dispatcher = StandardTestDispatcher(scope.testScheduler)
+            )
+        }
 
         fun seedMessages(count: Int) {
             repeat(count) { index ->

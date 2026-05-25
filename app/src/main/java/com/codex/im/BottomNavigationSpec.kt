@@ -13,9 +13,17 @@ object BottomNavigationSpec {
         iconResId = R.drawable.ic_nav_message
     )
 
+    val contacts = BottomNavigationItemSpec(
+        route = SelfHostedImRoute.Contacts.route,
+        label = "Contacts",
+        iconResId = R.drawable.ic_nav_contacts
+    )
+
     val me = BottomNavigationItemSpec(
         route = SelfHostedImRoute.Me.route,
         label = "Me",
         iconResId = R.drawable.ic_nav_me
     )
+
+    val topLevelItems = listOf(messages, contacts, me)
 }

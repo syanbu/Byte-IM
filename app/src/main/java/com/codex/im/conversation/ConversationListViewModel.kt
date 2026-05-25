@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,7 +37,6 @@ class ConversationListViewModel(
     private val session: AuthSession,
     private val repository: MessageRepository,
     private val connection: ImConnection,
-    private val defaultPeerResolver: (String) -> String,
     private val profileRepository: ProfileRepository,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -54,13 +54,12 @@ class ConversationListViewModel(
             return
         }
         started = true
-        connectIfNeeded()
-        jobs += scope.launch(dispatcher) {
+        jobs += scope.launch(dispatcher, start = CoroutineStart.UNDISPATCHED) {
             connection.states.collect { state ->
                 mutableState.value = mutableState.value.copy(connectionStatus = state.toStatusText())
             }
         }
-        jobs += scope.launch(dispatcher) {
+        jobs += scope.launch(dispatcher, start = CoroutineStart.UNDISPATCHED) {
             connection.incomingPackets.collect { packet ->
                 repository.handlePacket(packet)
                 refresh()
@@ -71,6 +70,7 @@ class ConversationListViewModel(
                 refresh()
             }
         }
+        connectIfNeeded()
         jobs += scope.launch(dispatcher) {
             refresh()
         }
@@ -103,19 +103,13 @@ class ConversationListViewModel(
 
     private suspend fun refresh() {
         val conversations = repository.conversations(limit = 50)
-        val defaultPeerId = defaultPeerResolver(session.userId)
-        val defaultConversationId = repository.conversationIdFor(session.userId, defaultPeerId)
         profileRepository.bootstrapSession(session)
         profileRepository.refreshProfiles(
             accessToken = session.accessToken,
-            userIds = conversations.map { it.peerIdForCurrentSession() } + defaultPeerId
+            userIds = conversations.map { it.peerIdForCurrentSession() }
         )
         val items = conversations.map { it.toItem() }
             .distinctBy { it.conversationId }
-            .toMutableList()
-        if (items.none { it.conversationId == defaultConversationId }) {
-            items.add(defaultPeerItem(defaultPeerId))
-        }
         mutableState.value = mutableState.value.copy(items = items)
     }
 
@@ -140,19 +134,6 @@ class ConversationListViewModel(
             lastMessagePreview = lastMessagePreview,
             lastMessageTime = lastMessageTime,
             unreadCount = unreadCount
-        )
-    }
-
-    private fun defaultPeerItem(peerId: String): ConversationListItem {
-        val profile = profileRepository.localProfile(peerId)
-        return ConversationListItem(
-            conversationId = repository.conversationIdFor(session.userId, peerId),
-            peerId = peerId,
-            peerName = profile?.nickname ?: peerId,
-            peerAvatarUrl = profile?.avatarUrl,
-            lastMessagePreview = "",
-            lastMessageTime = 0L,
-            unreadCount = 0
         )
     }
 

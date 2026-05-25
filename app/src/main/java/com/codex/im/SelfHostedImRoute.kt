@@ -3,6 +3,8 @@ package com.codex.im
 sealed class SelfHostedImRoute(val route: String) {
     data object Conversations : SelfHostedImRoute("conversations")
 
+    data object Contacts : SelfHostedImRoute("contacts")
+
     data object Me : SelfHostedImRoute("me")
 
     data object Chat : SelfHostedImRoute("chat/{peerUserId}") {

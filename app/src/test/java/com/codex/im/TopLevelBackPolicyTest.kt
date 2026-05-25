@@ -16,6 +16,11 @@ class TopLevelBackPolicyTest {
     }
 
     @Test
+    fun contactsRouteExitsAppOnBack() {
+        assertTrue(TopLevelBackPolicy.shouldExitApp(SelfHostedImRoute.Contacts.route))
+    }
+
+    @Test
     fun chatRouteDoesNotExitAppOnBack() {
         assertFalse(TopLevelBackPolicy.shouldExitApp(SelfHostedImRoute.Chat.pattern))
     }

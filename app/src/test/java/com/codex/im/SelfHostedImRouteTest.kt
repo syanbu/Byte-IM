@@ -11,6 +11,11 @@ class SelfHostedImRouteTest {
     }
 
     @Test
+    fun contactsRouteIsTopLevelDestination() {
+        assertEquals("contacts", SelfHostedImRoute.Contacts.route)
+    }
+
+    @Test
     fun chatPatternCarriesPeerUserIdArgument() {
         assertEquals("chat/{peerUserId}", SelfHostedImRoute.Chat.pattern)
     }

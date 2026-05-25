@@ -1,6 +1,5 @@
 package com.codex.im.conversation
 
-import com.codex.im.DefaultPeerResolver
 import com.codex.im.auth.AuthSession
 import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
@@ -33,18 +32,13 @@ import org.junit.Test
 class ConversationListViewModelTest {
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun startShowsFixedMockContactWhenThereAreNoConversations() = runTest {
+    fun startShowsNoRowsWhenThereAreNoConversations() = runTest {
         val fixture = Fixture(this)
 
         fixture.viewModel.start()
         runCurrent()
 
-        val item = fixture.viewModel.state.value.items.single()
-        assertEquals("13900113900", item.peerId)
-        assertEquals("13900113900", item.peerName)
-        assertEquals(null, item.peerAvatarUrl)
-        assertEquals("", item.lastMessagePreview)
-        assertEquals(0, item.unreadCount)
+        assertEquals(emptyList<ConversationListItem>(), fixture.viewModel.state.value.items)
     }
 
     @Test
@@ -73,7 +67,7 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun startShowsRecentConversationsBeforeMockContact() = runTest {
+    fun startShowsOnlyRecentConversations() = runTest {
         val fixture = Fixture(this)
         fixture.repository.sendText("13800113800", "13900113900", "older", now = 1_000L)
         fixture.repository.sendText("13800113800", "13700113700", "newer", now = 2_000L)
@@ -90,7 +84,7 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun startDoesNotAddDuplicateDefaultConversationWhenCanonicalConversationAlreadyExists() = runTest {
+    fun startDoesNotAddDuplicateConversationWhenCanonicalConversationAlreadyExists() = runTest {
         val fixture = Fixture(this)
         fixture.repository.sendText("13900113900", "13800113800", "hello from other login", now = 1_000L)
 
@@ -129,6 +123,33 @@ class ConversationListViewModelTest {
 
         val item = fixture.viewModel.state.value.items.single()
         assertEquals("Hello, You are my Hero", item.lastMessagePreview)
+        assertEquals(1, item.unreadCount)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startHandlesIncomingPacketEmittedDuringConnect() = runTest {
+        val fixture = Fixture(this)
+        fixture.connection.packetToEmitDuringConnect = ImPacket(
+            cmd = 12,
+            body = """
+                {
+                  "messageId":"offline-delivered-during-auth",
+                  "senderId":"13900113900",
+                  "receiverId":"13800113800",
+                  "clientSeq":3,
+                  "serverSeq":6,
+                  "content":"Hello while you were away",
+                  "timestamp":3000
+                }
+            """.trimIndent().toByteArray()
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals("Hello while you were away", item.lastMessagePreview)
         assertEquals(1, item.unreadCount)
     }
 
@@ -201,9 +222,7 @@ class ConversationListViewModelTest {
         )
         runCurrent()
 
-        val item = fixture.viewModel.state.value.items.single()
-        assertEquals("", item.lastMessagePreview)
-        assertEquals(0, item.unreadCount)
+        assertEquals(emptyList<ConversationListItem>(), fixture.viewModel.state.value.items)
     }
 
     private class Fixture(scope: TestScope) {
@@ -223,7 +242,6 @@ class ConversationListViewModelTest {
             session = AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L),
             repository = repository,
             connection = connection,
-            defaultPeerResolver = DefaultPeerResolver::resolve,
             profileRepository = profileRepository,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
@@ -232,12 +250,14 @@ class ConversationListViewModelTest {
 
     private class FakeConnection : ImConnection {
         var connectedToken: String? = null
-        val incoming = MutableSharedFlow<ImPacket>()
+        var packetToEmitDuringConnect: ImPacket? = null
+        val incoming = MutableSharedFlow<ImPacket>(extraBufferCapacity = 64)
         override val states: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Disconnected)
         override val incomingPackets: SharedFlow<ImPacket> = incoming
 
         override fun connect(token: String) {
             connectedToken = token
+            packetToEmitDuringConnect?.let { incoming.tryEmit(it) }
         }
 
         override fun disconnect() = Unit

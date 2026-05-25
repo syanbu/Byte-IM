@@ -46,6 +46,37 @@ public class MessageRouterTest {
     }
 
     @Test
+    public void sendMessageQueuesReceiveMessageForOfflineReceiverUntilAuth() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        CapturingClient sender = new CapturingClient();
+        registry.register("13900113900", sender);
+        MessageRouter router = new MessageRouter(registry, tokenService);
+
+        router.handleSendMessage("13900113900", packet("""
+            {
+              "messageId":"offline-1",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13900113900",
+              "receiverId":"13800113800",
+              "clientSeq":2,
+              "content":"Hello",
+              "timestamp":1000
+            }
+            """));
+
+        CapturingClient receiver = new CapturingClient();
+        router.handleAuth(tokenService.issue("13800113800").token(), receiver);
+
+        assertEquals(ImCommand.AUTH_ACK.value(), receiver.sentPackets.get(0).cmd());
+        assertEquals(ImCommand.RECEIVE_MESSAGE.value(), receiver.sentPackets.get(1).cmd());
+        JsonObject delivered = body(receiver.sentPackets.get(1));
+        assertEquals("offline-1", delivered.get("messageId").getAsString());
+        assertEquals("Hello", delivered.get("content").getAsString());
+        assertTrue(delivered.has("serverSeq"));
+    }
+
+    @Test
     public void authRejectsLegacyTokenWithoutRegisteringUser() {
         ClientSessionRegistry registry = new ClientSessionRegistry();
         MessageRouter router = new MessageRouter(registry, new TokenService("test-secret", () -> 1_000L, 60_000L));

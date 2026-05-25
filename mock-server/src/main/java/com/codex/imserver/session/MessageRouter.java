@@ -7,12 +7,17 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class MessageRouter {
     private final ClientSessionRegistry registry;
     private final TokenService tokenService;
     private final AtomicLong serverSeq = new AtomicLong(1000);
+    private final ConcurrentMap<String, Queue<JsonObject>> offlineMessagesByReceiver = new ConcurrentHashMap<>();
 
     public MessageRouter(ClientSessionRegistry registry) {
         this(registry, TokenService.defaultService());
@@ -62,7 +67,12 @@ public final class MessageRouter {
                     client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
                     System.out.printf("[IM] RECEIVE_MESSAGE forwarded receiver=%s messageId=%s%n", receiverId, messageId);
                 },
-                () -> System.out.printf("[IM] RECEIVE_MESSAGE skipped receiver offline receiver=%s messageId=%s%n", receiverId, messageId)
+                () -> {
+                    offlineMessagesByReceiver
+                            .computeIfAbsent(receiverId, ignored -> new ConcurrentLinkedQueue<>())
+                            .add(message.deepCopy());
+                    System.out.printf("[IM] RECEIVE_MESSAGE queued receiver offline receiver=%s messageId=%s%n", receiverId, messageId);
+                }
         );
     }
 
@@ -85,6 +95,23 @@ public final class MessageRouter {
         body.addProperty("serverTime", System.currentTimeMillis());
         client.send(packet(ImCommand.AUTH_ACK, body));
         client.recordStatus("AUTHENTICATED userId=" + userId + " authAck=sent");
+        deliverQueuedMessages(userId, client);
+    }
+
+    private void deliverQueuedMessages(String userId, OutboundClient client) {
+        Queue<JsonObject> queuedMessages = offlineMessagesByReceiver.remove(userId);
+        if (queuedMessages == null) {
+            return;
+        }
+        JsonObject message;
+        while ((message = queuedMessages.poll()) != null) {
+            client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
+            System.out.printf(
+                    "[IM] RECEIVE_MESSAGE delivered queued receiver=%s messageId=%s%n",
+                    userId,
+                    message.get("messageId").getAsString()
+            );
+        }
     }
 
     private ImPacket packet(ImCommand command, JsonObject body) {

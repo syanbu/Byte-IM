@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class ChatUiState(
-    val peerId: String = "13900113900",
+    val peerId: String = "",
     val peerName: String = peerId,
     val peerAvatarUrl: String? = null,
     val currentUserAvatarUrl: String? = null,
@@ -34,7 +34,7 @@ class ChatViewModel(
     private val repository: MessageRepository,
     private val connection: ImConnection,
     private val profileRepository: ProfileRepository,
-    initialPeerId: String = "13900113900",
+    initialPeerId: String = "",
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -48,7 +48,9 @@ class ChatViewModel(
             return
         }
         started = true
-        repository.openConversation(session.userId, mutableState.value.peerId)
+        if (mutableState.value.peerId.isNotBlank()) {
+            repository.openConversation(session.userId, mutableState.value.peerId)
+        }
         connectIfNeeded()
         jobs += scope.launch(dispatcher) {
             try {

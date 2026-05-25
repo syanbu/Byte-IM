@@ -46,6 +46,9 @@ import com.codex.im.auth.SharedPreferencesTokenStore
 import com.codex.im.chat.ChatScreen
 import com.codex.im.chat.ChatViewModel
 import com.codex.im.connection.OkHttpImConnection
+import com.codex.im.contacts.ContactListScreen
+import com.codex.im.contacts.ContactListViewModel
+import com.codex.im.contacts.DemoContactResolver
 import com.codex.im.conversation.ConversationListScreen
 import com.codex.im.conversation.ConversationListViewModel
 import com.codex.im.message.MessageIdGenerator
@@ -168,26 +171,18 @@ private fun AuthenticatedImNavHost(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            if (currentRoute == SelfHostedImRoute.Conversations.route || currentRoute == SelfHostedImRoute.Me.route) {
+            if (BottomNavigationSpec.topLevelItems.any { it.route == currentRoute }) {
                 NavigationBar {
-                    val messagesTab = BottomNavigationSpec.messages
-                    val meTab = BottomNavigationSpec.me
-                    NavigationBarItem(
-                        selected = currentRoute == messagesTab.route,
-                        onClick = {
-                            navController.navigateToTopLevelTab(messagesTab.route)
-                        },
-                        label = { Text(messagesTab.label) },
-                        icon = { BottomNavigationIcon(messagesTab) }
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == meTab.route,
-                        onClick = {
-                            navController.navigateToTopLevelTab(meTab.route)
-                        },
-                        label = { Text(meTab.label) },
-                        icon = { BottomNavigationIcon(meTab) }
-                    )
+                    BottomNavigationSpec.topLevelItems.forEach { tab ->
+                        NavigationBarItem(
+                            selected = currentRoute == tab.route,
+                            onClick = {
+                                navController.navigateToTopLevelTab(tab.route)
+                            },
+                            label = { Text(tab.label) },
+                            icon = { BottomNavigationIcon(tab) }
+                        )
+                    }
                 }
             }
         }
@@ -210,7 +205,6 @@ private fun AuthenticatedImNavHost(
                         session = session,
                         repository = messageRepository,
                         connection = connection,
-                        defaultPeerResolver = DefaultPeerResolver::resolve,
                         profileRepository = profileRepository
                     )
                 }
@@ -224,6 +218,29 @@ private fun AuthenticatedImNavHost(
                 )
                 TopLevelRouteBackHandler(
                     route = SelfHostedImRoute.Conversations.route,
+                    currentRoute = currentRoute,
+                    activity = activity
+                )
+            }
+
+            composable(SelfHostedImRoute.Contacts.route) {
+                val contactListViewModel = remember(session.userId) {
+                    ContactListViewModel(
+                        session = session,
+                        profileRepository = profileRepository,
+                        contactResolver = DemoContactResolver::contactsFor
+                    )
+                }
+                val contactState by contactListViewModel.state.collectAsState()
+                ContactListScreen(
+                    viewModel = contactListViewModel,
+                    state = contactState,
+                    onOpenContact = { peerUserId ->
+                        SelfHostedImRoute.Chat.createRoute(peerUserId)?.let(navController::navigateToChat)
+                    }
+                )
+                TopLevelRouteBackHandler(
+                    route = SelfHostedImRoute.Contacts.route,
                     currentRoute = currentRoute,
                     activity = activity
                 )
