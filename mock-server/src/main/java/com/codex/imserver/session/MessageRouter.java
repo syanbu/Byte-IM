@@ -28,6 +28,7 @@ public final class MessageRouter {
     private final TokenService tokenService;
     private final ServerSeqStore serverSeqStore;
     private final ConcurrentMap<String, Queue<JsonObject>> offlineMessagesByReceiver = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
 
     public MessageRouter(ClientSessionRegistry registry) {
         this(registry, TokenService.defaultService());
@@ -43,11 +44,22 @@ public final class MessageRouter {
         this.serverSeqStore = serverSeqStore;
     }
 
-    public void handleSendMessage(String senderUserId, ImPacket packet) {
+    public synchronized void handleSendMessage(String senderUserId, ImPacket packet) {
         JsonObject message = JsonParser
                 .parseString(new String(packet.body(), StandardCharsets.UTF_8))
                 .getAsJsonObject();
         String messageId = message.get("messageId").getAsString();
+        AcceptedMessage accepted = acceptedMessagesById.get(messageId);
+        if (accepted != null) {
+            sendAck(senderUserId, accepted.ack());
+            ImServerLogger.log(
+                    "[IM] SEND_MESSAGE duplicate sender=%s messageId=%s serverSeq=%d ackOnly=true",
+                    senderUserId,
+                    messageId,
+                    accepted.serverSeq()
+            );
+            return;
+        }
         String receiverId = message.get("receiverId").getAsString();
         String conversationId = message.get("conversationId").getAsString();
         long clientSeq = message.get("clientSeq").getAsLong();
@@ -71,22 +83,11 @@ public final class MessageRouter {
         ack.addProperty("clientSeq", clientSeq);
         ack.addProperty("serverSeq", nextServerSeq);
         ack.addProperty("serverTime", serverTime);
-        registry.find(senderUserId).ifPresentOrElse(
-                client -> {
-                    client.send(packet(ImCommand.MESSAGE_ACK, ack));
-                    ImServerLogger.log(
-                            "[IM] MESSAGE_ACK sent sender=%s messageId=%s clientSeq=%d serverSeq=%d",
-                            senderUserId,
-                            messageId,
-                            clientSeq,
-                            nextServerSeq
-                    );
-                },
-                () -> ImServerLogger.log("[IM] MESSAGE_ACK skipped sender offline sender=%s messageId=%s", senderUserId, messageId)
-        );
 
         message.addProperty("serverSeq", nextServerSeq);
         message.addProperty("serverTime", serverTime);
+        acceptedMessagesById.put(messageId, new AcceptedMessage(ack.deepCopy(), nextServerSeq));
+        sendAck(senderUserId, ack);
         registry.find(receiverId).ifPresentOrElse(
                 client -> {
                     client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
@@ -108,6 +109,25 @@ public final class MessageRouter {
                             nextServerSeq
                     );
                 }
+        );
+    }
+
+    private void sendAck(String senderUserId, JsonObject ack) {
+        String messageId = ack.get("messageId").getAsString();
+        long clientSeq = ack.get("clientSeq").getAsLong();
+        long serverSeq = ack.get("serverSeq").getAsLong();
+        registry.find(senderUserId).ifPresentOrElse(
+                client -> {
+                    client.send(packet(ImCommand.MESSAGE_ACK, ack));
+                    ImServerLogger.log(
+                            "[IM] MESSAGE_ACK sent sender=%s messageId=%s clientSeq=%d serverSeq=%d",
+                            senderUserId,
+                            messageId,
+                            clientSeq,
+                            serverSeq
+                    );
+                },
+                () -> ImServerLogger.log("[IM] MESSAGE_ACK skipped sender offline sender=%s messageId=%s", senderUserId, messageId)
         );
     }
 
@@ -158,6 +178,9 @@ public final class MessageRouter {
 
     private ImPacket packet(ImCommand command, JsonObject body) {
         return new ImPacket(command.value(), body.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private record AcceptedMessage(JsonObject ack, long serverSeq) {
     }
 
     public interface ServerSeqStore {

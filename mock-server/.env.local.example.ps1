@@ -1,0 +1,5 @@
+$env:ALIYUN_OSS_ACCESS_KEY_ID = ""
+$env:ALIYUN_OSS_ACCESS_KEY_SECRET = ""
+$env:ALIYUN_OSS_ENDPOINT = "oss-cn-shenzhen.aliyuncs.com"
+$env:ALIYUN_OSS_BUCKET = "im-byte"
+$env:ALIYUN_OSS_PUBLIC_BASE_URL = "https://im-byte.oss-cn-shenzhen.aliyuncs.com"

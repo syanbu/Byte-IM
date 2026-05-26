@@ -58,6 +58,12 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
         super.channelInactive(context);
     }
 
+    @Override
+    public void exceptionCaught(ChannelHandlerContext context, Throwable cause) {
+        ImServerLogger.log("[IM] WebSocket connection exception: %s", cause.getMessage());
+        context.close();
+    }
+
     private String senderId(ImPacket packet) {
         JsonObject body = JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
         return body.get("senderId").getAsString();

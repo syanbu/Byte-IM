@@ -7,8 +7,12 @@ Simple Java/Netty mock server for local Android IM client testing.
 ```powershell
 cd D:\Desktop\engine\IM\mock-server
 mvn -q test
-mvn -q exec:java
+.\start-mock-server.ps1
 ```
+
+On Windows, `start-mock-server.ps1` loads local OSS variables from
+`.env.local.ps1` before starting the server. Keep real AccessKey values in
+`.env.local.ps1`; use `.env.local.example.ps1` as the template.
 
 ## Endpoints
 
