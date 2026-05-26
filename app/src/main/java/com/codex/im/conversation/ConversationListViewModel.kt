@@ -104,10 +104,15 @@ class ConversationListViewModel(
     private suspend fun refresh() {
         val conversations = repository.conversations(limit = 50)
         profileRepository.bootstrapSession(session)
+        updateItems(conversations)
         profileRepository.refreshProfiles(
             accessToken = session.accessToken,
             userIds = conversations.map { it.peerIdForCurrentSession() }
         )
+        updateItems(conversations)
+    }
+
+    private fun updateItems(conversations: List<Conversation>) {
         val items = conversations.map { it.toItem() }
             .distinctBy { it.conversationId }
         mutableState.value = mutableState.value.copy(items = items)
@@ -119,7 +124,8 @@ class ConversationListViewModel(
             is ConnectionState.Failed -> connection.connect(session.token)
             ConnectionState.Connecting,
             ConnectionState.Connected,
-            ConnectionState.Authenticated -> Unit
+            ConnectionState.Authenticated,
+            is ConnectionState.Reconnecting -> Unit
         }
     }
 
@@ -143,6 +149,7 @@ class ConversationListViewModel(
             ConnectionState.Connecting -> "Connecting"
             ConnectionState.Connected -> "Connected"
             ConnectionState.Authenticated -> "Authenticated"
+            is ConnectionState.Reconnecting -> "Reconnecting in ${delayMillis / 1_000}s"
             is ConnectionState.Failed -> "Failed: $reason"
         }
     }

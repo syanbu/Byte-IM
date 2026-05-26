@@ -1,5 +1,6 @@
 package com.codex.imserver.session;
 
+import com.codex.imserver.ImServerLogger;
 import com.codex.imserver.auth.TokenService;
 import com.codex.imserver.protocol.ImCommand;
 import com.codex.imserver.protocol.ImPacket;
@@ -37,8 +38,8 @@ public final class MessageRouter {
         long nextServerSeq = serverSeq.incrementAndGet();
         long serverTime = System.currentTimeMillis();
 
-        System.out.printf(
-                "[IM] SEND_MESSAGE sender=%s receiver=%s messageId=%s serverSeq=%d content=%s%n",
+        ImServerLogger.log(
+                "[IM] SEND_MESSAGE sender=%s receiver=%s messageId=%s serverSeq=%d content=%s",
                 senderUserId,
                 receiverId,
                 messageId,
@@ -55,9 +56,9 @@ public final class MessageRouter {
         registry.find(senderUserId).ifPresentOrElse(
                 client -> {
                     client.send(packet(ImCommand.MESSAGE_ACK, ack));
-                    System.out.printf("[IM] MESSAGE_ACK sent sender=%s messageId=%s%n", senderUserId, messageId);
+                    ImServerLogger.log("[IM] MESSAGE_ACK sent sender=%s messageId=%s", senderUserId, messageId);
                 },
-                () -> System.out.printf("[IM] MESSAGE_ACK skipped sender offline sender=%s messageId=%s%n", senderUserId, messageId)
+                () -> ImServerLogger.log("[IM] MESSAGE_ACK skipped sender offline sender=%s messageId=%s", senderUserId, messageId)
         );
 
         message.addProperty("serverSeq", nextServerSeq);
@@ -65,28 +66,30 @@ public final class MessageRouter {
         registry.find(receiverId).ifPresentOrElse(
                 client -> {
                     client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
-                    System.out.printf("[IM] RECEIVE_MESSAGE forwarded receiver=%s messageId=%s%n", receiverId, messageId);
+                    ImServerLogger.log("[IM] RECEIVE_MESSAGE forwarded receiver=%s messageId=%s", receiverId, messageId);
                 },
                 () -> {
                     offlineMessagesByReceiver
                             .computeIfAbsent(receiverId, ignored -> new ConcurrentLinkedQueue<>())
                             .add(message.deepCopy());
-                    System.out.printf("[IM] RECEIVE_MESSAGE queued receiver offline receiver=%s messageId=%s%n", receiverId, messageId);
+                    ImServerLogger.log("[IM] RECEIVE_MESSAGE queued receiver offline receiver=%s messageId=%s", receiverId, messageId);
                 }
         );
     }
 
     public void handleHeartbeat(OutboundClient client) {
+        String userId = registry.userIdOf(client).orElse("unknown");
+        ImServerLogger.log("[IM] HEARTBEAT received userId=%s", userId);
         JsonObject body = new JsonObject();
         body.addProperty("serverTime", System.currentTimeMillis());
         client.send(packet(ImCommand.HEARTBEAT_ACK, body));
-        System.out.println("[IM] HEARTBEAT_ACK sent");
+        ImServerLogger.log("[IM] HEARTBEAT_ACK sent userId=%s", userId);
     }
 
     public void handleAuth(String token, OutboundClient client) {
         String userId = tokenService.verify(token).orElse(null);
         if (userId == null) {
-            System.out.println("[IM] AUTH rejected invalid or expired token");
+            ImServerLogger.log("[IM] AUTH rejected invalid or expired token");
             return;
         }
         registry.register(userId, client);
@@ -106,8 +109,8 @@ public final class MessageRouter {
         JsonObject message;
         while ((message = queuedMessages.poll()) != null) {
             client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
-            System.out.printf(
-                    "[IM] RECEIVE_MESSAGE delivered queued receiver=%s messageId=%s%n",
+            ImServerLogger.log(
+                    "[IM] RECEIVE_MESSAGE delivered queued receiver=%s messageId=%s",
                     userId,
                     message.get("messageId").getAsString()
             );

@@ -1,5 +1,6 @@
 package com.codex.imserver.auth;
 
+import com.codex.imserver.ImServerLogger;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -132,8 +133,8 @@ public final class AuthService {
     }
 
     public String updateProfile(String phone, String nickname, String avatarUrl, String avatarObjectKey) {
-        System.out.printf(
-                "[IM] PROFILE_UPDATE_REQUEST userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s%n",
+        ImServerLogger.log(
+                "[IM] PROFILE_UPDATE_REQUEST userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s",
                 phone,
                 nickname,
                 avatarUrl,
@@ -147,12 +148,12 @@ public final class AuthService {
                 tokenService.currentTimeMillis()
         );
         if (record.isEmpty()) {
-            System.out.printf("[IM] PROFILE_UPDATE_FAILED userId=%s reason=user-not-found%n", phone);
+            ImServerLogger.log("[IM] PROFILE_UPDATE_FAILED userId=%s reason=user-not-found", phone);
             return failure(404, "User not found");
         }
         UserRecord updated = record.get();
-        System.out.printf(
-                "[IM] PROFILE_UPDATED userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s updatedAt=%d%n",
+        ImServerLogger.log(
+                "[IM] PROFILE_UPDATED userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s updatedAt=%d",
                 updated.phone(),
                 updated.nickname(),
                 updated.avatarUrl(),

@@ -18,7 +18,7 @@ Development constraints: [`docs/DEVELOPMENT-CONSTRAINTS.md`](DEVELOPMENT-CONSTRA
 | B4 | History message pagination, pull/load more | Partial | [B4-history-pagination.md](status/B4-history-pagination.md) |
 | B5 | Message persistence with SQLite, no Room | Done | [B5-local-persistence.md](status/B5-local-persistence.md) |
 | B6 | Custom binary protocol with header, body, CRC | Done | [B6-binary-protocol.md](status/B6-binary-protocol.md) |
-| B7 | Heartbeat and reconnect | Not started | [B7-heartbeat-reconnect.md](status/B7-heartbeat-reconnect.md) |
+| B7 | Heartbeat and reconnect | Done | [B7-heartbeat-reconnect.md](status/B7-heartbeat-reconnect.md) |
 | B8 | Message ordering with client seq / server ACK | Partial | [B8-message-ordering.md](status/B8-message-ordering.md) |
 | B9 | Reliability: ACK, retry, deduplication | Partial | [B9-message-reliability.md](status/B9-message-reliability.md) |
 | Mock server | Local Netty server for auth and WebSocket tests | Done for current B1/B2 path | [mock-server.md](status/mock-server.md) |
@@ -70,6 +70,7 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 - B4 local history pagination is complete for SQLite-backed offline history.
 - B5 SQLite persistence foundation is complete.
 - B6 binary protocol codec is complete and documented in `docs/WEBSOCKET_PROTOCOL_AND_STATES.md`.
+- B7 heartbeat and reconnect are complete on Android: foreground 15s heartbeat, background 75s heartbeat, heartbeat ACK liveness, timeout disconnect, exponential reconnect backoff, and `Reconnecting` UI state.
 - Local Java/Netty mock server supports the current auth and single-chat WebSocket path.
 - Self-design chat/profile UI work is implemented, including Messages/Me tabs, profile display/edit, avatar upload plumbing, peer nickname/avatar display, vector tab icons, avatar caching, chat composer polish, and corrected Back semantics.
 - Project-level development constraints are documented in `docs/DEVELOPMENT-CONSTRAINTS.md`.
@@ -81,7 +82,6 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 
 ## Not Started
 
-- B7 client heartbeat and reconnect manager.
 - B8 full receive-side ordering/reorder behavior.
 - B9 retry loop and failure-state handling.
 - Phase 10 performance, packet capture, and stability evidence.

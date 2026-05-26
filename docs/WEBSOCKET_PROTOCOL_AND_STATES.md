@@ -47,6 +47,7 @@ Current states:
 | `Connecting` | Client is opening the WebSocket connection. |
 | `Connected` | WebSocket `onOpen` fired. The socket is open, but IM auth is not confirmed yet. |
 | `Authenticated` | Client received protocol `AUTH_ACK`. The IM session is authenticated and usable. |
+| `Reconnecting(delayMillis, reason)` | Client detected a disconnect, failure, or heartbeat timeout and is waiting for the next reconnect attempt. |
 | `Failed(reason)` | WebSocket or protocol handling failed. |
 
 ## Runtime Flow
@@ -78,9 +79,33 @@ Mock server validates access token
 Android receives AUTH_ACK
   -> ConnectionState.Authenticated
   -> chat screen shows: Connection: Authenticated
+  -> ConnectionLifecycleManager starts foreground heartbeat every 15s
 ```
 
 `AUTH_ACK` is a protocol message. `Authenticated` is the local Android state derived from receiving that protocol message.
+
+## Heartbeat and Reconnect Flow
+
+B7 adds an Android-side `ConnectionLifecycleManager` that wraps the raw OkHttp connection.
+
+```text
+Authenticated
+  -> send HEARTBEAT every 15s while foreground, or every 75s while background
+  -> HEARTBEAT_ACK refreshes liveness
+  -> 2 missed heartbeat intervals
+  -> disconnect raw WebSocket
+  -> Reconnecting(delayMillis, "heartbeat timeout")
+  -> reconnect with delays 1s, 2s, 4s, 8s, 16s, then 30s capped
+  -> Authenticated resets reconnect delay to 1s
+```
+
+Foreground/background policy:
+
+- Foreground: run heartbeat every 15s and reconnect automatically after disconnect, failure, or heartbeat timeout.
+- Background: keep the WebSocket open, slow heartbeat to every 75s, and keep reconnect enabled.
+- Return to foreground: authenticated sockets switch heartbeat back to 15s; disconnected or failed sockets schedule reconnect.
+
+Reconnect in B7 only restores the WebSocket session. It does not implement B8 receive-side reordering or B9 pending-message retry/replay.
 
 ## Message Status
 

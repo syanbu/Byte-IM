@@ -18,6 +18,7 @@ import com.codex.im.profile.ProfileBatchResult
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.profile.ProfileResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -155,6 +156,21 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun startShowsLocalConversationsBeforeRemoteProfileRefreshCompletes() = runTest {
+        val profileApi = BlockingBatchProfileApi()
+        val fixture = Fixture(this, profileApi = profileApi)
+        fixture.repository.sendText("13800113800", "13900113900", "local while server unavailable", now = 1_000L)
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals("13900113900", item.peerId)
+        assertEquals("local while server unavailable", item.lastMessagePreview)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun openConversationClearsUnreadAndExposesNavigationTarget() = runTest {
         val fixture = Fixture(this)
         fixture.repository.handlePacket(
@@ -225,11 +241,11 @@ class ConversationListViewModelTest {
         assertEquals(emptyList<ConversationListItem>(), fixture.viewModel.state.value.items)
     }
 
-    private class Fixture(scope: TestScope) {
+    private class Fixture(scope: TestScope, profileApi: ProfileApi = FakeProfileApi()) {
         val connection = FakeConnection()
         private val conversationDao = InMemoryConversationDao()
         val profileDao = InMemoryUserProfileDao()
-        private val profileRepository = ProfileRepository(profileDao, FakeProfileApi())
+        private val profileRepository = ProfileRepository(profileDao, profileApi)
         val repository = MessageRepository(
             messageDao = InMemoryMessageDao(),
             conversationDao = conversationDao,
@@ -272,6 +288,25 @@ class ConversationListViewModelTest {
 
         override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
             return ProfileBatchResult.Success(emptyList())
+        }
+
+        override suspend fun updateMe(
+            accessToken: String,
+            nickname: String,
+            avatarUrl: String?,
+            avatarObjectKey: String?
+        ): ProfileResult = ProfileResult.Failure("unused")
+    }
+
+    private class BlockingBatchProfileApi : ProfileApi {
+        private val neverCompletes = CompletableDeferred<ProfileBatchResult>()
+
+        override suspend fun me(accessToken: String): ProfileResult = ProfileResult.Failure("unused")
+
+        override suspend fun user(accessToken: String, userId: String): ProfileResult = ProfileResult.Failure("unused")
+
+        override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
+            return neverCompletes.await()
         }
 
         override suspend fun updateMe(

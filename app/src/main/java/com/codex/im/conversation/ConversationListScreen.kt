@@ -54,6 +54,13 @@ fun ConversationListScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(text = "Messages", style = MaterialTheme.typography.headlineSmall)
+        ConversationConnectionStatusPolicy.visibleLabel(state.connectionStatus)?.let { statusLabel ->
+            Text(
+                text = statusLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(state.items, key = { it.conversationId }) { item ->
                 ConversationRow(

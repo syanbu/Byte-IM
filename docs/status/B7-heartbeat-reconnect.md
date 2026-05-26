@@ -6,7 +6,7 @@ Heartbeat and reconnect with exponential backoff and foreground/background aware
 
 ## Status
 
-Not started on the Android client.
+Done on the Android client.
 
 ## Existing Support
 
@@ -14,18 +14,45 @@ Not started on the Android client.
 - Mock server can respond to heartbeat packets.
 - Connection state is exposed to UI as a `StateFlow`.
 
-## Missing Work
+## Completed
 
-- Add `HeartbeatManager`.
-- Send heartbeat every 15 seconds after authenticated connection.
-- Detect missed `HEARTBEAT_ACK` responses.
-- Disconnect and trigger reconnect after timeout.
-- Add `ReconnectPolicy` with 1s, 2s, 4s, 8s, 16s, and 30s cap.
-- Add foreground/background awareness.
-- Update UI status for connecting, connected/authenticated, reconnecting, and offline states.
-- Prepare repeated disconnect/reconnect verification.
+- Added `ReconnectPolicy` with delays of 1s, 2s, 4s, 8s, 16s, and a 30s cap.
+- Added `ConnectionLifecycleManager` as the single Android connection supervisor. It wraps `ImConnection`, forwards packets and sends, and exposes managed connection state.
+- Added `ConnectionState.Reconnecting(delayMillis, reason)` so UI state can distinguish reconnecting from connecting, authenticated, disconnected, and failed.
+- After `ConnectionState.Authenticated`, the client sends `HEARTBEAT` every 15 seconds in the foreground and every 75 seconds in the background.
+- `HEARTBEAT_ACK` refreshes heartbeat liveness.
+- If 2 heartbeat intervals pass without an ACK, the manager disconnects the socket and reconnects through `ReconnectPolicy`.
+- `Disconnected`, `Failed`, and heartbeat timeout paths automatically reconnect while the app process is running, including the 75s-heartbeat background state.
+- Authentication success resets the reconnect policy back to the 1s delay.
+- `ConversationListViewModel` and `ChatViewModel` now treat `Reconnecting` as an active lifecycle state instead of issuing duplicate direct connects.
+- `MainActivity` wires a shared `ConnectionLifecycleManager` into message repository and ViewModels.
+- The Messages page renders connection status only when communication is not healthy, for example `Connection: Disconnected`, `Connection: Connecting`, `Connection: Reconnecting in 4s`, or `Connection: Failed: ...`; healthy `Connected`/`Authenticated` states are hidden.
+- The Messages page renders local conversations before remote profile refresh completes, so a stopped server or slow profile request does not block the local list while reconnect status is shown.
+
+## Foreground/Background Strategy
+
+The Android client uses a lower-frequency background keepalive policy:
+
+- Foreground: heartbeat runs every 15 seconds after authentication, and disconnect/failure paths reconnect automatically.
+- Background: the WebSocket connection remains open, heartbeat slows to every 75 seconds, and disconnect/failure paths still reconnect automatically.
+- Return to foreground: the manager checks the current socket state. If still authenticated, heartbeat switches back to every 15 seconds. If disconnected or failed, reconnect scheduling starts.
+- Top-level Back from Messages, Contacts, or Me moves the task to the background with `Activity.moveTaskToBack(true)` instead of finishing the Activity, so the B7 background connection strategy can continue running while the process remains alive.
+
+This deliberately avoids B8/B9 behavior: reconnect does not replay pending messages, reorder messages, or retry unacked messages.
+
+## Remaining Risks
+
+- Manual emulator or device validation with real network toggling is still recommended.
+- No 50-cycle manual disconnect/reconnect soak record has been captured yet.
+- Android may still restrict or kill background work depending on emulator/device policy; B13 push remains the later-stage answer for killed-process delivery.
+- Manual emulator verification should include Back from Messages, Contacts, and Me confirming the app returns to the launcher without Activity destruction.
 
 ## Verification
 
-No B7-specific Android verification yet.
+| Date | Area | Command | Result |
+|---|---|---|---|
+| 2026-05-25 | B7 focused unit tests | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.connection.ReconnectPolicyTest --tests com.codex.im.connection.ConnectionLifecycleManagerTest --console=plain` | Passed: reconnect delay sequence, reset, heartbeat send, ACK liveness, heartbeat timeout reconnect, auth reset, stop cancellation, background 75s heartbeat, background reconnect, and foreground 15s restore behavior. |
+| 2026-05-25 | Android unit tests | `.\gradlew.bat :app:testDebugUnitTest --console=plain` | Passed. |
+| 2026-05-25 | Android debug build | `.\gradlew.bat :app:assembleDebug --console=plain` | Passed. |
+| 2026-05-25 | Mock server tests | `mvn -q test` in `mock-server` | Passed. |
 

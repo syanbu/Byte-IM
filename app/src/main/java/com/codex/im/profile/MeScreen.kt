@@ -40,7 +40,7 @@ fun MeScreen(
     viewModel: MeViewModel,
     state: MeUiState,
     modifier: Modifier = Modifier,
-    onExitApp: () -> Unit,
+    onMoveTaskToBack: () -> Unit,
     onLogout: suspend () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -84,7 +84,7 @@ fun MeScreen(
         when (MeBackPolicy.action(showProfileDetail = showProfileDetail, showNameEditor = showNameEditor)) {
             MeBackAction.CloseNameEditor -> closeNameEditor()
             MeBackAction.CloseProfileDetail -> closeProfileDetail()
-            MeBackAction.ExitApp -> onExitApp()
+            MeBackAction.MoveTaskToBack -> onMoveTaskToBack()
         }
     }
     BackHandler(onBack = handleBack)

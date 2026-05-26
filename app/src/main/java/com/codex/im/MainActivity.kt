@@ -46,6 +46,8 @@ import com.codex.im.auth.SharedPreferencesTokenStore
 import com.codex.im.chat.ChatScreen
 import com.codex.im.chat.ChatViewModel
 import com.codex.im.connection.OkHttpImConnection
+import com.codex.im.connection.ConnectionLifecycleManager
+import com.codex.im.connection.ImConnection
 import com.codex.im.contacts.ContactListScreen
 import com.codex.im.contacts.ContactListViewModel
 import com.codex.im.contacts.DemoContactResolver
@@ -67,10 +69,14 @@ import com.codex.im.storage.AndroidUserProfileDao
 import com.codex.im.storage.ImDatabaseHelper
 
 class MainActivity : ComponentActivity() {
+    private var connectionLifecycleManager: ConnectionLifecycleManager? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val database = ImDatabaseHelper(this).writableDatabase
-        val connection = OkHttpImConnection(DEFAULT_MOCK_SERVER_WS_URL)
+        val rawConnection = OkHttpImConnection(DEFAULT_MOCK_SERVER_WS_URL)
+        val connection = ConnectionLifecycleManager(rawConnection)
+        connectionLifecycleManager = connection
         val repository = AuthRepository(
             authApi = OkHttpAuthApi(baseUrl = DEFAULT_MOCK_SERVER_URL),
             tokenStore = SharedPreferencesTokenStore(this)
@@ -99,6 +105,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        connectionLifecycleManager?.setForeground(true)
+    }
+
+    override fun onStop() {
+        connectionLifecycleManager?.setForeground(false)
+        super.onStop()
+    }
+
     private companion object {
         const val DEFAULT_MOCK_SERVER_URL = "http://10.0.2.2:8080"
         const val DEFAULT_MOCK_SERVER_WS_URL = "ws://10.0.2.2:8080/ws"
@@ -109,7 +125,7 @@ class MainActivity : ComponentActivity() {
 fun SelfHostedImApp(
     loginViewModel: LoginViewModel? = null,
     messageRepository: MessageRepository? = null,
-    connection: OkHttpImConnection? = null,
+    connection: ImConnection? = null,
     profileRepository: ProfileRepository? = null,
     avatarUploadApi: AvatarUploadApi? = null
 ) {
@@ -158,7 +174,7 @@ fun SelfHostedImApp(
 private fun AuthenticatedImNavHost(
     session: AuthSession,
     messageRepository: MessageRepository,
-    connection: OkHttpImConnection,
+    connection: ImConnection,
     profileRepository: ProfileRepository,
     avatarUploadApi: AvatarUploadApi,
     onLogout: suspend () -> Unit
@@ -258,8 +274,8 @@ private fun AuthenticatedImNavHost(
                 MeScreen(
                     viewModel = meViewModel,
                     state = meState,
-                    onExitApp = {
-                        activity?.finish()
+                    onMoveTaskToBack = {
+                        activity?.moveTaskToBack(true)
                     },
                     onLogout = onLogout
                 )
@@ -316,8 +332,8 @@ private fun TopLevelRouteBackHandler(
     currentRoute: String?,
     activity: Activity?
 ) {
-    BackHandler(enabled = currentRoute == route && TopLevelBackPolicy.shouldExitApp(route)) {
-        activity?.finish()
+    BackHandler(enabled = currentRoute == route && TopLevelBackPolicy.shouldMoveTaskToBack(route)) {
+        activity?.moveTaskToBack(true)
     }
 }
 

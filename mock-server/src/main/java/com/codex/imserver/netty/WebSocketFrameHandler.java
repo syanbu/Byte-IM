@@ -1,5 +1,6 @@
 package com.codex.imserver.netty;
 
+import com.codex.imserver.ImServerLogger;
 import com.codex.imserver.protocol.ImCommand;
 import com.codex.imserver.protocol.ImPacket;
 import com.codex.imserver.protocol.ImPacketCodec;
@@ -44,9 +45,9 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
                 messageRouter.handleSendMessage(senderUserId, packet);
                 return;
             }
-            System.out.printf("[IM] Unknown packet cmd=%d%n", packet.cmd());
+            ImServerLogger.log("[IM] Unknown packet cmd=%d", packet.cmd());
         } catch (RuntimeException error) {
-            System.out.printf("[IM] WebSocket packet error: %s%n", error.getMessage());
+            ImServerLogger.log("[IM] WebSocket packet error: %s", error.getMessage());
             error.printStackTrace(System.out);
         }
     }

@@ -1,7 +1,7 @@
 package com.codex.im.profile
 
 enum class MeBackAction {
-    ExitApp,
+    MoveTaskToBack,
     CloseProfileDetail,
     CloseNameEditor
 }
@@ -11,7 +11,7 @@ object MeBackPolicy {
         return when {
             showProfileDetail && showNameEditor -> MeBackAction.CloseNameEditor
             showProfileDetail -> MeBackAction.CloseProfileDetail
-            else -> MeBackAction.ExitApp
+            else -> MeBackAction.MoveTaskToBack
         }
     }
 }

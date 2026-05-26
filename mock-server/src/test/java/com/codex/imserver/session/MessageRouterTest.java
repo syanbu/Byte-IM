@@ -7,6 +7,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -96,6 +98,28 @@ public class MessageRouterTest {
         router.handleAuth(tokenService.issue("13800138000").token(), client);
 
         assertEquals(List.of("AUTHENTICATED userId=13800138000 authAck=sent"), client.statusEvents);
+    }
+
+    @Test
+    public void heartbeatLogIdentifiesClientAndAckRecipient() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient client = new CapturingClient();
+        registry.register("13800113800", client);
+        MessageRouter router = new MessageRouter(registry);
+        PrintStream originalOut = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        try {
+            System.setOut(new PrintStream(output));
+            router.handleHeartbeat(client);
+        } finally {
+            System.setOut(originalOut);
+        }
+
+        assertEquals(ImCommand.HEARTBEAT_ACK.value(), client.sentPackets.get(0).cmd());
+        String log = output.toString(StandardCharsets.UTF_8);
+        assertTrue(log.matches("(?s).*\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[IM] HEARTBEAT received userId=13800113800.*"));
+        assertTrue(log.matches("(?s).*\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[IM] HEARTBEAT_ACK sent userId=13800113800.*"));
     }
 
     private static ImPacket packet(String json) {

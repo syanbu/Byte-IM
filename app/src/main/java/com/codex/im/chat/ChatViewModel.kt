@@ -220,7 +220,8 @@ class ChatViewModel(
             is ConnectionState.Failed -> connection.connect(session.token)
             ConnectionState.Connecting,
             ConnectionState.Connected,
-            ConnectionState.Authenticated -> Unit
+            ConnectionState.Authenticated,
+            is ConnectionState.Reconnecting -> Unit
         }
     }
 

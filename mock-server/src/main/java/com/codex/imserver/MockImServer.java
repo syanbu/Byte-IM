@@ -57,8 +57,8 @@ public final class MockImServer {
                     .bind(port)
                     .sync()
                     .channel();
-            System.out.println("Mock IM server listening on http://127.0.0.1:" + port);
-            System.out.println("WebSocket endpoint ws://127.0.0.1:" + port + "/ws");
+            ImServerLogger.log("Mock IM server listening on http://127.0.0.1:%d", port);
+            ImServerLogger.log("WebSocket endpoint ws://127.0.0.1:%d/ws", port);
             channel.closeFuture().sync();
         } finally {
             bossGroup.shutdownGracefully();

@@ -5,9 +5,9 @@ import org.junit.Test
 
 class MeBackPolicyTest {
     @Test
-    fun topLevelMeBackExitsApp() {
+    fun topLevelMeBackMovesTaskToBack() {
         assertEquals(
-            MeBackAction.ExitApp,
+            MeBackAction.MoveTaskToBack,
             MeBackPolicy.action(showProfileDetail = false, showNameEditor = false)
         )
     }
