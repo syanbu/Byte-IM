@@ -24,7 +24,7 @@ class InMemoryMessageDao : MessageDao {
             .asSequence()
             .filter { it.conversationId == conversationId }
             .filter { beforeTime == null || it.createdAt < beforeTime }
-            .sortedWith(compareByDescending<ChatMessage> { it.createdAt }.thenByDescending { it.messageId })
+            .sortedWith(MessageOrderingPolicy.newestFirst)
             .take(limit)
             .toList()
     }

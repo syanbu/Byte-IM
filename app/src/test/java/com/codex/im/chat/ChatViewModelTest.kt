@@ -180,6 +180,53 @@ class ChatViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun incomingPacketsAreDisplayedByServerSeqAfterOutOfOrderArrival() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.connection.incoming.emit(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-2",
+                      "conversationId":"single:13800113800:13900113900",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"server second",
+                      "timestamp":1000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        fixture.connection.incoming.emit(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-1",
+                      "conversationId":"single:13800113800:13900113900",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":1,
+                      "content":"server first",
+                      "timestamp":2000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        runCurrent()
+
+        assertEquals(listOf(2L, 1L), fixture.viewModel.state.value.messages.map { it.serverSeq })
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun incomingPacketKeepsPreviouslyLoadedHistory() = runTest {
         val fixture = Fixture(this)
         fixture.seedMessages(25)

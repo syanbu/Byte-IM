@@ -1,5 +1,16 @@
 # Development Constraints
 
+## Android Message Receive Semantics
+
+The Android client must receive and persist IM messages for the authenticated user regardless of which top-level page is visible.
+
+- `Messages`, `Contacts`, and `Me` must all keep the login session capable of receiving WebSocket `RECEIVE_MESSAGE` packets.
+- Message receiving must not depend on the currently visible page ViewModel collecting `incomingPackets`.
+- A login-session scoped receiver, such as `MessagePacketProcessor`, must collect message packets and persist them through `MessageRepository`.
+- Page ViewModels may refresh UI from local storage or repository update events, but they must not be the only consumer that prevents packet loss.
+- Opening `Chat` after receiving a message on `Contacts` or `Me` must show the persisted message from local SQLite.
+- This receive guarantee does not imply B9 retry, ACK timeout retry, pending outbox replay, or reconnect backfill.
+
 ## Android Back Navigation Semantics
 
 The top-left back button on all pages must follow the same semantics as the Android system Back action.

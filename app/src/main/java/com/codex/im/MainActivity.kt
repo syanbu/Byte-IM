@@ -22,6 +22,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +55,7 @@ import com.codex.im.contacts.DemoContactResolver
 import com.codex.im.conversation.ConversationListScreen
 import com.codex.im.conversation.ConversationListViewModel
 import com.codex.im.message.MessageIdGenerator
+import com.codex.im.message.MessagePacketProcessor
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
 import com.codex.im.profile.MeScreen
@@ -183,6 +185,19 @@ private fun AuthenticatedImNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val activity = LocalContext.current.findActivity()
+    val messagePacketProcessor = remember(session.userId) {
+        MessagePacketProcessor(
+            repository = messageRepository,
+            connection = connection
+        )
+    }
+
+    DisposableEffect(messagePacketProcessor) {
+        messagePacketProcessor.start()
+        onDispose {
+            messagePacketProcessor.stop()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,

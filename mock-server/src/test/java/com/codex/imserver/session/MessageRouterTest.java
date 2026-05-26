@@ -10,6 +10,8 @@ import org.junit.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -42,9 +44,11 @@ public class MessageRouterTest {
         JsonObject ack = body(sender.sentPackets.get(0));
         assertEquals("m1", ack.get("messageId").getAsString());
         assertEquals(1, ack.get("clientSeq").getAsLong());
+        assertEquals(1001, ack.get("serverSeq").getAsLong());
         JsonObject received = body(receiver.sentPackets.get(0));
         assertEquals("hello", received.get("content").getAsString());
         assertEquals("13800113800", received.get("senderId").getAsString());
+        assertEquals(1001, received.get("serverSeq").getAsLong());
     }
 
     @Test
@@ -76,6 +80,149 @@ public class MessageRouterTest {
         assertEquals("offline-1", delivered.get("messageId").getAsString());
         assertEquals("Hello", delivered.get("content").getAsString());
         assertTrue(delivered.has("serverSeq"));
+    }
+
+    @Test
+    public void serverSeqIsIndependentPerConversationAndIncreasesWithinConversation() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiverB = new CapturingClient();
+        CapturingClient receiverC = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiverB);
+        registry.register("13700113700", receiverC);
+        MessageRouter router = new MessageRouter(registry);
+
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"ab-1",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"to B first",
+              "timestamp":1000
+            }
+            """));
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"ac-1",
+              "conversationId":"single:13700113700:13800113800",
+              "senderId":"13800113800",
+              "receiverId":"13700113700",
+              "clientSeq":2,
+              "content":"to C first",
+              "timestamp":1001
+            }
+            """));
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"ab-2",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":3,
+              "content":"to B second",
+              "timestamp":1002
+            }
+            """));
+
+        assertEquals(1001, body(receiverB.sentPackets.get(0)).get("serverSeq").getAsLong());
+        assertEquals(1001, body(receiverC.sentPackets.get(0)).get("serverSeq").getAsLong());
+        assertEquals(1002, body(receiverB.sentPackets.get(1)).get("serverSeq").getAsLong());
+    }
+
+    @Test
+    public void serverSeqStoreKeepsConversationSequenceAcrossRouterRestart() {
+        MessageRouter.ServerSeqStore seqStore = new MessageRouter.InMemoryServerSeqStore();
+
+        ClientSessionRegistry firstRegistry = new ClientSessionRegistry();
+        CapturingClient firstSender = new CapturingClient();
+        CapturingClient firstReceiver = new CapturingClient();
+        firstRegistry.register("13800113800", firstSender);
+        firstRegistry.register("13900113900", firstReceiver);
+        MessageRouter firstRouter = new MessageRouter(firstRegistry, TokenService.defaultService(), seqStore);
+        firstRouter.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"before-restart",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"before",
+              "timestamp":1000
+            }
+            """));
+
+        ClientSessionRegistry secondRegistry = new ClientSessionRegistry();
+        CapturingClient secondSender = new CapturingClient();
+        CapturingClient secondReceiver = new CapturingClient();
+        secondRegistry.register("13800113800", secondSender);
+        secondRegistry.register("13900113900", secondReceiver);
+        MessageRouter secondRouter = new MessageRouter(secondRegistry, TokenService.defaultService(), seqStore);
+        secondRouter.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"after-restart",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":2,
+              "content":"after",
+              "timestamp":2000
+            }
+            """));
+
+        assertEquals(1001, body(firstReceiver.sentPackets.get(0)).get("serverSeq").getAsLong());
+        assertEquals(1002, body(secondReceiver.sentPackets.get(0)).get("serverSeq").getAsLong());
+    }
+
+    @Test
+    public void sqliteServerSeqStorePersistsAndStartsAboveLegacySmallSequences() throws Exception {
+        Path directory = Files.createTempDirectory("im-seq-store-test");
+        Path database = directory.resolve("sequences.sqlite");
+
+        MessageRouter.SQLiteServerSeqStore firstStore = new MessageRouter.SQLiteServerSeqStore(database, () -> 50_000L);
+        assertEquals(50_001L, firstStore.next("single:13800113800:13900113900"));
+
+        MessageRouter.SQLiteServerSeqStore secondStore = new MessageRouter.SQLiteServerSeqStore(database, () -> 1L);
+        assertEquals(50_002L, secondStore.next("single:13800113800:13900113900"));
+
+        MessageRouter.SQLiteServerSeqStore thirdStore = new MessageRouter.SQLiteServerSeqStore(database, () -> 50_000L);
+        assertEquals(50_001L, thirdStore.next("single:13700113700:13800113800"));
+    }
+
+    @Test
+    public void sendMessageLogsOrderingFields() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
+        MessageRouter router = new MessageRouter(registry);
+        PrintStream originalOut = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        try {
+            System.setOut(new PrintStream(output));
+            router.handleSendMessage("13800113800", packet("""
+                {
+                  "messageId":"logged-1",
+                  "conversationId":"single:13800113800:13900113900",
+                  "senderId":"13800113800",
+                  "receiverId":"13900113900",
+                  "clientSeq":3,
+                  "content":"hello",
+                  "timestamp":1000
+                }
+                """));
+        } finally {
+            System.setOut(originalOut);
+        }
+
+        String log = output.toString(StandardCharsets.UTF_8);
+        assertTrue(log.contains("[IM] SEND_MESSAGE sender=13800113800 receiver=13900113900 conversationId=single:13800113800:13900113900 messageId=logged-1 clientSeq=3 serverSeq=1001 content=hello"));
+        assertTrue(log.contains("[IM] MESSAGE_ACK sent sender=13800113800 messageId=logged-1 clientSeq=3 serverSeq=1001"));
+        assertTrue(log.contains("[IM] RECEIVE_MESSAGE forwarded receiver=13900113900 messageId=logged-1 serverSeq=1001"));
     }
 
     @Test

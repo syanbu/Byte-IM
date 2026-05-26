@@ -104,6 +104,7 @@ class MessageRepository(
         val serverTime = body.optionalLong("serverTime") ?: System.currentTimeMillis()
         messageDao.markAcked(messageId, serverSeq, serverTime)
         pendingMessageDao.delete(messageId)
+        notifyConversationChanged()
     }
 
     private fun handleIncoming(json: String) {

@@ -32,6 +32,29 @@ class MessageDaoContractTest {
     }
 
     @Test
+    fun queryPageOrdersServerSequencedMessagesBeforeLocalTime() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(sampleMessage(messageId = "seq-2", createdAt = 1_000, serverSeq = 2))
+        dao.insertOrIgnore(sampleMessage(messageId = "seq-1", createdAt = 2_000, serverSeq = 1))
+
+        val page = dao.queryPage("single:u1:u2", beforeTime = null, limit = 20)
+
+        assertEquals(listOf("seq-2", "seq-1"), page.map { it.messageId })
+    }
+
+    @Test
+    fun queryPageKeepsSendingMessagesVisibleWithoutBreakingServerSeqOrder() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(sampleMessage(messageId = "seq-1", createdAt = 4_000, serverSeq = 1))
+        dao.insertOrIgnore(sampleMessage(messageId = "sending", createdAt = 5_000, serverSeq = null))
+        dao.insertOrIgnore(sampleMessage(messageId = "seq-2", createdAt = 1_000, serverSeq = 2))
+
+        val page = dao.queryPage("single:u1:u2", beforeTime = null, limit = 20)
+
+        assertEquals(listOf("sending", "seq-2", "seq-1"), page.map { it.messageId })
+    }
+
+    @Test
     fun ackUpdatesMessageStatusAndServerSeq() {
         val dao = InMemoryMessageDao()
         dao.insertOrIgnore(sampleMessage(messageId = "m1", createdAt = 100))
@@ -44,14 +67,14 @@ class MessageDaoContractTest {
         assertEquals(150L, message.updatedAt)
     }
 
-    private fun sampleMessage(messageId: String, createdAt: Long): ChatMessage {
+    private fun sampleMessage(messageId: String, createdAt: Long, serverSeq: Long? = null): ChatMessage {
         return ChatMessage(
             messageId = messageId,
             conversationId = "single:u1:u2",
             senderId = "u1",
             receiverId = "u2",
             clientSeq = createdAt,
-            serverSeq = null,
+            serverSeq = serverSeq,
             content = "hello",
             status = MessageStatus.SENDING,
             direction = MessageDirection.OUTGOING,

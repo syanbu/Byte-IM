@@ -32,7 +32,17 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             args,
             null,
             null,
-            "created_at DESC, message_id DESC",
+            """
+            CASE
+              WHEN server_seq IS NULL AND status = 'SENDING' THEN 0
+              WHEN server_seq IS NOT NULL THEN 1
+              ELSE 2
+            END ASC,
+            server_seq DESC,
+            created_at DESC,
+            client_seq DESC,
+            message_id DESC
+            """.trimIndent(),
             limit.toString()
         ).use { cursor ->
             buildList {

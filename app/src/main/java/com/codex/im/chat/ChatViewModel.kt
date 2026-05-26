@@ -6,6 +6,7 @@ import com.codex.im.connection.ImConnection
 import com.codex.im.message.MessageRepository
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.storage.ChatMessage
+import com.codex.im.storage.MessageOrderingPolicy
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -210,7 +211,7 @@ class ChatViewModel(
         return (current + incoming)
             .associateBy { it.messageId }
             .values
-            .sortedWith(compareByDescending<ChatMessage> { it.createdAt }.thenByDescending { it.messageId })
+            .sortedWith(MessageOrderingPolicy.newestFirst)
             .take(MAX_RETAINED_MESSAGES)
     }
 

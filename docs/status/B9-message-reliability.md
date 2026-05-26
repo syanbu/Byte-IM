@@ -26,6 +26,11 @@ Partial.
 - No ACK-loss simulation test.
 - No duplicate downlink stress verification.
 
+## Explicitly Deferred
+
+- Receiver-side delivery ACK is deferred to [B9.5-delivery-ack.md](B9.5-delivery-ack.md). B9 first pass should treat sender `MESSAGE_ACK` as server acceptance only, not receiver delivery proof.
+- Durable mock-server message persistence is deferred to [B5.5-mock-server-message-persistence.md](B5.5-mock-server-message-persistence.md). B9 first pass may still use server-side `messageId` idempotency, but full restart-proof offline delivery belongs to B5.5/B9.5 follow-up work.
+
 ## Verification
 
 | Date | Area | Command | Result |
