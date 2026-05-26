@@ -25,7 +25,7 @@ object MessageOrderingPolicy {
 
     private fun category(message: ChatMessage): Int {
         return when {
-            message.serverSeq == null && message.status == MessageStatus.SENDING -> 0
+            message.serverSeq == null && (message.status == MessageStatus.SENDING || message.status == MessageStatus.FAILED) -> 0
             message.serverSeq != null -> 1
             else -> 2
         }

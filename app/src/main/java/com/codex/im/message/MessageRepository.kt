@@ -10,6 +10,7 @@ import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
 import com.codex.im.storage.PendingMessage
 import com.codex.im.storage.PendingMessageDao
+import com.codex.im.storage.TransactionRunner
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -22,7 +23,9 @@ class MessageRepository(
     private val pendingMessageDao: PendingMessageDao,
     private val connection: ImConnection,
     private val messageIdGenerator: MessageIdGenerator,
-    private val seqGenerator: SeqGenerator
+    private val seqGenerator: SeqGenerator,
+    private val retryPolicy: MessageRetryPolicy = MessageRetryPolicy(),
+    private val transactionRunner: TransactionRunner = TransactionRunner.immediate()
 ) {
     @Volatile
     private var activeConversationId: String? = null
@@ -44,21 +47,22 @@ class MessageRepository(
             createdAt = now,
             updatedAt = now
         )
-        messageDao.insertOrIgnore(message)
-        conversationDao.upsertFromMessage(message, incrementUnread = false)
-        notifyConversationChanged()
-
         val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = message.toSendBody().toByteArray())
-        pendingMessageDao.upsert(
-            PendingMessage(
-                messageId = message.messageId,
-                packetCmd = packet.cmd,
-                packetBody = packet.body.decodeToString(),
-                retryCount = 0,
-                nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
-                createdAt = now
+        transactionRunner.runInTransaction {
+            messageDao.insertOrIgnore(message)
+            conversationDao.upsertFromMessage(message, incrementUnread = false)
+            pendingMessageDao.upsert(
+                PendingMessage(
+                    messageId = message.messageId,
+                    packetCmd = packet.cmd,
+                    packetBody = packet.body.decodeToString(),
+                    retryCount = 0,
+                    nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
+                    createdAt = now
+                )
             )
-        )
+        }
+        notifyConversationChanged()
         connection.send(packet)
         return message
     }
@@ -79,6 +83,40 @@ class MessageRepository(
     }
 
     fun conversations(limit: Int = 50) = conversationDao.listConversations(limit)
+
+    fun retryDuePendingMessages(now: Long, limit: Int = DEFAULT_RETRY_BATCH_SIZE) {
+        val dueMessages = pendingMessageDao.dueMessages(now, limit)
+        var changed = false
+        dueMessages.forEach { pending ->
+            if (retryPolicy.isExhausted(pending.retryCount)) {
+                if (messageDao.markFailed(pending.messageId, now)) {
+                    changed = true
+                }
+                if (pendingMessageDao.delete(pending.messageId)) {
+                    changed = true
+                }
+                return@forEach
+            }
+
+            val retryAttempt = pending.retryCount + 1
+            connection.send(
+                ImPacket(
+                    cmd = pending.packetCmd,
+                    body = pending.packetBody.toByteArray()
+                )
+            )
+            pendingMessageDao.upsert(
+                pending.copy(
+                    retryCount = retryAttempt,
+                    nextRetryAt = now + retryPolicy.nextDelayMillis(retryAttempt)
+                )
+            )
+            changed = true
+        }
+        if (changed) {
+            notifyConversationChanged()
+        }
+    }
 
     fun openConversation(currentUserId: String, peerId: String): String {
         val conversationId = conversationIdFor(currentUserId, peerId)
@@ -171,5 +209,6 @@ class MessageRepository(
 
     private companion object {
         const val DEFAULT_ACK_TIMEOUT_MS = 5_000L
+        const val DEFAULT_RETRY_BATCH_SIZE = 50
     }
 }

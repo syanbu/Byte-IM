@@ -9,6 +9,7 @@ import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
+import com.codex.im.storage.TransactionRunner
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -38,6 +39,24 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun sendTextSendsNetworkPacketOnlyAfterLocalTransactionCommits() {
+        val events = mutableListOf<String>()
+        val fixture = Fixture(
+            transactionRunner = RecordingTransactionRunner(events),
+            events = events
+        )
+
+        fixture.repository.sendText(
+            senderId = "u1",
+            receiverId = "u2",
+            content = "hello",
+            now = 1_000L
+        )
+
+        assertEquals(listOf("begin", "commit", "send"), events)
+    }
+
+    @Test
     fun messageAckMarksMessageSentAndRemovesPendingRecord() {
         val fixture = Fixture()
         val message = fixture.repository.sendText("u1", "u2", "hello", now = 1_000L)
@@ -53,6 +72,72 @@ class MessageRepositoryTest {
         assertEquals(MessageStatus.SENT, stored.status)
         assertEquals(88L, stored.serverSeq)
         assertTrue(fixture.pendingDao.dueMessages(now = 6_000L, limit = 10).isEmpty())
+    }
+
+    @Test
+    fun retryDuePendingMessagesResendsOriginalPacketBodyAndSchedulesBackoff() {
+        val fixture = Fixture()
+        val message = fixture.repository.sendText("u1", "u2", "hello", now = 1_000L)
+        val originalPacket = fixture.connection.sentPackets.single()
+
+        fixture.repository.retryDuePendingMessages(now = 6_000L)
+
+        assertEquals(2, fixture.connection.sentPackets.size)
+        val retriedPacket = fixture.connection.sentPackets.last()
+        assertEquals(originalPacket.cmd, retriedPacket.cmd)
+        assertEquals(originalPacket.body.decodeToString(), retriedPacket.body.decodeToString())
+        val pending = fixture.pendingDao.dueMessages(now = 16_000L, limit = 10).single()
+        assertEquals(message.messageId, pending.messageId)
+        assertEquals(1, pending.retryCount)
+        assertEquals(11_000L, pending.nextRetryAt)
+    }
+
+    @Test
+    fun retryDuePendingMessagesMarksFailedAfterRetryExhaustion() {
+        val fixture = Fixture()
+        val message = fixture.repository.sendText("u1", "u2", "hello", now = 1_000L)
+        val exhausted = fixture.pendingDao.dueMessages(now = 6_000L, limit = 10)
+            .single()
+            .copy(retryCount = 5, nextRetryAt = 6_000L)
+        fixture.pendingDao.upsert(exhausted)
+
+        fixture.repository.retryDuePendingMessages(now = 6_000L)
+
+        val stored = fixture.messageDao.queryPage(message.conversationId, beforeTime = null, limit = 20).single()
+        assertEquals(MessageStatus.FAILED, stored.status)
+        assertTrue(fixture.pendingDao.dueMessages(now = 60_000L, limit = 10).isEmpty())
+        assertEquals(1, fixture.connection.sentPackets.size)
+    }
+
+    @Test
+    fun retryDuePendingMessagesCountsAttemptWhenSendReturnsFalse() {
+        val fixture = Fixture()
+        fixture.repository.sendText("u1", "u2", "hello", now = 1_000L)
+        fixture.connection.sendSucceeds = false
+
+        fixture.repository.retryDuePendingMessages(now = 6_000L)
+
+        val pending = fixture.pendingDao.dueMessages(now = 11_000L, limit = 10).single()
+        assertEquals(1, pending.retryCount)
+        assertEquals(2, fixture.connection.sentPackets.size)
+    }
+
+    @Test
+    fun retryDuePendingMessagesMarksFailedAfterRepeatedSendFailures() {
+        val fixture = Fixture()
+        val message = fixture.repository.sendText("u1", "u2", "hello", now = 1_000L)
+        fixture.connection.sendSucceeds = false
+
+        fixture.repository.retryDuePendingMessages(now = 6_000L)
+        fixture.repository.retryDuePendingMessages(now = 11_000L)
+        fixture.repository.retryDuePendingMessages(now = 21_000L)
+        fixture.repository.retryDuePendingMessages(now = 41_000L)
+        fixture.repository.retryDuePendingMessages(now = 81_000L)
+        fixture.repository.retryDuePendingMessages(now = 141_000L)
+
+        val stored = fixture.messageDao.queryPage(message.conversationId, beforeTime = null, limit = 20).single()
+        assertEquals(MessageStatus.FAILED, stored.status)
+        assertTrue(fixture.pendingDao.dueMessages(now = 141_000L, limit = 10).isEmpty())
     }
 
     @Test
@@ -113,23 +198,31 @@ class MessageRepositoryTest {
         assertEquals(0, conversation.unreadCount)
     }
 
-    private class Fixture {
+    private class Fixture(
+        transactionRunner: TransactionRunner? = null,
+        events: MutableList<String> = mutableListOf()
+    ) {
+        val events = events
         val messageDao = InMemoryMessageDao()
         val conversationDao = InMemoryConversationDao()
         val pendingDao = InMemoryPendingMessageDao()
-        val connection = FakeConnection()
+        val connection = FakeConnection(events)
         val repository = MessageRepository(
             messageDao = messageDao,
             conversationDao = conversationDao,
             pendingMessageDao = pendingDao,
             connection = connection,
             messageIdGenerator = MessageIdGenerator(startCounter = 1),
-            seqGenerator = SeqGenerator()
+            seqGenerator = SeqGenerator(),
+            transactionRunner = transactionRunner ?: TransactionRunner.immediate()
         )
     }
 
-    private class FakeConnection : ImConnection {
+    private class FakeConnection(
+        private val events: MutableList<String> = mutableListOf()
+    ) : ImConnection {
         val sentPackets = mutableListOf<ImPacket>()
+        var sendSucceeds = true
         override val states: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Connected)
         override val incomingPackets: SharedFlow<ImPacket> = MutableSharedFlow()
 
@@ -138,8 +231,19 @@ class MessageRepositoryTest {
         override fun disconnect() = Unit
 
         override fun send(packet: ImPacket): Boolean {
+            events += "send"
             sentPackets.add(packet)
-            return true
+            return sendSucceeds
+        }
+    }
+
+    private class RecordingTransactionRunner(
+        private val events: MutableList<String>
+    ) : TransactionRunner {
+        override fun runInTransaction(block: () -> Unit) {
+            events += "begin"
+            block()
+            events += "commit"
         }
     }
 }

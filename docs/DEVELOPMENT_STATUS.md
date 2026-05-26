@@ -21,7 +21,7 @@ Development constraints: [`docs/DEVELOPMENT-CONSTRAINTS.md`](DEVELOPMENT-CONSTRA
 | B6 | Custom binary protocol with header, body, CRC | Done | [B6-binary-protocol.md](status/B6-binary-protocol.md) |
 | B7 | Heartbeat and reconnect | Done | [B7-heartbeat-reconnect.md](status/B7-heartbeat-reconnect.md) |
 | B8 | Message ordering with client seq / server ACK | Done | [B8-message-ordering.md](status/B8-message-ordering.md) |
-| B9 | Reliability: ACK, retry, deduplication | Partial | [B9-message-reliability.md](status/B9-message-reliability.md) |
+| B9 | Reliability: ACK, retry, deduplication | Done for sender-side first pass | [B9-message-reliability.md](status/B9-message-reliability.md) |
 | B9.5 | Receiver delivery ACK | Deferred | [B9.5-delivery-ack.md](status/B9.5-delivery-ack.md) |
 | Mock server | Local Netty server for auth and WebSocket tests | Done for current B1/B2 path | [mock-server.md](status/mock-server.md) |
 | B10-B13 | Group chat, image messages, recall/read receipts, push | Deferred | Later optional scope |
@@ -74,6 +74,7 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 - B6 binary protocol codec is complete and documented in `docs/WEBSOCKET_PROTOCOL_AND_STATES.md`.
 - B7 heartbeat and reconnect are complete on Android: foreground 15s heartbeat, background 75s heartbeat, heartbeat ACK liveness, timeout disconnect, exponential reconnect backoff, and `Reconnecting` UI state.
 - B8 message ordering is complete for the current scope: sender-side `clientSeq` remains local/ACK correlation metadata, server-side `serverSeq` is allocated per conversation by the mock server, Android query/merge paths sort confirmed/received messages by `serverSeq`, and out-of-order RECEIVE arrival is covered by unit tests.
+- B9 sender-side reliability first pass is complete: Android persists a pending outbox, retries due messages after `Authenticated` with capped backoff, marks retry exhaustion as `FAILED`, refreshes Chat send status, and the mock server handles duplicate `messageId` sends idempotently within the current process.
 - Local Java/Netty mock server supports the current auth and single-chat WebSocket path.
 - Self-design chat/profile UI work is implemented, including Messages/Me tabs, profile display/edit, avatar upload plumbing, peer nickname/avatar display, vector tab icons, avatar caching, chat composer polish, and corrected Back semantics.
 - Project-level development constraints are documented in `docs/DEVELOPMENT-CONSTRAINTS.md`.
@@ -85,7 +86,6 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 
 ## Not Started
 
-- B9 retry loop and failure-state handling.
 - B5.5 mock-server durable message persistence.
 - B9.5 receiver delivery ACK.
 - Phase 10 performance, packet capture, and stability evidence.

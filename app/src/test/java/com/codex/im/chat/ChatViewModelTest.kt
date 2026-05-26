@@ -276,6 +276,25 @@ class ChatViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun repositoryUpdateRefreshesVisibleMessageStatus() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+        fixture.viewModel.start()
+        fixture.viewModel.sendText("will fail", now = 1_000L)
+        runCurrent()
+        val pending = fixture.pendingDao.dueMessages(now = 6_000L, limit = 10)
+            .single()
+            .copy(retryCount = 5, nextRetryAt = 6_000L)
+        fixture.pendingDao.upsert(pending)
+
+        fixture.repository.retryDuePendingMessages(now = 6_000L)
+        runCurrent()
+
+        assertEquals(MessageStatus.FAILED, fixture.viewModel.state.value.messages.single().status)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun stopCancelsIncomingPacketCollection() = runTest {
         val fixture = Fixture(this)
         fixture.viewModel.start()
@@ -307,12 +326,13 @@ class ChatViewModelTest {
     private class Fixture(scope: TestScope, initialPeerId: String? = "13900113900") {
         val connection = FakeConnection()
         private val messageDao = InMemoryMessageDao()
+        val pendingDao = InMemoryPendingMessageDao()
         val profileDao = InMemoryUserProfileDao()
         private val profileRepository = ProfileRepository(profileDao, FakeProfileApi())
-        private val repository = MessageRepository(
+        val repository = MessageRepository(
             messageDao = messageDao,
             conversationDao = InMemoryConversationDao(),
-            pendingMessageDao = InMemoryPendingMessageDao(),
+            pendingMessageDao = pendingDao,
             connection = connection,
             messageIdGenerator = MessageIdGenerator(startCounter = 1),
             seqGenerator = SeqGenerator()

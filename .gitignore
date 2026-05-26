@@ -67,4 +67,5 @@ fastlane/readme.md
 .idea/
 mock-server/target/
 mock-server/data/
+mock-server/.env.local.ps1
 .vscode

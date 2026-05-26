@@ -34,7 +34,7 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             null,
             """
             CASE
-              WHEN server_seq IS NULL AND status = 'SENDING' THEN 0
+              WHEN server_seq IS NULL AND status IN ('SENDING', 'FAILED') THEN 0
               WHEN server_seq IS NOT NULL THEN 1
               ELSE 2
             END ASC,
@@ -57,6 +57,14 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
         val values = ContentValues().apply {
             put("server_seq", serverSeq)
             put("status", MessageStatus.SENT.name)
+            put("updated_at", updatedAt)
+        }
+        return database.update("messages", values, "message_id = ?", arrayOf(messageId)) > 0
+    }
+
+    override fun markFailed(messageId: String, updatedAt: Long): Boolean {
+        val values = ContentValues().apply {
+            put("status", MessageStatus.FAILED.name)
             put("updated_at", updatedAt)
         }
         return database.update("messages", values, "message_id = ?", arrayOf(messageId)) > 0

@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageDirection
+import com.codex.im.storage.MessageStatus
 import com.codex.im.ui.AvatarImage
 import kotlinx.coroutines.launch
 
@@ -251,6 +253,9 @@ private fun ChatMessageRow(
                 modifier = Modifier.size(36.dp)
             )
         }
+        if (outgoing) {
+            OutgoingMessageStatus(message.status)
+        }
         Text(
             text = message.content,
             style = MaterialTheme.typography.bodyLarge,
@@ -262,6 +267,28 @@ private fun ChatMessageRow(
                 displayName = "Me",
                 modifier = Modifier.size(36.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun OutgoingMessageStatus(status: MessageStatus) {
+    Box(
+        modifier = Modifier.size(18.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        when (status) {
+            MessageStatus.SENDING -> CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp
+            )
+            MessageStatus.FAILED -> Text(
+                text = "!",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.error
+            )
+            MessageStatus.SENT,
+            MessageStatus.RECEIVED -> Unit
         }
     }
 }

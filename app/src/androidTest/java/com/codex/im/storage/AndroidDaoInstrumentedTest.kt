@@ -79,6 +79,26 @@ class AndroidDaoInstrumentedTest {
         assertEquals(listOf("m2"), dao.dueMessages(now = 2_000L, limit = 10).map { it.messageId })
     }
 
+    @Test
+    fun androidTransactionRunnerRollsBackMessageAndPendingWritesTogether() {
+        val messageDao = AndroidMessageDao(database)
+        val pendingDao = AndroidPendingMessageDao(database)
+        val transactionRunner = AndroidTransactionRunner(database)
+
+        try {
+            transactionRunner.runInTransaction {
+                messageDao.insertOrIgnore(message("atomic-message", createdAt = 1_000L))
+                pendingDao.upsert(pending("atomic-message", nextRetryAt = 6_000L))
+                error("force rollback")
+            }
+        } catch (expected: IllegalStateException) {
+            // Expected; the assertions below verify the SQLite transaction rolled back.
+        }
+
+        assertTrue(messageDao.queryPage("single:u1:u2", beforeTime = null, limit = 20).isEmpty())
+        assertTrue(pendingDao.dueMessages(now = 6_000L, limit = 20).isEmpty())
+    }
+
     private fun message(
         messageId: String,
         conversationId: String = "single:u1:u2",

@@ -55,6 +55,7 @@ import com.codex.im.contacts.DemoContactResolver
 import com.codex.im.conversation.ConversationListScreen
 import com.codex.im.conversation.ConversationListViewModel
 import com.codex.im.message.MessageIdGenerator
+import com.codex.im.message.MessageOutboxWorker
 import com.codex.im.message.MessagePacketProcessor
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
@@ -67,6 +68,7 @@ import com.codex.im.profile.ProfileRepository
 import com.codex.im.storage.AndroidConversationDao
 import com.codex.im.storage.AndroidMessageDao
 import com.codex.im.storage.AndroidPendingMessageDao
+import com.codex.im.storage.AndroidTransactionRunner
 import com.codex.im.storage.AndroidUserProfileDao
 import com.codex.im.storage.ImDatabaseHelper
 
@@ -89,7 +91,8 @@ class MainActivity : ComponentActivity() {
             pendingMessageDao = AndroidPendingMessageDao(database),
             connection = connection,
             messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            seqGenerator = SeqGenerator(),
+            transactionRunner = AndroidTransactionRunner(database)
         )
         val profileRepository = ProfileRepository(
             userProfileDao = AndroidUserProfileDao(database),
@@ -191,11 +194,19 @@ private fun AuthenticatedImNavHost(
             connection = connection
         )
     }
+    val messageOutboxWorker = remember(session.userId) {
+        MessageOutboxWorker(
+            repository = messageRepository,
+            connection = connection
+        )
+    }
 
-    DisposableEffect(messagePacketProcessor) {
+    DisposableEffect(messagePacketProcessor, messageOutboxWorker) {
         messagePacketProcessor.start()
+        messageOutboxWorker.start()
         onDispose {
             messagePacketProcessor.stop()
+            messageOutboxWorker.stop()
         }
     }
 

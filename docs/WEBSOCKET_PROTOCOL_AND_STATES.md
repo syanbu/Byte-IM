@@ -105,7 +105,7 @@ Foreground/background policy:
 - Background: keep the WebSocket open, slow heartbeat to every 75s, and keep reconnect enabled.
 - Return to foreground: authenticated sockets switch heartbeat back to 15s; disconnected or failed sockets schedule reconnect.
 
-Reconnect in B7 only restores the WebSocket session. It does not implement B8 receive-side reordering or B9 pending-message retry/replay.
+Reconnect in B7 restores the WebSocket session. B9 layers a login-session scoped outbox worker on top of `ConnectionState.Authenticated` to retry due pending sender messages after reconnect.
 
 ## Message Ordering
 
@@ -124,7 +124,7 @@ Android display ordering follows this policy:
 - Once `MESSAGE_ACK` stores a `serverSeq`, the local outgoing message moves into the server-authoritative order.
 - Out-of-order `RECEIVE_MESSAGE` arrival is tolerated by persisting each message and re-querying/re-merging with the ordering policy.
 - Android consumes message packets through a login-session scoped packet processor, not only through the currently visible page, so messages are still stored when the receiver is on `Contacts`, `Me`, or another screen.
-- B8 does not implement gap buffering, wait windows, missing-message pulls, ACK timeout retry, retry loops, or reconnect replay; those remain B9 or later sync work.
+- B8 does not implement gap buffering, wait windows, or missing-message pulls; those remain later sync work. B9 first pass adds sender-side ACK timeout retry and reconnect pending replay for due outbox rows.
 
 ## Message Status
 
@@ -138,7 +138,7 @@ Current local message states:
 |---|---|
 | `SENDING` | Outgoing message is stored locally and `SEND_MESSAGE` has been attempted. Waiting for `MESSAGE_ACK`. |
 | `SENT` | Server returned `MESSAGE_ACK`; local message has `serverSeq`. |
-| `FAILED` | Reserved for timeout/retry failure handling. Full retry logic is planned for Phase 8. |
+| `FAILED` | Outgoing message exhausted sender-side retry and no longer has an active pending outbox row. |
 | `RECEIVED` | Incoming message was received through `RECEIVE_MESSAGE` and stored locally. |
 
 Outgoing message flow:
@@ -147,6 +147,10 @@ Outgoing message flow:
 SENDING
   -> MESSAGE_ACK
   -> SENT
+
+SENDING
+  -> retry exhaustion
+  -> FAILED
 ```
 
 Incoming message flow:

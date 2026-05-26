@@ -64,6 +64,11 @@ class ChatViewModel(
             }
         }
         jobs += scope.launch(dispatcher) {
+            repository.conversationUpdates.collect {
+                refreshKeepingHistory()
+            }
+        }
+        jobs += scope.launch(dispatcher) {
             refreshProfiles()
             refreshInitialPage()
         }
