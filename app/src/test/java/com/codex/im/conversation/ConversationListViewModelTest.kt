@@ -6,7 +6,6 @@ import com.codex.im.connection.ImConnection
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
-import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
@@ -131,19 +130,21 @@ class ConversationListViewModelTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     fun startHandlesIncomingPacketEmittedDuringConnect() = runTest {
         val fixture = Fixture(this)
-        fixture.connection.packetToEmitDuringConnect = ImPacket(
-            cmd = 12,
-            body = """
-                {
-                  "messageId":"offline-delivered-during-auth",
-                  "senderId":"13900113900",
-                  "receiverId":"13800113800",
-                  "clientSeq":3,
-                  "serverSeq":6,
-                  "content":"Hello while you were away",
-                  "timestamp":3000
-                }
-            """.trimIndent().toByteArray()
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 12,
+                body = """
+                    {
+                      "messageId":"offline-delivered-during-auth",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":3,
+                      "serverSeq":6,
+                      "content":"Hello while you were away",
+                      "timestamp":3000
+                    }
+                """.trimIndent().toByteArray()
+            )
         )
 
         fixture.viewModel.start()
@@ -214,15 +215,15 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun stopCancelsIncomingPacketCollection() = runTest {
+    fun stopCancelsRepositoryUpdateCollection() = runTest {
         val fixture = Fixture(this)
         fixture.viewModel.start()
         runCurrent()
 
         fixture.viewModel.stop()
-        fixture.connection.incoming.emit(
+        fixture.repository.handlePacket(
             ImPacket(
-                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                cmd = 12,
                 body = """
                     {
                       "messageId":"remote-after-stop",
@@ -266,14 +267,12 @@ class ConversationListViewModelTest {
 
     private class FakeConnection : ImConnection {
         var connectedToken: String? = null
-        var packetToEmitDuringConnect: ImPacket? = null
         val incoming = MutableSharedFlow<ImPacket>(extraBufferCapacity = 64)
         override val states: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Disconnected)
         override val incomingPackets: SharedFlow<ImPacket> = incoming
 
         override fun connect(token: String) {
             connectedToken = token
-            packetToEmitDuringConnect?.let { incoming.tryEmit(it) }
         }
 
         override fun disconnect() = Unit

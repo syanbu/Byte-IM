@@ -9,6 +9,7 @@ public enum ImCommand {
     MESSAGE_ACK(11),
     RECEIVE_MESSAGE(12),
     READ_ACK(13),
+    DELIVERY_ACK(14),
     HISTORY_QUERY(20),
     HISTORY_RESULT(21);
 

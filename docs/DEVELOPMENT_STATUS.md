@@ -22,7 +22,7 @@ Development constraints: [`docs/DEVELOPMENT-CONSTRAINTS.md`](DEVELOPMENT-CONSTRA
 | B7 | Heartbeat and reconnect | Done | [B7-heartbeat-reconnect.md](status/B7-heartbeat-reconnect.md) |
 | B8 | Message ordering with client seq / server ACK | Done | [B8-message-ordering.md](status/B8-message-ordering.md) |
 | B9 | Reliability: ACK, retry, deduplication | Done for sender-side first pass | [B9-message-reliability.md](status/B9-message-reliability.md) |
-| B9.5 | Receiver delivery ACK | Deferred | [B9.5-delivery-ack.md](status/B9.5-delivery-ack.md) |
+| B9.5 | Receiver delivery ACK | Done | [B9.5-delivery-ack.md](status/B9.5-delivery-ack.md) |
 | Mock server | Local Netty server for auth and WebSocket tests | Done for current B1/B2 path | [mock-server.md](status/mock-server.md) |
 | B10-B13 | Group chat, image messages, recall/read receipts, push | Deferred | Later optional scope |
 
@@ -87,5 +87,13 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 ## Not Started
 
 - B5.5 mock-server durable message persistence.
-- B9.5 receiver delivery ACK.
 - Phase 10 performance, packet capture, and stability evidence.
+
+## Newly Completed
+
+- B9.5 receiver delivery ACK is complete for the current in-memory mock-server scope:
+  - Android sends `DELIVERY_ACK` after persisting `RECEIVE_MESSAGE`.
+  - Duplicate receive packets remain locally deduplicated by `messageId` and still ACK safely.
+  - The mock server tracks receiver delivery state in memory and redelivers undelivered messages after receiver auth/reconnect.
+  - Sender `MESSAGE_ACK` semantics remain unchanged and still mean only server acceptance plus `serverSeq` allocation.
+  - Android now enforces a single inbound packet consumer: `MessagePacketProcessor` owns WebSocket receive handling, while `ChatViewModel` and `ConversationListViewModel` refresh only from repository update signals. This fixes the duplicate `DELIVERY_ACK` symptom caused by multiple UI collectors handling the same `RECEIVE_MESSAGE`.

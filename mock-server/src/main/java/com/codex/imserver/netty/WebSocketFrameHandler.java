@@ -45,6 +45,11 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
                 messageRouter.handleSendMessage(senderUserId, packet);
                 return;
             }
+            if (packet.cmd() == ImCommand.DELIVERY_ACK.value()) {
+                String receiverUserId = registry.userIdOf(client).orElseGet(() -> receiverId(packet));
+                messageRouter.handleDeliveryAck(receiverUserId, packet);
+                return;
+            }
             ImServerLogger.log("[IM] Unknown packet cmd=%d", packet.cmd());
         } catch (RuntimeException error) {
             ImServerLogger.log("[IM] WebSocket packet error: %s", error.getMessage());
@@ -67,5 +72,10 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
     private String senderId(ImPacket packet) {
         JsonObject body = JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
         return body.get("senderId").getAsString();
+    }
+
+    private String receiverId(ImPacket packet) {
+        JsonObject body = JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
+        return body.get("receiverId").getAsString();
     }
 }

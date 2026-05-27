@@ -59,12 +59,6 @@ class ConversationListViewModel(
                 mutableState.value = mutableState.value.copy(connectionStatus = state.toStatusText())
             }
         }
-        jobs += scope.launch(dispatcher, start = CoroutineStart.UNDISPATCHED) {
-            connection.incomingPackets.collect { packet ->
-                repository.handlePacket(packet)
-                refresh()
-            }
-        }
         jobs += scope.launch(dispatcher) {
             repository.conversationUpdates.collect {
                 refresh()

@@ -30,6 +30,7 @@ Defined in:
 | 11 | `MESSAGE_ACK` | Server -> Sender Client | Confirms the server accepted a sent message and assigned `serverSeq`. |
 | 12 | `RECEIVE_MESSAGE` | Server -> Receiver Client | Forwards an online message to the receiver. |
 | 13 | `READ_ACK` | Reserved | Read receipt. Not implemented yet. |
+| 14 | `DELIVERY_ACK` | Receiver Client -> Server | Confirms the receiver persisted a `RECEIVE_MESSAGE` for later redelivery suppression. |
 | 20 | `HISTORY_QUERY` | Reserved | History query. Not implemented yet. |
 | 21 | `HISTORY_RESULT` | Reserved | History query result. Not implemented yet. |
 
@@ -158,7 +159,16 @@ Incoming message flow:
 ```text
 RECEIVE_MESSAGE
   -> RECEIVED
+  -> DELIVERY_ACK
 ```
+
+`DELIVERY_ACK` is receiver-side transport proof only:
+
+- Android sends it only after `RECEIVE_MESSAGE` has been decoded and passed through local `insertOrIgnore`.
+- It does not change the local message row from `RECEIVED` to another status.
+- It is not a read receipt and must not be shown as B12 "read" UI.
+- If `DELIVERY_ACK` is lost, server redelivery remains safe because Android deduplicates by `messageId`.
+- Android should have only one login-session scoped consumer of WebSocket incoming packets for this path. UI ViewModels must refresh from repository/storage updates instead of each collecting and reprocessing the same `RECEIVE_MESSAGE`, otherwise duplicate `DELIVERY_ACK` sends can occur even when local message persistence remains deduplicated.
 
 ## Current Mock Server Logs
 

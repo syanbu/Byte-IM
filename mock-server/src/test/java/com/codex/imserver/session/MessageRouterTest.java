@@ -113,6 +113,165 @@ public class MessageRouterTest {
     }
 
     @Test
+    public void unackedDeliveredMessageIsRedeliveredAfterReceiverReauth() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        CapturingClient sender = new CapturingClient();
+        CapturingClient firstReceiver = new CapturingClient();
+        registry.register("13900113900", sender);
+        registry.register("13800113800", firstReceiver);
+        MessageRouter router = new MessageRouter(registry, tokenService);
+
+        router.handleSendMessage("13900113900", packet("""
+            {
+              "messageId":"needs-redelivery",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13900113900",
+              "receiverId":"13800113800",
+              "clientSeq":2,
+              "content":"Hello again",
+              "timestamp":1000
+            }
+            """));
+
+        CapturingClient secondReceiver = new CapturingClient();
+        router.handleAuth(tokenService.issue("13800113800").token(), secondReceiver);
+
+        assertEquals(ImCommand.AUTH_ACK.value(), secondReceiver.sentPackets.get(0).cmd());
+        assertEquals(ImCommand.RECEIVE_MESSAGE.value(), secondReceiver.sentPackets.get(1).cmd());
+        assertEquals("needs-redelivery", body(secondReceiver.sentPackets.get(1)).get("messageId").getAsString());
+    }
+
+    @Test
+    public void deliveryAckStopsFurtherRedelivery() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        CapturingClient sender = new CapturingClient();
+        CapturingClient firstReceiver = new CapturingClient();
+        registry.register("13900113900", sender);
+        registry.register("13800113800", firstReceiver);
+        MessageRouter router = new MessageRouter(registry, tokenService);
+
+        router.handleSendMessage("13900113900", packet("""
+            {
+              "messageId":"acked-no-redelivery",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13900113900",
+              "receiverId":"13800113800",
+              "clientSeq":3,
+              "content":"Delivered",
+              "timestamp":1000
+            }
+            """));
+
+        router.handleDeliveryAck("13800113800", deliveryAck("""
+            {
+              "messageId":"acked-no-redelivery",
+              "conversationId":"single:13800113800:13900113900",
+              "serverSeq":1001,
+              "receiverId":"13800113800"
+            }
+            """));
+
+        CapturingClient secondReceiver = new CapturingClient();
+        router.handleAuth(tokenService.issue("13800113800").token(), secondReceiver);
+
+        assertEquals(List.of(ImCommand.AUTH_ACK.value()), secondReceiver.sentPackets.stream().map(ImPacket::cmd).toList());
+    }
+
+    @Test
+    public void duplicateDeliveryAckIsIdempotent() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13900113900", sender);
+        registry.register("13800113800", receiver);
+        MessageRouter router = new MessageRouter(registry);
+
+        router.handleSendMessage("13900113900", packet("""
+            {
+              "messageId":"delivery-dup-ack",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13900113900",
+              "receiverId":"13800113800",
+              "clientSeq":4,
+              "content":"Hello",
+              "timestamp":1000
+            }
+            """));
+
+        ImPacket ack = deliveryAck("""
+            {
+              "messageId":"delivery-dup-ack",
+              "conversationId":"single:13800113800:13900113900",
+              "serverSeq":1001,
+              "receiverId":"13800113800"
+            }
+            """);
+        router.handleDeliveryAck("13800113800", ack);
+        router.handleDeliveryAck("13800113800", ack);
+    }
+
+    @Test
+    public void undeliveredMessagesAreIndexedByReceiverUserId() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient senderA = new CapturingClient();
+        CapturingClient senderB = new CapturingClient();
+        registry.register("13900113900", senderA);
+        registry.register("13700113700", senderB);
+        MessageRouter router = new MessageRouter(registry);
+
+        router.handleSendMessage("13900113900", packet("""
+            {
+              "messageId":"for-138-1",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13900113900",
+              "receiverId":"13800113800",
+              "clientSeq":1,
+              "content":"one",
+              "timestamp":1000
+            }
+            """));
+        router.handleSendMessage("13700113700", packet("""
+            {
+              "messageId":"for-138-2",
+              "conversationId":"single:13700113700:13800113800",
+              "senderId":"13700113700",
+              "receiverId":"13800113800",
+              "clientSeq":1,
+              "content":"two",
+              "timestamp":1001
+            }
+            """));
+        router.handleSendMessage("13900113900", packet("""
+            {
+              "messageId":"for-136-1",
+              "conversationId":"single:13600113600:13900113900",
+              "senderId":"13900113900",
+              "receiverId":"13600113600",
+              "clientSeq":2,
+              "content":"three",
+              "timestamp":1002
+            }
+            """));
+
+        assertEquals(List.of("for-138-1", "for-138-2"), router.undeliveredMessageIdsForReceiver("13800113800"));
+        assertEquals(List.of("for-136-1"), router.undeliveredMessageIdsForReceiver("13600113600"));
+
+        router.handleDeliveryAck("13800113800", deliveryAck("""
+            {
+              "messageId":"for-138-1",
+              "conversationId":"single:13800113800:13900113900",
+              "serverSeq":1001,
+              "receiverId":"13800113800"
+            }
+            """));
+
+        assertEquals(List.of("for-138-2"), router.undeliveredMessageIdsForReceiver("13800113800"));
+        assertEquals(List.of("for-136-1"), router.undeliveredMessageIdsForReceiver("13600113600"));
+    }
+
+    @Test
     public void serverSeqIsIndependentPerConversationAndIncreasesWithinConversation() {
         ClientSessionRegistry registry = new ClientSessionRegistry();
         CapturingClient sender = new CapturingClient();
@@ -301,6 +460,10 @@ public class MessageRouterTest {
 
     private static ImPacket packet(String json) {
         return new ImPacket(ImCommand.SEND_MESSAGE.value(), json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static ImPacket deliveryAck(String json) {
+        return new ImPacket(ImCommand.DELIVERY_ACK.value(), json.getBytes(StandardCharsets.UTF_8));
     }
 
     private static JsonObject body(ImPacket packet) {

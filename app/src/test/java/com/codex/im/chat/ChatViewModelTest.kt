@@ -6,7 +6,6 @@ import com.codex.im.connection.ImConnection
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
-import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
 import com.codex.im.profile.ProfileApi
 import com.codex.im.profile.ProfileBatchResult
@@ -150,15 +149,15 @@ class ChatViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun incomingPacketRefreshesVisibleMessages() = runTest {
+    fun repositoryUpdateRefreshesVisibleMessages() = runTest {
         val fixture = Fixture(this)
         fixture.viewModel.selectPeer("13900113900")
         fixture.viewModel.start()
         runCurrent()
 
-        fixture.connection.incoming.emit(
+        fixture.repository.handlePacket(
             ImPacket(
-                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                cmd = 12,
                 body = """
                     {
                       "messageId":"remote-1",
@@ -186,9 +185,9 @@ class ChatViewModelTest {
         fixture.viewModel.start()
         runCurrent()
 
-        fixture.connection.incoming.emit(
+        fixture.repository.handlePacket(
             ImPacket(
-                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                cmd = 12,
                 body = """
                     {
                       "messageId":"remote-2",
@@ -203,9 +202,9 @@ class ChatViewModelTest {
                 """.trimIndent().toByteArray()
             )
         )
-        fixture.connection.incoming.emit(
+        fixture.repository.handlePacket(
             ImPacket(
-                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                cmd = 12,
                 body = """
                     {
                       "messageId":"remote-1",
@@ -234,9 +233,9 @@ class ChatViewModelTest {
         runCurrent()
         fixture.viewModel.loadMoreHistory()
 
-        fixture.connection.incoming.emit(
+        fixture.repository.handlePacket(
             ImPacket(
-                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                cmd = 12,
                 body = """
                     {
                       "messageId":"remote-latest",
@@ -295,15 +294,15 @@ class ChatViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun stopCancelsIncomingPacketCollection() = runTest {
+    fun stopCancelsRepositoryUpdateCollection() = runTest {
         val fixture = Fixture(this)
         fixture.viewModel.start()
         runCurrent()
 
         fixture.viewModel.stop()
-        fixture.connection.incoming.emit(
+        fixture.repository.handlePacket(
             ImPacket(
-                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                cmd = 12,
                 body = """
                     {
                       "messageId":"remote-after-stop",

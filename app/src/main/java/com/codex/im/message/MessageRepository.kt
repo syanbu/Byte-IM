@@ -150,13 +150,14 @@ class MessageRepository(
         val timestamp = body.optionalLong("timestamp") ?: System.currentTimeMillis()
         val senderId = body.requiredString("senderId")
         val receiverId = body.requiredString("receiverId")
+        val serverSeq = body.optionalLong("serverSeq")
         val message = ChatMessage(
             messageId = body.requiredString("messageId"),
             conversationId = conversationIdFor(senderId, receiverId),
             senderId = senderId,
             receiverId = receiverId,
             clientSeq = body.optionalLong("clientSeq") ?: 0L,
-            serverSeq = body.optionalLong("serverSeq"),
+            serverSeq = serverSeq,
             content = body.requiredString("content"),
             status = MessageStatus.RECEIVED,
             direction = MessageDirection.INCOMING,
@@ -170,6 +171,22 @@ class MessageRepository(
                 incrementUnread = message.conversationId != activeConversationId
             )
             notifyConversationChanged()
+        }
+        if (serverSeq != null) {
+            connection.send(
+                ImPacket(
+                    cmd = ImCommand.DELIVERY_ACK.value,
+                    body = """
+                        {
+                          "messageId":"${message.messageId.escapeJson()}",
+                          "conversationId":"${message.conversationId.escapeJson()}",
+                          "serverSeq":$serverSeq,
+                          "receiverId":"${receiverId.escapeJson()}"
+                        }
+                    """.trimIndent().replace(Regex("\\s+"), "")
+                        .toByteArray()
+                )
+            )
         }
     }
 

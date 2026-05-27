@@ -16,9 +16,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Queue;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
@@ -27,8 +27,8 @@ public final class MessageRouter {
     private final ClientSessionRegistry registry;
     private final TokenService tokenService;
     private final ServerSeqStore serverSeqStore;
-    private final ConcurrentMap<String, Queue<JsonObject>> offlineMessagesByReceiver = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, ConcurrentMap<String, AcceptedMessage>> undeliveredMessagesByReceiver = new ConcurrentHashMap<>();
 
     public MessageRouter(ClientSessionRegistry registry) {
         this(registry, TokenService.defaultService());
@@ -86,30 +86,39 @@ public final class MessageRouter {
 
         message.addProperty("serverSeq", nextServerSeq);
         message.addProperty("serverTime", serverTime);
-        acceptedMessagesById.put(messageId, new AcceptedMessage(ack.deepCopy(), nextServerSeq));
+        acceptedMessagesById.put(messageId, new AcceptedMessage(
+                ack.deepCopy(),
+                message.deepCopy(),
+                receiverId,
+                nextServerSeq,
+                false
+        ));
+        undeliveredMessagesByReceiver
+                .computeIfAbsent(receiverId, ignored -> new ConcurrentHashMap<>())
+                .put(messageId, acceptedMessagesById.get(messageId));
         sendAck(senderUserId, ack);
-        registry.find(receiverId).ifPresentOrElse(
-                client -> {
-                    client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
-                    ImServerLogger.log(
-                            "[IM] RECEIVE_MESSAGE forwarded receiver=%s messageId=%s serverSeq=%d",
-                            receiverId,
-                            messageId,
-                            nextServerSeq
-                    );
-                },
-                () -> {
-                    offlineMessagesByReceiver
-                            .computeIfAbsent(receiverId, ignored -> new ConcurrentLinkedQueue<>())
-                            .add(message.deepCopy());
-                    ImServerLogger.log(
-                            "[IM] RECEIVE_MESSAGE queued receiver offline receiver=%s messageId=%s serverSeq=%d",
-                            receiverId,
-                            messageId,
-                            nextServerSeq
-                    );
-                }
-        );
+        deliverOrKeepPending(receiverId, messageId, message, nextServerSeq);
+    }
+
+    public synchronized void handleDeliveryAck(String receiverUserId, ImPacket packet) {
+        JsonObject ack = JsonParser
+                .parseString(new String(packet.body(), StandardCharsets.UTF_8))
+                .getAsJsonObject();
+        String messageId = ack.get("messageId").getAsString();
+        long serverSeq = ack.get("serverSeq").getAsLong();
+        acceptedMessagesById.computeIfPresent(messageId, (ignored, accepted) -> {
+            if (!accepted.receiverUserId().equals(receiverUserId)) {
+                return accepted;
+            }
+            ImServerLogger.log(
+                    "[IM] DELIVERY_ACK received receiver=%s messageId=%s serverSeq=%d",
+                    receiverUserId,
+                    messageId,
+                    serverSeq
+            );
+            removeUndelivered(receiverUserId, messageId);
+            return accepted.markDelivered();
+        });
     }
 
     private void sendAck(String senderUserId, JsonObject ack) {
@@ -156,31 +165,76 @@ public final class MessageRouter {
     }
 
     private void deliverQueuedMessages(String userId, OutboundClient client) {
-        Queue<JsonObject> queuedMessages = offlineMessagesByReceiver.remove(userId);
-        if (queuedMessages == null) {
+        ConcurrentMap<String, AcceptedMessage> receiverMessages = undeliveredMessagesByReceiver.get(userId);
+        if (receiverMessages == null) {
             return;
         }
-        JsonObject message;
-        while ((message = queuedMessages.poll()) != null) {
-            client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
+        for (AcceptedMessage accepted : receiverMessages.values()) {
+            client.send(packet(ImCommand.RECEIVE_MESSAGE, accepted.message()));
             ImServerLogger.log(
                     "[IM] RECEIVE_MESSAGE delivered queued receiver=%s messageId=%s serverSeq=%d",
                     userId,
-                    message.get("messageId").getAsString(),
-                    message.get("serverSeq").getAsLong()
+                    accepted.message().get("messageId").getAsString(),
+                    accepted.message().get("serverSeq").getAsLong()
             );
         }
+    }
+
+    List<String> undeliveredMessageIdsForReceiver(String receiverUserId) {
+        ConcurrentMap<String, AcceptedMessage> receiverMessages = undeliveredMessagesByReceiver.get(receiverUserId);
+        if (receiverMessages == null) {
+            return List.of();
+        }
+        List<String> messageIds = new ArrayList<>(receiverMessages.keySet());
+        messageIds.sort(String::compareTo);
+        return messageIds;
+    }
+
+    private void deliverOrKeepPending(String receiverId, String messageId, JsonObject message, long serverSeq) {
+        registry.find(receiverId).ifPresentOrElse(
+                client -> {
+                    client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
+                    ImServerLogger.log(
+                            "[IM] RECEIVE_MESSAGE forwarded receiver=%s messageId=%s serverSeq=%d",
+                            receiverId,
+                            messageId,
+                            serverSeq
+                    );
+                },
+                () -> ImServerLogger.log(
+                        "[IM] RECEIVE_MESSAGE queued receiver offline receiver=%s messageId=%s serverSeq=%d",
+                        receiverId,
+                        messageId,
+                        serverSeq
+                )
+        );
     }
 
     private long nextServerSeq(String conversationId) {
         return serverSeqStore.next(conversationId);
     }
 
+    private void removeUndelivered(String receiverUserId, String messageId) {
+        undeliveredMessagesByReceiver.computeIfPresent(receiverUserId, (ignored, messagesById) -> {
+            messagesById.remove(messageId);
+            return messagesById.isEmpty() ? null : messagesById;
+        });
+    }
+
     private ImPacket packet(ImCommand command, JsonObject body) {
         return new ImPacket(command.value(), body.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    private record AcceptedMessage(JsonObject ack, long serverSeq) {
+    private record AcceptedMessage(
+            JsonObject ack,
+            JsonObject message,
+            String receiverUserId,
+            long serverSeq,
+            boolean delivered
+    ) {
+        private AcceptedMessage markDelivered() {
+            return new AcceptedMessage(ack, message, receiverUserId, serverSeq, true);
+        }
     }
 
     public interface ServerSeqStore {

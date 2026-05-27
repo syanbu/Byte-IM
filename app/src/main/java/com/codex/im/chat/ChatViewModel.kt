@@ -54,16 +54,6 @@ class ChatViewModel(
         }
         connectIfNeeded()
         jobs += scope.launch(dispatcher) {
-            try {
-                connection.incomingPackets.collect { packet ->
-                    repository.handlePacket(packet)
-                    refreshKeepingHistory()
-                }
-            } finally {
-                repository.closeConversation()
-            }
-        }
-        jobs += scope.launch(dispatcher) {
             repository.conversationUpdates.collect {
                 refreshKeepingHistory()
             }

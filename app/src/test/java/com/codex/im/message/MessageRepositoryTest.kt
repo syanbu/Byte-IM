@@ -168,6 +168,11 @@ class MessageRepositoryTest {
         assertEquals(MessageDirection.INCOMING, stored.direction)
         assertEquals("hi", conversation.lastMessagePreview)
         assertEquals(1, conversation.unreadCount)
+        assertEquals(ImCommand.DELIVERY_ACK.value, fixture.connection.sentPackets.single().cmd)
+        assertEquals(
+            """{"messageId":"remote-1","conversationId":"single:u1:u2","serverSeq":90,"receiverId":"u1"}""",
+            fixture.connection.sentPackets.single().body.decodeToString()
+        )
     }
 
     @Test
@@ -196,6 +201,34 @@ class MessageRepositoryTest {
         val conversation = fixture.conversationDao.listConversations(limit = 20).single()
         assertEquals("already reading", conversation.lastMessagePreview)
         assertEquals(0, conversation.unreadCount)
+    }
+
+    @Test
+    fun duplicateIncomingMessageStillSendsDeliveryAckWithoutDuplicatingLocalRow() {
+        val fixture = Fixture()
+        val packet = ImPacket(
+            cmd = ImCommand.RECEIVE_MESSAGE.value,
+            body = """
+                {
+                  "messageId":"remote-dup-1",
+                  "conversationId":"single:u2:u1",
+                  "senderId":"u2",
+                  "receiverId":"u1",
+                  "clientSeq":9,
+                  "serverSeq":92,
+                  "content":"dup",
+                  "timestamp":1700
+                }
+            """.trimIndent().toByteArray()
+        )
+
+        fixture.repository.handlePacket(packet)
+        fixture.repository.handlePacket(packet)
+
+        val stored = fixture.messageDao.queryPage("single:u1:u2", beforeTime = null, limit = 20)
+        assertEquals(listOf("remote-dup-1"), stored.map { it.messageId })
+        assertEquals(2, fixture.connection.sentPackets.size)
+        assertTrue(fixture.connection.sentPackets.all { it.cmd == ImCommand.DELIVERY_ACK.value })
     }
 
     private class Fixture(
