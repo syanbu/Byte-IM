@@ -69,3 +69,6 @@ mock-server/target/
 mock-server/data/
 mock-server/.env.local.ps1
 .vscode
+
+# Android Studio 构建的输出目录
+app/build/

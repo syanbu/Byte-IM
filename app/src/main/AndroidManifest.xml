@@ -7,12 +7,14 @@
         android:label="@string/app_name"
         android:usesCleartextTraffic="true"
         android:theme="@style/AppTheme">
+        <!--        绑定程序入口-->
         <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
+                <!--                主入口-->
                 <action android:name="android.intent.action.MAIN" />
-
+                <!--应该出现在手机桌面的应用启动其中-->
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
