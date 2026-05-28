@@ -22,7 +22,13 @@ class OkHttpAuthApiTest {
 
         val result = api.login("13800138000", "123456")
 
-        assertEquals(AuthResult.Failure("network unavailable"), result)
+        assertEquals(
+            AuthResult.Failure(
+                message = "network unavailable",
+                kind = AuthFailureKind.NETWORK
+            ),
+            result
+        )
     }
 
     @Test

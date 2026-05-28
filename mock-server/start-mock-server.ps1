@@ -9,7 +9,7 @@ if (Test-Path -LiteralPath $envFile) {
 
 Push-Location $PSScriptRoot
 try {
-    mvn -q exec:java
+    mvn -q compile exec:java
 } finally {
     Pop-Location
 }

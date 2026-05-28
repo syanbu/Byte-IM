@@ -36,6 +36,17 @@ data class AuthSession(
 
 sealed class AuthResult {
     data class Success(val session: AuthSession) : AuthResult()
-    data class Failure(val message: String) : AuthResult()
+    data class Failure(
+        val message: String,
+        val kind: AuthFailureKind = AuthFailureKind.UNKNOWN
+    ) : AuthResult()
     data object LoggedOut : AuthResult()
+}
+
+enum class AuthFailureKind {
+    UNKNOWN,
+    NETWORK,
+    INVALID_CREDENTIALS,
+    SESSION_EXPIRED,
+    SERVER
 }

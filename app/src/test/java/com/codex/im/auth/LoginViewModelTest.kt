@@ -77,6 +77,35 @@ class LoginViewModelTest {
         assertNull(viewModel.state.value.session)
     }
 
+    @Test
+    fun restoreSessionKeepsUserAuthenticatedWhenRefreshFailsDueToNetwork() = runTest {
+        val storedSession = AuthSession(
+            accessToken = "expired-access",
+            refreshToken = "refresh-a",
+            userId = "13800138000",
+            username = "13800138000",
+            accessExpiresAtMillis = 999L,
+            refreshExpiresAtMillis = 3_000L
+        )
+        val repository = AuthRepository(
+            FakeAuthApi(
+                result = AuthResult.Failure("unused"),
+                refreshResult = AuthResult.Failure("Network error")
+            ),
+            InMemoryTokenStore().apply { save(storedSession) },
+            nowMillis = { 1_000L }
+        )
+        val viewModel = LoginViewModel(repository, backgroundScope)
+
+        viewModel.restoreSession()
+        runCurrent()
+
+        val state = viewModel.state.value
+        assertTrue(state.isAuthenticated)
+        assertEquals(storedSession, state.session)
+        assertNull(state.errorMessage)
+    }
+
     private class FakeAuthApi(
         private val result: AuthResult,
         private val refreshResult: AuthResult = result

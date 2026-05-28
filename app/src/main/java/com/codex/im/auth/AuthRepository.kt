@@ -33,15 +33,13 @@ class AuthRepository(
     fun hasStoredSession(): Boolean = tokenStore.currentSession() != null
 
     suspend fun restoreSession(): AuthSession? {
-        return ensureValidSession()
+        val session = readLocalSession()
+        mutableSessionState.value = session
+        return session
     }
 
     suspend fun ensureValidSession(): AuthSession? {
-        val session = tokenStore.currentSession() ?: return null
-        if (!session.hasRestorableIdentity() || session.refreshExpiresAtMillis <= nowMillis()) {
-            clearStoredSession()
-            return null
-        }
+        val session = readLocalSession() ?: return null
         if (session.accessExpiresAtMillis > nowMillis()) {
             mutableSessionState.value = session
             return session
@@ -56,7 +54,14 @@ class AuthRepository(
                     result.session
                 }
             }
-            is AuthResult.Failure,
+            is AuthResult.Failure -> {
+                if (result.shouldClearStoredSession()) {
+                    clearStoredSession()
+                } else {
+                    mutableSessionState.value = session
+                }
+                null
+            }
             AuthResult.LoggedOut -> {
                 clearStoredSession()
                 null
@@ -83,12 +88,17 @@ class AuthRepository(
     }
 
     private fun readCurrentSession(): AuthSession? {
+        val session = readLocalSession() ?: return null
+        if (session.accessExpiresAtMillis <= nowMillis()) {
+            return null
+        }
+        return session
+    }
+
+    private fun readLocalSession(): AuthSession? {
         val session = tokenStore.currentSession() ?: return null
         if (!session.hasRestorableIdentity() || session.refreshExpiresAtMillis <= nowMillis()) {
             clearStoredSession()
-            return null
-        }
-        if (session.accessExpiresAtMillis <= nowMillis()) {
             return null
         }
         return session
@@ -110,6 +120,24 @@ class AuthRepository(
 
     private fun AuthSession.hasRestorableIdentity(): Boolean {
         return userId.matches(MAINLAND_CHINA_PHONE) && username.matches(MAINLAND_CHINA_PHONE) && refreshToken.isNotBlank()
+    }
+
+    private fun AuthResult.Failure.shouldClearStoredSession(): Boolean {
+        return when (kind) {
+            AuthFailureKind.SESSION_EXPIRED,
+            AuthFailureKind.INVALID_CREDENTIALS -> true
+            AuthFailureKind.NETWORK,
+            AuthFailureKind.SERVER -> false
+            AuthFailureKind.UNKNOWN -> {
+                val normalized = message.lowercase()
+                normalized.contains("refresh token expired") ||
+                    normalized.contains("refresh token revoked") ||
+                    normalized.contains("expired or revoked") ||
+                    normalized.contains("session expired") ||
+                    normalized.contains("login expired") ||
+                    normalized.contains("token revoked")
+            }
+        }
     }
 
     private companion object {

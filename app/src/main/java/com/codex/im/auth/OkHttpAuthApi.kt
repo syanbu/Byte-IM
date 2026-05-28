@@ -45,17 +45,24 @@ class OkHttpAuthApi(
                 client.newCall(request).execute().use { response ->
                     val responseBody = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
-                        return@withContext AuthResult.Failure(
-                            AuthJsonParser.parse(responseBody).failureMessageOrNull()
-                                ?: "HTTP ${response.code}"
+                        return@withContext httpFailure(
+                            code = response.code,
+                            responseBody = responseBody,
+                            unauthorizedKind = AuthFailureKind.INVALID_CREDENTIALS
                         )
                     }
                     AuthJsonParser.parse(responseBody)
                 }
             } catch (error: IOException) {
-                AuthResult.Failure(error.message ?: "Network error")
+                AuthResult.Failure(
+                    message = error.message ?: "Network error",
+                    kind = AuthFailureKind.NETWORK
+                )
             } catch (error: RuntimeException) {
-                AuthResult.Failure(error.message ?: "Network error")
+                AuthResult.Failure(
+                    message = error.message ?: "Network error",
+                    kind = AuthFailureKind.NETWORK
+                )
             }
         }
     }
@@ -73,9 +80,10 @@ class OkHttpAuthApi(
                 client.newCall(request).execute().use { response ->
                     val responseBody = response.body?.string().orEmpty()
                     if (!response.isSuccessful) {
-                        return@withContext AuthResult.Failure(
-                            AuthJsonParser.parse(responseBody).failureMessageOrNull()
-                                ?: "HTTP ${response.code}"
+                        return@withContext httpFailure(
+                            code = response.code,
+                            responseBody = responseBody,
+                            unauthorizedKind = AuthFailureKind.SESSION_EXPIRED
                         )
                     }
                     if (path == "/logout") {
@@ -84,11 +92,31 @@ class OkHttpAuthApi(
                     AuthJsonParser.parse(responseBody)
                 }
             } catch (error: IOException) {
-                AuthResult.Failure(error.message ?: "Network error")
+                AuthResult.Failure(
+                    message = error.message ?: "Network error",
+                    kind = AuthFailureKind.NETWORK
+                )
             } catch (error: RuntimeException) {
-                AuthResult.Failure(error.message ?: "Network error")
+                AuthResult.Failure(
+                    message = error.message ?: "Network error",
+                    kind = AuthFailureKind.NETWORK
+                )
             }
         }
+    }
+
+    private fun httpFailure(
+        code: Int,
+        responseBody: String,
+        unauthorizedKind: AuthFailureKind
+    ): AuthResult.Failure {
+        val message = AuthJsonParser.parse(responseBody).failureMessageOrNull() ?: "HTTP $code"
+        val kind = when {
+            code == 401 || code == 403 -> unauthorizedKind
+            code >= 500 -> AuthFailureKind.SERVER
+            else -> AuthFailureKind.UNKNOWN
+        }
+        return AuthResult.Failure(message = message, kind = kind)
     }
 
     private fun AuthResult.failureMessageOrNull(): String? {

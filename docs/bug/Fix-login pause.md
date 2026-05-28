@@ -2,6 +2,28 @@
 
 # IM 安卓客户端断网启动与双令牌登录态优化方案
 
+## 当前状态（2026-05-28）
+
+本次 bug 已按最小修复思路落地，当前实现状态如下：
+
+- 已将“本地 session 恢复”和“在线 token 校验/刷新”拆开。
+- App 启动时，`restoreSession()` 现在优先读取本地可恢复 session；只要本地 `refresh_token` 仍有效，就允许进入主界面，不再阻塞等待服务端 refresh。
+- 当 `access_token` 已过期但当前断网、超时或服务端暂不可达时，`ensureValidSession()` 不再清空本地登录态，而是保留本地 session，让界面维持已登录但离线的状态。
+- 只有在 `refresh_token` 本地已过期，或服务端明确返回会话失效/需要重新登录时，才会清理本地 session 并回到登录页。
+- 已补充回归测试，覆盖“离线恢复本地登录态”“refresh 网络失败不清 session”“登录页状态保持已认证”三个关键场景。
+
+这意味着当前行为已经从：
+
+```text
+断网 / refresh 失败 -> 误判未登录 -> 停留登录页
+```
+
+调整为：
+
+```text
+断网 / refresh 失败 -> 保留本地登录态 -> 进入主界面并显示离线
+```
+
 ## 一、问题背景
 
 当前安卓 IM App 在启动时存在一个问题：
@@ -512,3 +534,31 @@ SQLite 决定进入 App 后能展示什么；
 WebSocket 决定是否可以实时通信；
 断网只代表 Offline，不代表未登录。
 ```
+
+---
+
+## 实现落地点（2026-05-28 已完成）
+
+本次实际代码改动集中在认证恢复链路：
+
+```text
+AuthRepository.restoreSession()
+    -> 改为只做本地 session 恢复
+
+AuthRepository.ensureValidSession()
+    -> access_token 过期时尝试 refresh
+    -> 若 refresh 因网络/服务异常失败，保留本地 session
+    -> 若 refresh 明确失效，清理本地 session
+
+OkHttpAuthApi
+    -> 对网络失败、服务端失败、会话失效做基础分类
+```
+
+对应验证结果：
+
+```text
+AuthRepositoryTest
+LoginViewModelTest
+```
+
+已通过，覆盖本次修复涉及的核心启动与恢复场景。

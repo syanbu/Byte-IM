@@ -89,34 +89,27 @@ class AuthRepositoryTest {
     }
 
     @Test
-    fun restoreSessionRefreshesExpiredAccessTokenWhenRefreshTokenIsValid() = runTest {
+    fun restoreSessionReturnsLocalSessionWhenAccessTokenIsExpiredButRefreshTokenIsStillValid() = runTest {
         val tokenStore = InMemoryTokenStore()
-        tokenStore.save(
-            AuthSession(
-                accessToken = "expired-access",
-                refreshToken = "refresh-a",
-                userId = "13800138000",
-                username = "13800138000",
-                accessExpiresAtMillis = 999L,
-                refreshExpiresAtMillis = 2_000L
-            )
-        )
-        val refreshed = AuthSession(
+        val storedSession = AuthSession(
             accessToken = "fresh-access",
             refreshToken = "refresh-a",
             userId = "13800138000",
             username = "13800138000",
-            accessExpiresAtMillis = 2_000L,
+            accessExpiresAtMillis = 999L,
             refreshExpiresAtMillis = 2_000L
         )
-        val repository = AuthRepository(FakeAuthApi(refreshResult = AuthResult.Success(refreshed)), tokenStore, nowMillis = { 1_000L })
+        tokenStore.save(storedSession)
+        val api = FakeAuthApi(refreshResult = AuthResult.Success(storedSession))
+        val repository = AuthRepository(api, tokenStore, nowMillis = { 1_000L })
 
-        assertEquals(refreshed, repository.restoreSession())
+        assertEquals(storedSession, repository.restoreSession())
         assertEquals("fresh-access", tokenStore.currentSession()?.accessToken)
+        assertEquals(0, api.refreshCallCount)
     }
 
     @Test
-    fun restoreSessionClearsWhenRefreshFails() = runTest {
+    fun restoreSessionClearsWhenRefreshTokenHasExpiredLocally() = runTest {
         val tokenStore = InMemoryTokenStore()
         tokenStore.save(
             AuthSession(
@@ -125,13 +118,36 @@ class AuthRepositoryTest {
                 userId = "13800138000",
                 username = "13800138000",
                 accessExpiresAtMillis = 999L,
-                refreshExpiresAtMillis = 2_000L
+                refreshExpiresAtMillis = 999L
             )
         )
-        val repository = AuthRepository(FakeAuthApi(refreshResult = AuthResult.Failure("Refresh token expired or revoked")), tokenStore, nowMillis = { 1_000L })
+        val repository = AuthRepository(FakeAuthApi(), tokenStore, nowMillis = { 1_000L })
 
         assertNull(repository.restoreSession())
         assertNull(tokenStore.currentSession())
+    }
+
+    @Test
+    fun restoreSessionKeepsLocalSessionWhenRefreshFailsDueToNetwork() = runTest {
+        val storedSession = AuthSession(
+            accessToken = "expired-access",
+            refreshToken = "refresh-a",
+            userId = "13800138000",
+            username = "13800138000",
+            accessExpiresAtMillis = 999L,
+            refreshExpiresAtMillis = 2_000L
+        )
+        val tokenStore = InMemoryTokenStore().apply {
+            save(storedSession)
+        }
+        val repository = AuthRepository(
+            FakeAuthApi(refreshResult = AuthResult.Failure("Network error")),
+            tokenStore,
+            nowMillis = { 1_000L }
+        )
+
+        assertEquals(storedSession, repository.restoreSession())
+        assertEquals(storedSession, tokenStore.currentSession())
     }
 
     @Test
@@ -200,6 +216,30 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun ensureValidSessionKeepsStoredSessionWhenRefreshFailsDueToNetwork() = runTest {
+        val storedSession = AuthSession(
+            accessToken = "expired-access",
+            refreshToken = "refresh-a",
+            userId = "13800138000",
+            username = "13800138000",
+            accessExpiresAtMillis = 999L,
+            refreshExpiresAtMillis = 3_000L
+        )
+        val tokenStore = InMemoryTokenStore().apply {
+            save(storedSession)
+        }
+        val repository = AuthRepository(
+            FakeAuthApi(refreshResult = AuthResult.Failure("Network error")),
+            tokenStore,
+            nowMillis = { 1_000L }
+        )
+
+        assertNull(repository.ensureValidSession())
+        assertEquals(storedSession, tokenStore.currentSession())
+        assertEquals(storedSession, repository.sessionState.value)
+    }
+
+    @Test
     fun logoutRevokesAndClearsStoredSession() = runTest {
         val api = FakeAuthApi()
         val tokenStore = InMemoryTokenStore()
@@ -227,12 +267,16 @@ class AuthRepositoryTest {
         private val refreshResult: AuthResult = AuthResult.Success(AuthSession("token", "13800138000", "13800138000", expiresAtMillis = 2_000L))
     ) : AuthApi {
         var loggedOutRefreshToken: String? = null
+        var refreshCallCount: Int = 0
 
         override suspend fun login(phone: String, password: String): AuthResult = loginResult
 
         override suspend fun register(phone: String, password: String): AuthResult = registerResult
 
-        override suspend fun refresh(refreshToken: String): AuthResult = refreshResult
+        override suspend fun refresh(refreshToken: String): AuthResult {
+            refreshCallCount += 1
+            return refreshResult
+        }
 
         override suspend fun logout(refreshToken: String): AuthResult {
             loggedOutRefreshToken = refreshToken

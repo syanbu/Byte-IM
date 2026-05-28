@@ -13,4 +13,4 @@ fi
 
 cd "$SCRIPT_DIR"
 
-mvn -q exec:java
+mvn -q compile exec:java
