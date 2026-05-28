@@ -17,7 +17,7 @@ Development constraints: [`docs/DEVELOPMENT-CONSTRAINTS.md`](DEVELOPMENT-CONSTRA
 | B3 | Conversation list: recent chats, unread count, last-message preview | Done | [B3-conversation-list.md](status/B3-conversation-list.md) |
 | B4 | History message pagination, pull/load more | Partial | [B4-history-pagination.md](status/B4-history-pagination.md) |
 | B5 | Message persistence with SQLite, no Room | Done | [B5-local-persistence.md](status/B5-local-persistence.md) |
-| B5.5 | Mock-server durable message persistence | Deferred | [B5.5-mock-server-message-persistence.md](status/B5.5-mock-server-message-persistence.md) |
+| B5.5 | Mock-server durable message persistence | Done | [B5.5-mock-server-message-persistence.md](status/B5.5-mock-server-message-persistence.md) |
 | B6 | Custom binary protocol with header, body, CRC | Done | [B6-binary-protocol.md](status/B6-binary-protocol.md) |
 | B7 | Heartbeat and reconnect | Done | [B7-heartbeat-reconnect.md](status/B7-heartbeat-reconnect.md) |
 | B8 | Message ordering with client seq / server ACK | Done | [B8-message-ordering.md](status/B8-message-ordering.md) |
@@ -86,14 +86,19 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 
 ## Not Started
 
-- B5.5 mock-server durable message persistence.
 - Phase 10 performance, packet capture, and stability evidence.
 
 ## Newly Completed
 
+- B5.5 mock-server durable message persistence is complete:
+  - The mock server now persists accepted messages in `mock-server/data/mock-im-messages.sqlite`.
+  - Accepted-message recovery now survives server restart, so sender-side `messageId` idempotency continues across restart.
+  - Receiver undelivered-message recovery now survives server restart, and receiver auth/reconnect replays only messages still awaiting `DELIVERY_ACK`.
+  - `DELIVERY_ACK` now clears both the in-memory undelivered index and the persisted delivery flag, so acked messages are not replayed after restart.
+  - This persistence layer stores the accepted message body and key fields needed for later B4 server-backed history work.
 - B9.5 receiver delivery ACK is complete for the current in-memory mock-server scope:
   - Android sends `DELIVERY_ACK` after persisting `RECEIVE_MESSAGE`.
   - Duplicate receive packets remain locally deduplicated by `messageId` and still ACK safely.
-  - The mock server tracks receiver delivery state in memory and redelivers undelivered messages after receiver auth/reconnect.
+  - The mock server tracks receiver delivery state in memory and now restores that state from SQLite on startup before redelivering undelivered messages after receiver auth/reconnect.
   - Sender `MESSAGE_ACK` semantics remain unchanged and still mean only server acceptance plus `serverSeq` allocation.
   - Android now enforces a single inbound packet consumer: `MessagePacketProcessor` owns WebSocket receive handling, while `ChatViewModel` and `ConversationListViewModel` refresh only from repository update signals. This fixes the duplicate `DELIVERY_ACK` symptom caused by multiple UI collectors handling the same `RECEIVE_MESSAGE`.

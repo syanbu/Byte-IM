@@ -18,6 +18,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -27,6 +28,7 @@ public final class MessageRouter {
     private final ClientSessionRegistry registry;
     private final TokenService tokenService;
     private final ServerSeqStore serverSeqStore;
+    private final AcceptedMessageStore acceptedMessageStore;
     private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ConcurrentMap<String, AcceptedMessage>> undeliveredMessagesByReceiver = new ConcurrentHashMap<>();
 
@@ -39,9 +41,20 @@ public final class MessageRouter {
     }
 
     public MessageRouter(ClientSessionRegistry registry, TokenService tokenService, ServerSeqStore serverSeqStore) {
+        this(registry, tokenService, serverSeqStore, new InMemoryAcceptedMessageStore());
+    }
+
+    public MessageRouter(
+            ClientSessionRegistry registry,
+            TokenService tokenService,
+            ServerSeqStore serverSeqStore,
+            AcceptedMessageStore acceptedMessageStore
+    ) {
         this.registry = registry;
         this.tokenService = tokenService;
         this.serverSeqStore = serverSeqStore;
+        this.acceptedMessageStore = acceptedMessageStore;
+        restoreAcceptedMessages();
     }
 
     public synchronized void handleSendMessage(String senderUserId, ImPacket packet) {
@@ -86,16 +99,35 @@ public final class MessageRouter {
 
         message.addProperty("serverSeq", nextServerSeq);
         message.addProperty("serverTime", serverTime);
-        acceptedMessagesById.put(messageId, new AcceptedMessage(
+        AcceptedMessage newlyAccepted = new AcceptedMessage(
                 ack.deepCopy(),
                 message.deepCopy(),
                 receiverId,
                 nextServerSeq,
                 false
-        ));
+        );
+        Optional<AcceptedMessage> existing = acceptedMessageStore.saveIfAbsent(messageId, newlyAccepted);
+        if (existing.isPresent()) {
+            AcceptedMessage restored = existing.get();
+            acceptedMessagesById.putIfAbsent(messageId, restored);
+            if (!restored.delivered()) {
+                undeliveredMessagesByReceiver
+                        .computeIfAbsent(restored.receiverUserId(), ignored -> new ConcurrentHashMap<>())
+                        .put(messageId, restored);
+            }
+            sendAck(senderUserId, restored.ack());
+            ImServerLogger.log(
+                    "[IM] SEND_MESSAGE duplicate sender=%s messageId=%s serverSeq=%d ackOnly=true",
+                    senderUserId,
+                    messageId,
+                    restored.serverSeq()
+            );
+            return;
+        }
+        acceptedMessagesById.put(messageId, newlyAccepted);
         undeliveredMessagesByReceiver
                 .computeIfAbsent(receiverId, ignored -> new ConcurrentHashMap<>())
-                .put(messageId, acceptedMessagesById.get(messageId));
+                .put(messageId, newlyAccepted);
         sendAck(senderUserId, ack);
         deliverOrKeepPending(receiverId, messageId, message, nextServerSeq);
     }
@@ -116,6 +148,7 @@ public final class MessageRouter {
                     messageId,
                     serverSeq
             );
+            acceptedMessageStore.markDelivered(messageId, receiverUserId);
             removeUndelivered(receiverUserId, messageId);
             return accepted.markDelivered();
         });
@@ -225,7 +258,18 @@ public final class MessageRouter {
         return new ImPacket(command.value(), body.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    private record AcceptedMessage(
+    private void restoreAcceptedMessages() {
+        for (StoredAcceptedMessage stored : acceptedMessageStore.loadAll()) {
+            acceptedMessagesById.put(stored.messageId(), stored.accepted());
+            if (!stored.accepted().delivered()) {
+                undeliveredMessagesByReceiver
+                        .computeIfAbsent(stored.accepted().receiverUserId(), ignored -> new ConcurrentHashMap<>())
+                        .put(stored.messageId(), stored.accepted());
+            }
+        }
+    }
+
+    static record AcceptedMessage(
             JsonObject ack,
             JsonObject message,
             String receiverUserId,
@@ -234,6 +278,43 @@ public final class MessageRouter {
     ) {
         private AcceptedMessage markDelivered() {
             return new AcceptedMessage(ack, message, receiverUserId, serverSeq, true);
+        }
+    }
+
+    public record StoredAcceptedMessage(String messageId, AcceptedMessage accepted) {
+    }
+
+    public interface AcceptedMessageStore {
+        Optional<AcceptedMessage> saveIfAbsent(String messageId, AcceptedMessage accepted);
+
+        void markDelivered(String messageId, String receiverUserId);
+
+        List<StoredAcceptedMessage> loadAll();
+    }
+
+    public static final class InMemoryAcceptedMessageStore implements AcceptedMessageStore {
+        private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
+
+        @Override
+        public Optional<AcceptedMessage> saveIfAbsent(String messageId, AcceptedMessage accepted) {
+            return Optional.ofNullable(acceptedMessagesById.putIfAbsent(messageId, accepted));
+        }
+
+        @Override
+        public void markDelivered(String messageId, String receiverUserId) {
+            acceptedMessagesById.computeIfPresent(messageId, (ignored, accepted) -> {
+                if (!accepted.receiverUserId().equals(receiverUserId)) {
+                    return accepted;
+                }
+                return accepted.markDelivered();
+            });
+        }
+
+        @Override
+        public List<StoredAcceptedMessage> loadAll() {
+            return acceptedMessagesById.entrySet().stream()
+                    .map(entry -> new StoredAcceptedMessage(entry.getKey(), entry.getValue()))
+                    .toList();
         }
     }
 
@@ -317,6 +398,171 @@ public final class MessageRouter {
                     return resultSet.next() ? resultSet.getLong("last_server_seq") : Math.max(1000L, initialSequenceSupplier.getAsLong());
                 }
             }
+        }
+    }
+
+    public static final class SQLiteAcceptedMessageStore implements AcceptedMessageStore {
+        private final String jdbcUrl;
+
+        public SQLiteAcceptedMessageStore(Path databasePath) {
+            try {
+                Path parent = databasePath.toAbsolutePath().getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
+            } catch (java.io.IOException error) {
+                throw new IllegalStateException("Unable to create accepted message database directory", error);
+            }
+            this.jdbcUrl = "jdbc:sqlite:" + databasePath.toAbsolutePath().toUri();
+            initialize();
+        }
+
+        @Override
+        public synchronized Optional<AcceptedMessage> saveIfAbsent(String messageId, AcceptedMessage accepted) {
+            Optional<AcceptedMessage> existing = find(messageId);
+            if (existing.isPresent()) {
+                return existing;
+            }
+            try (Connection connection = DriverManager.getConnection(jdbcUrl);
+                 PreparedStatement statement = connection.prepareStatement(
+                         """
+                         INSERT OR IGNORE INTO accepted_messages(
+                           message_id, conversation_id, sender_id, receiver_id, client_seq, server_seq,
+                           content, timestamp, server_time, delivered, ack_json, message_json
+                         ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         """
+                 )) {
+                JsonObject message = accepted.message();
+                JsonObject ack = accepted.ack();
+                statement.setString(1, messageId);
+                statement.setString(2, stringField(message, "conversationId"));
+                statement.setString(3, stringField(message, "senderId"));
+                statement.setString(4, accepted.receiverUserId());
+                statement.setLong(5, longField(message, "clientSeq"));
+                statement.setLong(6, accepted.serverSeq());
+                statement.setString(7, stringField(message, "content"));
+                statement.setLong(8, longField(message, "timestamp"));
+                statement.setLong(9, longField(ack, "serverTime"));
+                statement.setInt(10, accepted.delivered() ? 1 : 0);
+                statement.setString(11, ack.toString());
+                statement.setString(12, message.toString());
+                int inserted = statement.executeUpdate();
+                return inserted == 1 ? Optional.empty() : find(messageId);
+            } catch (SQLException error) {
+                throw new IllegalStateException("Unable to persist accepted message", error);
+            }
+        }
+
+        @Override
+        public synchronized void markDelivered(String messageId, String receiverUserId) {
+            try (Connection connection = DriverManager.getConnection(jdbcUrl);
+                 PreparedStatement statement = connection.prepareStatement(
+                         """
+                         UPDATE accepted_messages
+                         SET delivered = 1
+                         WHERE message_id = ? AND receiver_id = ?
+                         """
+                 )) {
+                statement.setString(1, messageId);
+                statement.setString(2, receiverUserId);
+                statement.executeUpdate();
+            } catch (SQLException error) {
+                throw new IllegalStateException("Unable to update accepted message delivery state", error);
+            }
+        }
+
+        @Override
+        public synchronized List<StoredAcceptedMessage> loadAll() {
+            try (Connection connection = DriverManager.getConnection(jdbcUrl);
+                 PreparedStatement statement = connection.prepareStatement(
+                         """
+                         SELECT message_id, receiver_id, server_seq, delivered, ack_json, message_json
+                         FROM accepted_messages
+                         ORDER BY conversation_id ASC, server_seq ASC
+                         """
+                 );
+                 ResultSet resultSet = statement.executeQuery()) {
+                List<StoredAcceptedMessage> restored = new ArrayList<>();
+                while (resultSet.next()) {
+                    JsonObject ack = JsonParser.parseString(resultSet.getString("ack_json")).getAsJsonObject();
+                    JsonObject message = JsonParser.parseString(resultSet.getString("message_json")).getAsJsonObject();
+                    restored.add(new StoredAcceptedMessage(
+                            resultSet.getString("message_id"),
+                            new AcceptedMessage(
+                                    ack,
+                                    message,
+                                    resultSet.getString("receiver_id"),
+                                    resultSet.getLong("server_seq"),
+                                    resultSet.getInt("delivered") == 1
+                            )
+                    ));
+                }
+                return restored;
+            } catch (SQLException error) {
+                throw new IllegalStateException("Unable to load accepted messages", error);
+            }
+        }
+
+        private Optional<AcceptedMessage> find(String messageId) {
+            try (Connection connection = DriverManager.getConnection(jdbcUrl);
+                 PreparedStatement statement = connection.prepareStatement(
+                         """
+                         SELECT receiver_id, server_seq, delivered, ack_json, message_json
+                         FROM accepted_messages
+                         WHERE message_id = ?
+                         """
+                 )) {
+                statement.setString(1, messageId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new AcceptedMessage(
+                            JsonParser.parseString(resultSet.getString("ack_json")).getAsJsonObject(),
+                            JsonParser.parseString(resultSet.getString("message_json")).getAsJsonObject(),
+                            resultSet.getString("receiver_id"),
+                            resultSet.getLong("server_seq"),
+                            resultSet.getInt("delivered") == 1
+                    ));
+                }
+            } catch (SQLException error) {
+                throw new IllegalStateException("Unable to find accepted message", error);
+            }
+        }
+
+        private void initialize() {
+            try (Connection connection = DriverManager.getConnection(jdbcUrl);
+                 Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        """
+                        CREATE TABLE IF NOT EXISTS accepted_messages (
+                          message_id TEXT PRIMARY KEY,
+                          conversation_id TEXT NOT NULL,
+                          sender_id TEXT NOT NULL,
+                          receiver_id TEXT NOT NULL,
+                          client_seq INTEGER NOT NULL,
+                          server_seq INTEGER NOT NULL,
+                          content TEXT NOT NULL,
+                          timestamp INTEGER NOT NULL,
+                          server_time INTEGER NOT NULL,
+                          delivered INTEGER NOT NULL DEFAULT 0,
+                          ack_json TEXT NOT NULL,
+                          message_json TEXT NOT NULL,
+                          UNIQUE(conversation_id, server_seq)
+                        )
+                        """
+                );
+            } catch (SQLException error) {
+                throw new IllegalStateException("Unable to initialize accepted message database", error);
+            }
+        }
+
+        private static String stringField(JsonObject body, String name) {
+            return body.get(name).getAsString();
+        }
+
+        private static long longField(JsonObject body, String name) {
+            return body.get(name).getAsLong();
         }
     }
 }

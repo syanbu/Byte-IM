@@ -2,7 +2,7 @@
 
 ## Status
 
-Done for the current B1/B2 local verification path.
+Done for the current B1-B9.5 local verification path, including B5.5 durable accepted-message persistence.
 
 ## Completed
 
@@ -19,13 +19,18 @@ Done for the current B1/B2 local verification path.
 - Refresh tokens are stored as SHA-256 hashes in SQLite.
 - WebSocket `AUTH` validates access token signature and expiry.
 - WebSocket protocol matches Android frame format.
-- Handles `AUTH`, `HEARTBEAT`, and `SEND_MESSAGE`.
+- Handles `AUTH`, `HEARTBEAT`, `SEND_MESSAGE`, and `DELIVERY_ACK`.
 - Sends `AUTH_ACK`, `HEARTBEAT_ACK`, `MESSAGE_ACK`, online receiver `RECEIVE_MESSAGE`, and queued offline `RECEIVE_MESSAGE` after the receiver authenticates.
+- Persists users in SQLite.
+- Persists conversation `serverSeq` state in SQLite.
+- Persists accepted messages and receiver delivery state in SQLite.
+- Restores accepted messages and undelivered receiver replay state after server restart.
 - Logs connection-path events and packet errors for local diagnostics.
 - Removes channel session state when clients disconnect.
 
 | Date | Command | Result |
 |---|---|---|
+| 2026-05-27 | `mvn -q -Dtest=MessageRouterTest test`; `mvn -q test` in `mock-server` | Passed: accepted-message SQLite persistence, router restart restore, receiver auth replay after restart, no replay after `DELIVERY_ACK`, and restart-proof sender `messageId` idempotency. |
 | 2026-05-25 | `mvn -q -Dtest=MessageRouterTest test`; `mvn -q test` in `mock-server` | Passed: messages sent to an offline receiver are queued in memory and delivered as `RECEIVE_MESSAGE` immediately after that receiver authenticates. |
 | 2026-05-22 | `mvn -q test` in `mock-server` | Passed: protocol codec, auth response, message ACK/forward routing, and channel session removal tests. |
 | 2026-05-22 | `mvn -q package` in `mock-server` | Passed: Java/Netty mock server packaged successfully. |

@@ -118,6 +118,8 @@ B8 defines two sequence fields with different trust boundaries.
 
 The local mock server stores the last assigned sequence per conversation in `mock-server/data/mock-im-sequences.sqlite` when run through `MockImServer`. This prevents a server restart from assigning lower `serverSeq` values than messages already stored on Android, which would otherwise make new messages appear older than the local first page.
 
+Accepted chat messages are now stored separately in `mock-server/data/mock-im-messages.sqlite`. That store preserves sender `messageId` idempotency and receiver undelivered replay state across mock-server restart, without changing the meaning of `MESSAGE_ACK` or `DELIVERY_ACK`.
+
 Android display ordering follows this policy:
 
 - Confirmed outgoing and received messages with `serverSeq` are ordered by conversation-local `serverSeq`.
@@ -168,6 +170,7 @@ RECEIVE_MESSAGE
 - It does not change the local message row from `RECEIVED` to another status.
 - It is not a read receipt and must not be shown as B12 "read" UI.
 - If `DELIVERY_ACK` is lost, server redelivery remains safe because Android deduplicates by `messageId`.
+- The mock server persists accepted messages plus the receiver `delivered` flag, so auth-triggered redelivery survives server restart instead of only surviving within the current process.
 - Android should have only one login-session scoped consumer of WebSocket incoming packets for this path. UI ViewModels must refresh from repository/storage updates instead of each collecting and reprocessing the same `RECEIVE_MESSAGE`, otherwise duplicate `DELIVERY_ACK` sends can occur even when local message persistence remains deduplicated.
 
 ## Current Mock Server Logs

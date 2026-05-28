@@ -69,11 +69,10 @@ If the mock server receives the same `messageId` more than once in the same proc
 ## Explicitly Deferred
 
 - Receiver-side delivery ACK is deferred to [B9.5-delivery-ack.md](B9.5-delivery-ack.md). B9 first pass should treat sender `MESSAGE_ACK` as server acceptance only, not receiver delivery proof.
-- Durable mock-server message persistence is deferred to [B5.5-mock-server-message-persistence.md](B5.5-mock-server-message-persistence.md). B9 first pass may still use server-side `messageId` idempotency, but full restart-proof offline delivery belongs to B5.5/B9.5 follow-up work.
+- Durable mock-server message persistence is now implemented in [B5.5-mock-server-message-persistence.md](B5.5-mock-server-message-persistence.md). B9 sender-side semantics remain unchanged; the new persistence layer simply removes the previous restart-only gap in server-side `messageId` idempotency.
 
 ## Remaining Risks
 
-- Mock-server `messageId` idempotency is in memory only. Server restart loses the accepted-message map, because durable chat message persistence is B5.5.
 - Android outbox retry is process-local. The pending table survives app process death, but retry resumes only after the app starts, logs in/restores the session, and reaches `Authenticated`.
 - This pass does not add receiver delivery proof. A sender `MESSAGE_ACK` means server acceptance, not receiver persistence.
 - Manual emulator verification for airplane-mode sends and visual spinner/failure states is still recommended.
@@ -94,4 +93,3 @@ If the mock server receives the same `messageId` more than once in the same proc
 | 2026-05-26 | Android debug build | `.\gradlew.bat :app:assembleDebug --console=plain` | Passed. |
 | 2026-05-26 | Sender outbox atomicity | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --console=plain` | Passed: `connection.send()` occurs only after the local transaction commits. |
 | 2026-05-26 | Android transaction compile check | `.\gradlew.bat :app:assembleDebugAndroidTest --console=plain` | Passed after allowing Gradle to fetch missing wrapper/cache data: instrumented SQLite rollback coverage compiles. |
-

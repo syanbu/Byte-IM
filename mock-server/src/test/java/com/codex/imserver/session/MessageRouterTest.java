@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class MessageRouterTest {
@@ -378,6 +379,167 @@ public class MessageRouterTest {
 
         MessageRouter.SQLiteServerSeqStore thirdStore = new MessageRouter.SQLiteServerSeqStore(database, () -> 50_000L);
         assertEquals(50_001L, thirdStore.next("single:13700113700:13800113800"));
+    }
+
+    @Test
+    public void sqliteAcceptedMessageStorePersistsAcceptedAndUndeliveredState() throws Exception {
+        Path directory = Files.createTempDirectory("im-message-store-test");
+        Path database = directory.resolve("messages.sqlite");
+        MessageRouter.SQLiteAcceptedMessageStore firstStore = new MessageRouter.SQLiteAcceptedMessageStore(database);
+
+        JsonObject ack = JsonParser.parseString("""
+            {
+              "messageId":"persisted-1",
+              "conversationId":"single:13800113800:13900113900",
+              "clientSeq":7,
+              "serverSeq":1005,
+              "serverTime":2000
+            }
+            """).getAsJsonObject();
+        JsonObject message = JsonParser.parseString("""
+            {
+              "messageId":"persisted-1",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":7,
+              "serverSeq":1005,
+              "serverTime":2000,
+              "content":"persist me",
+              "timestamp":1000
+            }
+            """).getAsJsonObject();
+        MessageRouter.AcceptedMessage accepted = new MessageRouter.AcceptedMessage(
+                ack,
+                message,
+                "13900113900",
+                1005,
+                false
+        );
+
+        assertTrue(firstStore.saveIfAbsent("persisted-1", accepted).isEmpty());
+
+        MessageRouter.SQLiteAcceptedMessageStore secondStore = new MessageRouter.SQLiteAcceptedMessageStore(database);
+        List<MessageRouter.StoredAcceptedMessage> restored = secondStore.loadAll();
+
+        assertEquals(1, restored.size());
+        assertEquals("persisted-1", restored.get(0).messageId());
+        assertEquals("13900113900", restored.get(0).accepted().receiverUserId());
+        assertEquals(1005L, restored.get(0).accepted().serverSeq());
+        assertFalse(restored.get(0).accepted().delivered());
+    }
+
+    @Test
+    public void duplicateMessageIdRemainsIdempotentAcrossRouterRestart() throws Exception {
+        Path directory = Files.createTempDirectory("im-router-restart-idempotency");
+        Path sequenceDatabase = directory.resolve("sequences.sqlite");
+        Path messageDatabase = directory.resolve("messages.sqlite");
+        MessageRouter.ServerSeqStore seqStore = new MessageRouter.SQLiteServerSeqStore(sequenceDatabase, () -> 1L);
+        MessageRouter.AcceptedMessageStore acceptedStore = new MessageRouter.SQLiteAcceptedMessageStore(messageDatabase);
+
+        ClientSessionRegistry firstRegistry = new ClientSessionRegistry();
+        CapturingClient firstSender = new CapturingClient();
+        firstRegistry.register("13800113800", firstSender);
+        MessageRouter firstRouter = new MessageRouter(firstRegistry, TokenService.defaultService(), seqStore, acceptedStore);
+        ImPacket packet = packet("""
+            {
+              "messageId":"restart-dup-1",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"hello",
+              "timestamp":1000
+            }
+            """);
+        firstRouter.handleSendMessage("13800113800", packet);
+
+        ClientSessionRegistry secondRegistry = new ClientSessionRegistry();
+        CapturingClient secondSender = new CapturingClient();
+        CapturingClient secondReceiver = new CapturingClient();
+        secondRegistry.register("13800113800", secondSender);
+        secondRegistry.register("13900113900", secondReceiver);
+        MessageRouter secondRouter = new MessageRouter(secondRegistry, TokenService.defaultService(), seqStore, acceptedStore);
+        secondRouter.handleSendMessage("13800113800", packet);
+
+        assertEquals(1, secondSender.sentPackets.size());
+        assertEquals(0, secondReceiver.sentPackets.size());
+        assertEquals(1001L, body(secondSender.sentPackets.get(0)).get("serverSeq").getAsLong());
+    }
+
+    @Test
+    public void undeliveredMessagesAreRestoredAndRedeliveredAfterRouterRestart() throws Exception {
+        Path directory = Files.createTempDirectory("im-router-restart-redelivery");
+        Path sequenceDatabase = directory.resolve("sequences.sqlite");
+        Path messageDatabase = directory.resolve("messages.sqlite");
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        MessageRouter.ServerSeqStore seqStore = new MessageRouter.SQLiteServerSeqStore(sequenceDatabase, () -> 1L);
+        MessageRouter.AcceptedMessageStore acceptedStore = new MessageRouter.SQLiteAcceptedMessageStore(messageDatabase);
+
+        ClientSessionRegistry firstRegistry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        firstRegistry.register("13900113900", sender);
+        MessageRouter firstRouter = new MessageRouter(firstRegistry, tokenService, seqStore, acceptedStore);
+        firstRouter.handleSendMessage("13900113900", packet("""
+            {
+              "messageId":"restart-undelivered-1",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13900113900",
+              "receiverId":"13800113800",
+              "clientSeq":2,
+              "content":"deliver after restart",
+              "timestamp":1000
+            }
+            """));
+
+        ClientSessionRegistry secondRegistry = new ClientSessionRegistry();
+        CapturingClient receiver = new CapturingClient();
+        MessageRouter secondRouter = new MessageRouter(secondRegistry, tokenService, seqStore, acceptedStore);
+        secondRouter.handleAuth(tokenService.issue("13800113800").token(), receiver);
+
+        assertEquals(List.of(ImCommand.AUTH_ACK.value(), ImCommand.RECEIVE_MESSAGE.value()), receiver.sentPackets.stream().map(ImPacket::cmd).toList());
+        assertEquals("restart-undelivered-1", body(receiver.sentPackets.get(1)).get("messageId").getAsString());
+    }
+
+    @Test
+    public void deliveryAckedMessageIsNotRedeliveredAfterRouterRestart() throws Exception {
+        Path directory = Files.createTempDirectory("im-router-restart-delivered");
+        Path sequenceDatabase = directory.resolve("sequences.sqlite");
+        Path messageDatabase = directory.resolve("messages.sqlite");
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        MessageRouter.ServerSeqStore seqStore = new MessageRouter.SQLiteServerSeqStore(sequenceDatabase, () -> 1L);
+        MessageRouter.AcceptedMessageStore acceptedStore = new MessageRouter.SQLiteAcceptedMessageStore(messageDatabase);
+
+        ClientSessionRegistry firstRegistry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        firstRegistry.register("13900113900", sender);
+        MessageRouter firstRouter = new MessageRouter(firstRegistry, tokenService, seqStore, acceptedStore);
+        firstRouter.handleSendMessage("13900113900", packet("""
+            {
+              "messageId":"restart-acked-1",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13900113900",
+              "receiverId":"13800113800",
+              "clientSeq":3,
+              "content":"already delivered",
+              "timestamp":1000
+            }
+            """));
+        firstRouter.handleDeliveryAck("13800113800", deliveryAck("""
+            {
+              "messageId":"restart-acked-1",
+              "conversationId":"single:13800113800:13900113900",
+              "serverSeq":1001,
+              "receiverId":"13800113800"
+            }
+            """));
+
+        ClientSessionRegistry secondRegistry = new ClientSessionRegistry();
+        CapturingClient receiver = new CapturingClient();
+        MessageRouter secondRouter = new MessageRouter(secondRegistry, tokenService, seqStore, acceptedStore);
+        secondRouter.handleAuth(tokenService.issue("13800113800").token(), receiver);
+
+        assertEquals(List.of(ImCommand.AUTH_ACK.value()), receiver.sentPackets.stream().map(ImPacket::cmd).toList());
     }
 
     @Test

@@ -31,10 +31,12 @@ public final class MockImServer {
     public void start(int port) throws InterruptedException {
         ClientSessionRegistry registry = new ClientSessionRegistry();
         TokenService tokenService = TokenService.defaultService();
+        java.nio.file.Path messageDatabase = java.nio.file.Path.of("data", "mock-im-messages.sqlite");
         MessageRouter messageRouter = new MessageRouter(
                 registry,
                 tokenService,
-                new MessageRouter.SQLiteServerSeqStore(java.nio.file.Path.of("data", "mock-im-sequences.sqlite"))
+                new MessageRouter.SQLiteServerSeqStore(java.nio.file.Path.of("data", "mock-im-sequences.sqlite")),
+                new MessageRouter.SQLiteAcceptedMessageStore(messageDatabase)
         );
         AuthService authService = new AuthService(
                 new UserStore(java.nio.file.Path.of("data", "mock-im-users.sqlite")),

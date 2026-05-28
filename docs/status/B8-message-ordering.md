@@ -20,6 +20,10 @@ It means "the server-assigned order in which messages entered this conversation"
 It is the authoritative ordering key for confirmed or received messages in a conversation.
 Different conversations can reuse the same `serverSeq` values, but the same conversation must increase monotonically.
 
+This also means the final displayed order is not defined by the sender's local tap order.
+If sender A locally creates messages `1`, `2`, and `3`, but the server actually accepts them in the order `2`, `3`, then `1`, the conversation's final authoritative order becomes `2`, `3`, then `1`.
+Both sender and receiver clients must eventually converge to that server-accepted order once `serverSeq` is known.
+
 For single chat, `single:A:B` and `single:A:C` are independent conversations with independent `serverSeq` sequences.
 
 ## Completed
@@ -30,6 +34,9 @@ For single chat, `single:A:B` and `single:A:C` are independent conversations wit
   - messages with `serverSeq` by `serverSeq DESC` for the internal newest-first list used by the current `reverseLayout` chat UI;
   - legacy or local messages without `serverSeq` and not `SENDING` by local newest-first fallback.
 - `AndroidMessageDao` uses the same ordering policy in SQLite `ORDER BY`, without Room.
+- Sender-side local messages therefore have two phases:
+  - before `MESSAGE_ACK`, they are shown with temporary local ordering while `serverSeq` is still null;
+  - after `MESSAGE_ACK`, they join the authoritative `serverSeq` ordering and may move relative to other outgoing messages if the server accepted them in a different order from local send creation.
 - `ChatViewModel` merge/refresh logic uses `MessageOrderingPolicy`, so out-of-order `RECEIVE_MESSAGE` arrival is re-sorted after persistence and refresh.
 - Android now starts a login-session scoped `MessagePacketProcessor` from the authenticated root, so `RECEIVE_MESSAGE` packets are persisted even when the user is on `Contacts`, `Me`, or another screen instead of `Messages`/`Chat`.
 - Duplicate `messageId` handling remains through `insertOrIgnore`; duplicate RECEIVE packets do not create duplicate rows.
@@ -49,6 +56,7 @@ For single chat, `single:A:B` and `single:A:C` are independent conversations wit
 ## Remaining Risks
 
 - The current Android chat state remains newest-first internally because `ChatScreen` uses `LazyColumn(reverseLayout = true)`; visually this displays increasing `serverSeq` from older to newer.
+- Users can observe outgoing messages re-order after ACK if the server accepts concurrent sends in a different order from local send creation; that is expected under the current B8 semantics because `serverSeq`, not `clientSeq`, is the final display key.
 - B8 does not implement server-backed gap detection or missing-message sync, so dropped packets still require later B9/sync work.
 - Manual emulator verification with deliberately delayed/out-of-order network delivery has not been captured; coverage is currently unit-test based.
 - SQLite ordering is implemented in `AndroidMessageDao`, while the local JVM contract test covers the shared in-memory ordering policy. Instrumented SQLite verification is still a useful future check.
@@ -63,4 +71,3 @@ For single chat, `single:A:B` and `single:A:C` are independent conversations wit
 | 2026-05-26 | Mock server tests | `mvn -q test` in `mock-server` | Passed: `MESSAGE_ACK`/`RECEIVE_MESSAGE` contain `serverSeq`, logs include ordering fields, per-conversation `serverSeq` is independent, and same-conversation `serverSeq` increases. |
 | 2026-05-26 | B8 refresh regression | `mvn -q clean test -Dtest=MessageRouterTest` in `mock-server` | Passed: per-conversation `serverSeq` survives router/store recreation and SQLite store starts above legacy small sequence values for real server runs. |
 | 2026-05-26 | Android receive regression | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessagePacketProcessorTest --console=plain` | Passed: incoming packets are persisted and conversations updated even without a screen ViewModel collecting WebSocket packets. |
-
