@@ -1,10 +1,21 @@
 package com.codex.im.auth
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 class AuthRepository(
     private val authApi: AuthApi,
     private val tokenStore: TokenStore,
     private val nowMillis: () -> Long = { System.currentTimeMillis() }
 ) {
+    private val mutableSessionState = MutableStateFlow<AuthSession?>(null)
+    val sessionState: StateFlow<AuthSession?> = mutableSessionState.asStateFlow()
+
+    init {
+        mutableSessionState.value = readCurrentSession()
+    }
+
     suspend fun login(phone: String, password: String): AuthResult {
         return persistOnSuccess(authApi.login(phone, password))
     }
@@ -14,41 +25,40 @@ class AuthRepository(
     }
 
     fun currentSession(): AuthSession? {
-        val session = tokenStore.currentSession() ?: return null
-        if (!session.hasRestorableIdentity() || session.refreshExpiresAtMillis <= nowMillis()) {
-            tokenStore.clear()
-            return null
-        }
-        if (session.accessExpiresAtMillis <= nowMillis()) {
-            return null
-        }
+        val session = readCurrentSession()
+        mutableSessionState.value = session
         return session
     }
 
     fun hasStoredSession(): Boolean = tokenStore.currentSession() != null
 
     suspend fun restoreSession(): AuthSession? {
+        return ensureValidSession()
+    }
+
+    suspend fun ensureValidSession(): AuthSession? {
         val session = tokenStore.currentSession() ?: return null
         if (!session.hasRestorableIdentity() || session.refreshExpiresAtMillis <= nowMillis()) {
-            tokenStore.clear()
+            clearStoredSession()
             return null
         }
         if (session.accessExpiresAtMillis > nowMillis()) {
+            mutableSessionState.value = session
             return session
         }
         return when (val result = authApi.refresh(session.refreshToken)) {
             is AuthResult.Success -> {
                 if (!result.session.isRestorable(nowMillis())) {
-                    tokenStore.clear()
+                    clearStoredSession()
                     null
                 } else {
-                    tokenStore.save(result.session)
+                    saveSession(result.session)
                     result.session
                 }
             }
             is AuthResult.Failure,
             AuthResult.LoggedOut -> {
-                tokenStore.clear()
+                clearStoredSession()
                 null
             }
         }
@@ -56,7 +66,7 @@ class AuthRepository(
 
     suspend fun logout() {
         val refreshToken = tokenStore.currentSession()?.refreshToken
-        tokenStore.clear()
+        clearStoredSession()
         if (!refreshToken.isNullOrBlank()) {
             authApi.logout(refreshToken)
         }
@@ -67,9 +77,31 @@ class AuthRepository(
             if (!result.session.isRestorable(nowMillis())) {
                 return AuthResult.Failure("Invalid authentication response")
             }
-            tokenStore.save(result.session)
+            saveSession(result.session)
         }
         return result
+    }
+
+    private fun readCurrentSession(): AuthSession? {
+        val session = tokenStore.currentSession() ?: return null
+        if (!session.hasRestorableIdentity() || session.refreshExpiresAtMillis <= nowMillis()) {
+            clearStoredSession()
+            return null
+        }
+        if (session.accessExpiresAtMillis <= nowMillis()) {
+            return null
+        }
+        return session
+    }
+
+    private fun saveSession(session: AuthSession) {
+        tokenStore.save(session)
+        mutableSessionState.value = session
+    }
+
+    private fun clearStoredSession() {
+        tokenStore.clear()
+        mutableSessionState.value = null
     }
 
     private fun AuthSession.isRestorable(now: Long): Boolean {

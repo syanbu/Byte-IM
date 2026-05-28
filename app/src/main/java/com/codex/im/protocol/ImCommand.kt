@@ -3,6 +3,7 @@ package com.codex.im.protocol
 enum class ImCommand(val value: Int) {
     AUTH(1),
     AUTH_ACK(2),
+    AUTH_NACK(5),
     HEARTBEAT(3),
     HEARTBEAT_ACK(4),
     SEND_MESSAGE(10),

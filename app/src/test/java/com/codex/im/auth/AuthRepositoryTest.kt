@@ -135,6 +135,71 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun ensureValidSessionReturnsCurrentSessionWhenAccessTokenIsStillValid() = runTest {
+        val session = AuthSession(
+            accessToken = "access-a",
+            refreshToken = "refresh-a",
+            userId = "13800138000",
+            username = "13800138000",
+            accessExpiresAtMillis = 2_000L,
+            refreshExpiresAtMillis = 3_000L
+        )
+        val repository = AuthRepository(FakeAuthApi(), InMemoryTokenStore().apply { save(session) }, nowMillis = { 1_000L })
+
+        assertEquals(session, repository.ensureValidSession())
+    }
+
+    @Test
+    fun ensureValidSessionRefreshesExpiredAccessTokenWhenRefreshTokenIsValid() = runTest {
+        val tokenStore = InMemoryTokenStore()
+        tokenStore.save(
+            AuthSession(
+                accessToken = "expired-access",
+                refreshToken = "refresh-a",
+                userId = "13800138000",
+                username = "13800138000",
+                accessExpiresAtMillis = 999L,
+                refreshExpiresAtMillis = 3_000L
+            )
+        )
+        val refreshed = AuthSession(
+            accessToken = "fresh-access",
+            refreshToken = "refresh-a",
+            userId = "13800138000",
+            username = "13800138000",
+            accessExpiresAtMillis = 2_000L,
+            refreshExpiresAtMillis = 3_000L
+        )
+        val repository = AuthRepository(FakeAuthApi(refreshResult = AuthResult.Success(refreshed)), tokenStore, nowMillis = { 1_000L })
+
+        assertEquals(refreshed, repository.ensureValidSession())
+        assertEquals("fresh-access", tokenStore.currentSession()?.accessToken)
+    }
+
+    @Test
+    fun ensureValidSessionClearsStoredSessionWhenRefreshFails() = runTest {
+        val tokenStore = InMemoryTokenStore()
+        tokenStore.save(
+            AuthSession(
+                accessToken = "expired-access",
+                refreshToken = "refresh-a",
+                userId = "13800138000",
+                username = "13800138000",
+                accessExpiresAtMillis = 999L,
+                refreshExpiresAtMillis = 3_000L
+            )
+        )
+        val repository = AuthRepository(
+            FakeAuthApi(refreshResult = AuthResult.Failure("Refresh token expired or revoked")),
+            tokenStore,
+            nowMillis = { 1_000L }
+        )
+
+        assertNull(repository.ensureValidSession())
+        assertNull(tokenStore.currentSession())
+    }
+
+    @Test
     fun logoutRevokesAndClearsStoredSession() = runTest {
         val api = FakeAuthApi()
         val tokenStore = InMemoryTokenStore()

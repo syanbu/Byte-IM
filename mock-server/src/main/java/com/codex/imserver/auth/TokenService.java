@@ -72,18 +72,26 @@ public final class TokenService {
     }
 
     public Optional<String> verify(String token) {
-        if (token == null || token.isBlank()) {
+        VerificationResult result = verifyDetailed(token);
+        if (result.userId() == null) {
             return Optional.empty();
+        }
+        return Optional.of(result.userId());
+    }
+
+    public VerificationResult verifyDetailed(String token) {
+        if (token == null || token.isBlank()) {
+            return new VerificationResult(null, AuthFailureReason.TOKEN_MISSING);
         }
         String[] parts = token.split("\\.");
         if (parts.length != 4 || !"mock-jwt".equals(parts[0])) {
-            return Optional.empty();
+            return new VerificationResult(null, AuthFailureReason.TOKEN_INVALID);
         }
 
         String signedPart = parts[1] + "." + parts[2];
         String expectedSignature = sign(signedPart);
         if (!MessageDigest.isEqual(expectedSignature.getBytes(StandardCharsets.UTF_8), parts[3].getBytes(StandardCharsets.UTF_8))) {
-            return Optional.empty();
+            return new VerificationResult(null, AuthFailureReason.TOKEN_INVALID);
         }
 
         try {
@@ -92,12 +100,15 @@ public final class TokenService {
                     .getAsJsonObject();
             String phone = payload.get("sub").getAsString();
             long expiresAt = payload.get("exp").getAsLong();
-            if (!MAINLAND_CHINA_PHONE.matcher(phone).matches() || expiresAt <= nowMillis.getAsLong()) {
-                return Optional.empty();
+            if (!MAINLAND_CHINA_PHONE.matcher(phone).matches()) {
+                return new VerificationResult(null, AuthFailureReason.TOKEN_INVALID);
             }
-            return Optional.of(phone);
+            if (expiresAt <= nowMillis.getAsLong()) {
+                return new VerificationResult(null, AuthFailureReason.TOKEN_EXPIRED);
+            }
+            return new VerificationResult(phone, null);
         } catch (RuntimeException error) {
-            return Optional.empty();
+            return new VerificationResult(null, AuthFailureReason.TOKEN_INVALID);
         }
     }
 
@@ -134,5 +145,14 @@ public final class TokenService {
     }
 
     public record IssuedRefreshToken(String token, String hash, long expiresAtMillis) {
+    }
+
+    public record VerificationResult(String userId, AuthFailureReason failureReason) {
+    }
+
+    public enum AuthFailureReason {
+        TOKEN_EXPIRED,
+        TOKEN_INVALID,
+        TOKEN_MISSING
     }
 }

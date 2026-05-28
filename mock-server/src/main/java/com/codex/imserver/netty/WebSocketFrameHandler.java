@@ -1,6 +1,7 @@
 package com.codex.imserver.netty;
 
 import com.codex.imserver.ImServerLogger;
+import com.codex.imserver.auth.TokenService.AuthFailureReason;
 import com.codex.imserver.protocol.ImCommand;
 import com.codex.imserver.protocol.ImPacket;
 import com.codex.imserver.protocol.ImPacketCodec;
@@ -33,20 +34,38 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
 
             if (packet.cmd() == ImCommand.AUTH.value()) {
                 JsonObject body = JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
-                messageRouter.handleAuth(body.get("token").getAsString(), client);
+                AuthFailureReason reason = messageRouter.handleAuth(body.has("token") ? body.get("token").getAsString() : null, client);
+                if (reason != null) {
+                    context.writeAndFlush(new BinaryWebSocketFrame(context.alloc().buffer().writeBytes(
+                            ImPacketCodec.encode(authNack(reason))
+                    )));
+                    context.close();
+                }
                 return;
             }
             if (packet.cmd() == ImCommand.HEARTBEAT.value()) {
+                if (registry.userIdOf(client).isEmpty()) {
+                    ImServerLogger.log("[IM] HEARTBEAT rejected unauthenticated client");
+                    return;
+                }
                 messageRouter.handleHeartbeat(client);
                 return;
             }
             if (packet.cmd() == ImCommand.SEND_MESSAGE.value()) {
-                String senderUserId = registry.userIdOf(client).orElseGet(() -> senderId(packet));
+                String senderUserId = registry.userIdOf(client).orElse(null);
+                if (senderUserId == null) {
+                    ImServerLogger.log("[IM] SEND_MESSAGE rejected unauthenticated client");
+                    return;
+                }
                 messageRouter.handleSendMessage(senderUserId, packet);
                 return;
             }
             if (packet.cmd() == ImCommand.DELIVERY_ACK.value()) {
-                String receiverUserId = registry.userIdOf(client).orElseGet(() -> receiverId(packet));
+                String receiverUserId = registry.userIdOf(client).orElse(null);
+                if (receiverUserId == null) {
+                    ImServerLogger.log("[IM] DELIVERY_ACK rejected unauthenticated client");
+                    return;
+                }
                 messageRouter.handleDeliveryAck(receiverUserId, packet);
                 return;
             }
@@ -69,13 +88,9 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
         context.close();
     }
 
-    private String senderId(ImPacket packet) {
-        JsonObject body = JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
-        return body.get("senderId").getAsString();
-    }
-
-    private String receiverId(ImPacket packet) {
-        JsonObject body = JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
-        return body.get("receiverId").getAsString();
+    private ImPacket authNack(AuthFailureReason reason) {
+        JsonObject body = new JsonObject();
+        body.addProperty("reason", reason.name());
+        return new ImPacket(ImCommand.AUTH_NACK.value(), body.toString().getBytes(StandardCharsets.UTF_8));
     }
 }

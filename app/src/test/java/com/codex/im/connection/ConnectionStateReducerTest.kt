@@ -18,6 +18,16 @@ class ConnectionStateReducerTest {
     }
 
     @Test
+    fun authNackMovesConnectionToFailedWithReason() {
+        val packet = ImPacket(
+            cmd = ImCommand.AUTH_NACK.value,
+            body = """{"reason":"TOKEN_EXPIRED"}""".toByteArray()
+        )
+
+        assertEquals(ConnectionState.Failed("TOKEN_EXPIRED"), ConnectionStateReducer.stateAfterIncomingPacket(packet))
+    }
+
+    @Test
     fun nonConnectionPacketsDoNotChangeConnectionState() {
         val packet = ImPacket(
             cmd = ImCommand.RECEIVE_MESSAGE.value,

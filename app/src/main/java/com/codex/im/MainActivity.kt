@@ -79,12 +79,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val database = ImDatabaseHelper(this).writableDatabase
         val rawConnection = OkHttpImConnection(DEFAULT_MOCK_SERVER_WS_URL)
-        val connection = ConnectionLifecycleManager(rawConnection)
-        connectionLifecycleManager = connection
         val repository = AuthRepository(
             authApi = OkHttpAuthApi(baseUrl = DEFAULT_MOCK_SERVER_URL),
             tokenStore = SharedPreferencesTokenStore(this)
         )
+        val connection = ConnectionLifecycleManager(
+            connection = rawConnection,
+            tokenProvider = { _ -> repository.ensureValidSession()?.accessToken }
+        )
+        connectionLifecycleManager = connection
         val messageRepository = MessageRepository(
             messageDao = AndroidMessageDao(database),
             conversationDao = AndroidConversationDao(database),

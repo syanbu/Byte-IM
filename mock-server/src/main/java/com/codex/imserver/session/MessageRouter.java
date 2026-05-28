@@ -2,6 +2,8 @@ package com.codex.imserver.session;
 
 import com.codex.imserver.ImServerLogger;
 import com.codex.imserver.auth.TokenService;
+import com.codex.imserver.auth.TokenService.AuthFailureReason;
+import com.codex.imserver.auth.TokenService.VerificationResult;
 import com.codex.imserver.protocol.ImCommand;
 import com.codex.imserver.protocol.ImPacket;
 import com.google.gson.JsonObject;
@@ -174,7 +176,11 @@ public final class MessageRouter {
     }
 
     public void handleHeartbeat(OutboundClient client) {
-        String userId = registry.userIdOf(client).orElse("unknown");
+        String userId = registry.userIdOf(client).orElse(null);
+        if (userId == null) {
+            ImServerLogger.log("[IM] HEARTBEAT rejected unauthenticated client");
+            return;
+        }
         ImServerLogger.log("[IM] HEARTBEAT received userId=%s", userId);
         JsonObject body = new JsonObject();
         body.addProperty("serverTime", System.currentTimeMillis());
@@ -182,11 +188,13 @@ public final class MessageRouter {
         ImServerLogger.log("[IM] HEARTBEAT_ACK sent userId=%s", userId);
     }
 
-    public void handleAuth(String token, OutboundClient client) {
-        String userId = tokenService.verify(token).orElse(null);
+    public AuthFailureReason handleAuth(String token, OutboundClient client) {
+        VerificationResult result = tokenService.verifyDetailed(token);
+        String userId = result.userId();
         if (userId == null) {
-            ImServerLogger.log("[IM] AUTH rejected invalid or expired token");
-            return;
+            AuthFailureReason reason = result.failureReason();
+            ImServerLogger.log("[IM] AUTH rejected reason=%s", reason);
+            return reason;
         }
         registry.register(userId, client);
         JsonObject body = new JsonObject();
@@ -195,6 +203,7 @@ public final class MessageRouter {
         client.send(packet(ImCommand.AUTH_ACK, body));
         client.recordStatus("AUTHENTICATED userId=" + userId + " authAck=sent");
         deliverQueuedMessages(userId, client);
+        return null;
     }
 
     private void deliverQueuedMessages(String userId, OutboundClient client) {

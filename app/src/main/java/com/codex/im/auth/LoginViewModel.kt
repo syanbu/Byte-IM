@@ -1,8 +1,12 @@
 package com.codex.im.auth
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 data class LoginUiState(
     val isLoading: Boolean = false,
@@ -11,7 +15,10 @@ data class LoginUiState(
     val errorMessage: String? = null
 )
 
-class LoginViewModel(private val repository: AuthRepository) {
+class LoginViewModel(
+    private val repository: AuthRepository,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+) {
     private val restoredSession = repository.currentSession()
     private val mutableState = MutableStateFlow(
         LoginUiState(
@@ -21,6 +28,14 @@ class LoginViewModel(private val repository: AuthRepository) {
         )
     )
     val state: StateFlow<LoginUiState> = mutableState.asStateFlow()
+
+    init {
+        scope.launch {
+            repository.sessionState.collect { session ->
+                syncSessionState(session)
+            }
+        }
+    }
 
     suspend fun restoreSession() {
         if (mutableState.value.isAuthenticated) {
@@ -73,5 +88,17 @@ class LoginViewModel(private val repository: AuthRepository) {
     suspend fun logout() {
         repository.logout()
         mutableState.value = LoginUiState()
+    }
+
+    private fun syncSessionState(session: AuthSession?) {
+        val current = mutableState.value
+        when {
+            session == null && (current.isAuthenticated || current.session != null) -> {
+                mutableState.value = LoginUiState()
+            }
+            session != null && (!current.isAuthenticated || current.session != session) -> {
+                mutableState.value = LoginUiState(isAuthenticated = true, session = session)
+            }
+        }
     }
 }

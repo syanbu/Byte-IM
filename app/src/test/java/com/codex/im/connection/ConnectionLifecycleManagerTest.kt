@@ -23,6 +23,7 @@ class ConnectionLifecycleManagerTest {
         val fixture = Fixture(this)
 
         fixture.manager.connect(TOKEN)
+        runCurrent()
         fixture.raw.state.value = ConnectionState.Authenticated
         runCurrent()
 
@@ -33,6 +34,7 @@ class ConnectionLifecycleManagerTest {
     fun heartbeatAckPreventsReconnectForThatHeartbeatCycle() = runTest {
         val fixture = Fixture(this)
         fixture.manager.connect(TOKEN)
+        runCurrent()
         fixture.raw.state.value = ConnectionState.Authenticated
         runCurrent()
 
@@ -48,6 +50,7 @@ class ConnectionLifecycleManagerTest {
     fun missingHeartbeatAckDisconnectsAndReconnectsWithPolicyDelay() = runTest {
         val fixture = Fixture(this)
         fixture.manager.connect(TOKEN)
+        runCurrent()
         fixture.raw.state.value = ConnectionState.Authenticated
         runCurrent()
 
@@ -67,6 +70,7 @@ class ConnectionLifecycleManagerTest {
     fun authenticatedConnectionResetsReconnectPolicy() = runTest {
         val fixture = Fixture(this)
         fixture.manager.connect(TOKEN)
+        runCurrent()
         fixture.raw.state.value = ConnectionState.Failed("first failure")
         runCurrent()
         advanceTimeBy(1_000L)
@@ -88,6 +92,7 @@ class ConnectionLifecycleManagerTest {
     fun stopCancelsHeartbeatAndReconnectWork() = runTest {
         val fixture = Fixture(this)
         fixture.manager.connect(TOKEN)
+        runCurrent()
         fixture.raw.state.value = ConnectionState.Authenticated
         runCurrent()
         val heartbeatCountAtStop = fixture.raw.sentPackets.size
@@ -106,6 +111,7 @@ class ConnectionLifecycleManagerTest {
     fun backgroundKeepsConnectionAliveWithSlowerHeartbeatAndReconnect() = runTest {
         val fixture = Fixture(this)
         fixture.manager.connect(TOKEN)
+        runCurrent()
         fixture.raw.state.value = ConnectionState.Authenticated
         runCurrent()
         val heartbeatCountInForeground = fixture.raw.sentPackets.size
@@ -131,9 +137,63 @@ class ConnectionLifecycleManagerTest {
     }
 
     @Test
+    fun reconnectUsesFreshTokenFromProviderInsteadOfCachedToken() = runTest {
+        var tokenProviderCalls = 0
+        val fixture = Fixture(
+            scope = this,
+            tokenProvider = { _ ->
+                tokenProviderCalls += 1
+                if (tokenProviderCalls == 1) TOKEN else "fresh-token"
+            }
+        )
+
+        fixture.manager.connect(TOKEN)
+        runCurrent()
+        fixture.raw.state.value = ConnectionState.Authenticated
+        runCurrent()
+        fixture.raw.state.value = ConnectionState.Failed("expired auth")
+        runCurrent()
+
+        advanceTimeBy(1_000L)
+        runCurrent()
+
+        assertEquals(listOf(TOKEN, "fresh-token"), fixture.raw.connectTokens)
+    }
+
+    @Test
+    fun reconnectStopsWhenProviderCannotReturnValidToken() = runTest {
+        var providerAttempted = false
+        val fixture = Fixture(
+            scope = this,
+            tokenProvider = { _ ->
+                if (providerAttempted) {
+                    null
+                } else {
+                    providerAttempted = true
+                    TOKEN
+                }
+            }
+        )
+
+        fixture.manager.connect(TOKEN)
+        runCurrent()
+        fixture.raw.state.value = ConnectionState.Authenticated
+        runCurrent()
+        fixture.raw.state.value = ConnectionState.Failed("expired auth")
+        runCurrent()
+
+        advanceTimeBy(1_000L)
+        runCurrent()
+
+        assertEquals(listOf(TOKEN), fixture.raw.connectTokens)
+        assertEquals(ConnectionState.Disconnected, fixture.manager.states.value)
+    }
+
+    @Test
     fun foregroundRestoresFasterHeartbeatInterval() = runTest {
         val fixture = Fixture(this)
         fixture.manager.connect(TOKEN)
+        runCurrent()
         fixture.raw.state.value = ConnectionState.Authenticated
         runCurrent()
         fixture.manager.setForeground(false)
@@ -151,10 +211,14 @@ class ConnectionLifecycleManagerTest {
         assertEquals(listOf(TOKEN), fixture.raw.connectTokens)
     }
 
-    private class Fixture(scope: TestScope) {
+    private class Fixture(
+        scope: TestScope,
+        tokenProvider: suspend (String?) -> String? = { TOKEN }
+    ) {
         val raw = FakeConnection()
         val manager = ConnectionLifecycleManager(
             connection = raw,
+            tokenProvider = tokenProvider,
             reconnectPolicy = ReconnectPolicy(),
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler),

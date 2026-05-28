@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 
 class ConnectionLifecycleManager(
     private val connection: ImConnection,
+    private val tokenProvider: suspend (String?) -> String? = { requestedToken -> requestedToken },
     private val reconnectPolicy: ReconnectPolicy = ReconnectPolicy(),
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -28,7 +29,7 @@ class ConnectionLifecycleManager(
     override val states: StateFlow<ConnectionState> = mutableStates.asStateFlow()
     override val incomingPackets: SharedFlow<ImPacket> = connection.incomingPackets
 
-    private var token: String? = null
+    private var requestedToken: String? = null
     private var started = false
     private var foreground = true
     private var rawStateJob: Job? = null
@@ -38,7 +39,7 @@ class ConnectionLifecycleManager(
     private var heartbeatAckGeneration = 0L
 
     override fun connect(token: String) {
-        this.token = token
+        requestedToken = token
         if (!started) {
             started = true
             collectConnectionState()
@@ -47,7 +48,7 @@ class ConnectionLifecycleManager(
         reconnectJob?.cancel()
         reconnectJob = null
         reconnectPolicy.reset()
-        connection.connect(token)
+        attemptConnect(token)
     }
 
     override fun disconnect() {
@@ -56,7 +57,7 @@ class ConnectionLifecycleManager(
 
     fun stop() {
         started = false
-        token = null
+        requestedToken = null
         heartbeatJob?.cancel()
         heartbeatJob = null
         reconnectJob?.cancel()
@@ -178,7 +179,7 @@ class ConnectionLifecycleManager(
     }
 
     private fun handleHeartbeatTimeout() {
-        val activeToken = token ?: return
+        val tokenHint = requestedToken ?: return
         heartbeatJob = null
         val delayMillis = reconnectPolicy.nextDelayMillis()
         mutableStates.value = ConnectionState.Reconnecting(delayMillis, "heartbeat timeout")
@@ -186,14 +187,14 @@ class ConnectionLifecycleManager(
             connection.disconnect()
             delay(delayMillis)
             if (started) {
-                connection.connect(activeToken)
+                attemptConnect(tokenHint)
             }
         }
     }
 
     private fun scheduleReconnect(reason: String) {
-        val activeToken = token
-        if (activeToken == null || reconnectJob?.isActive == true) {
+        val tokenHint = requestedToken
+        if (tokenHint == null || reconnectJob?.isActive == true) {
             return
         }
         val delayMillis = reconnectPolicy.nextDelayMillis()
@@ -201,7 +202,7 @@ class ConnectionLifecycleManager(
         reconnectJob = scope.launch(dispatcher) {
             delay(delayMillis)
             if (started) {
-                connection.connect(activeToken)
+                attemptConnect(tokenHint)
             }
         }
     }
@@ -219,6 +220,22 @@ class ConnectionLifecycleManager(
 
     private fun currentHeartbeatIntervalMillis(): Long {
         return if (foreground) foregroundHeartbeatIntervalMillis else backgroundHeartbeatIntervalMillis
+    }
+
+    private fun attemptConnect(tokenHint: String) {
+        scope.launch(dispatcher) {
+            val resolvedToken = tokenProvider(tokenHint)
+            if (!started) {
+                return@launch
+            }
+            if (resolvedToken.isNullOrBlank()) {
+                requestedToken = null
+                mutableStates.value = ConnectionState.Disconnected
+                return@launch
+            }
+            requestedToken = resolvedToken
+            connection.connect(resolvedToken)
+        }
     }
 
     private companion object {

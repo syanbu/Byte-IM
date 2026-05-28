@@ -599,6 +599,17 @@ public class MessageRouterTest {
     }
 
     @Test
+    public void unauthenticatedHeartbeatDoesNotSendHeartbeatAck() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        MessageRouter router = new MessageRouter(registry);
+        CapturingClient client = new CapturingClient();
+
+        router.handleHeartbeat(client);
+
+        assertTrue(client.sentPackets.isEmpty());
+    }
+
+    @Test
     public void heartbeatLogIdentifiesClientAndAckRecipient() {
         ClientSessionRegistry registry = new ClientSessionRegistry();
         CapturingClient client = new CapturingClient();

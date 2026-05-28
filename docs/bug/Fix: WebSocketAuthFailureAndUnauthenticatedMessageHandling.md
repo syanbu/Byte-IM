@@ -1,5 +1,53 @@
 # Fix: WebSocket Auth Failure And Unauthenticated Message Handling
 
+## Status
+
+- Status: Completed
+- Completed on: 2026-05-28
+- Branch: current working branch
+
+## Implemented Fix Summary
+
+This bug has been fixed on both the Android client and the mock server.
+
+Implemented changes:
+
+1. Added protocol-level `AUTH_NACK(reason)` support on Android and mock-server.
+2. Mock server now sends `AUTH_NACK` and immediately closes the WebSocket when `AUTH` fails.
+3. Mock server now rejects unauthenticated `SEND_MESSAGE`, `DELIVERY_ACK`, and `HEARTBEAT` packets.
+4. Removed the server fallback that trusted `senderId` or `receiverId` from packet bodies before authentication.
+5. Added `AuthRepository.ensureValidSession()` as the single client entry point for obtaining a currently valid session before WebSocket connect or reconnect.
+6. Refactored `ConnectionLifecycleManager` so every connect and reconnect resolves its token through the unified session-validation path instead of reusing a stale cached access token.
+7. Added client handling for `AUTH_NACK` so auth rejection becomes an explicit connection failure reason.
+8. Added observable session-state propagation so unrecoverable auth failure clears local session state and drives the login UI back to logged-out state.
+
+## Result
+
+After the fix:
+
+- Expired access tokens no longer leave the client reconnect loop stuck on stale WebSocket auth.
+- Heartbeat resumes only after the connection re-authenticates successfully, which matches the intended state machine.
+- Unauthenticated sockets can no longer send business traffic to the mock server.
+- If refresh cannot recover the session, the stored session is cleared and the Android login state is reset.
+
+## Verification Result
+
+Verified with targeted automated tests on 2026-05-28:
+
+- Android:
+  - `bash ./gradlew :app:testDebugUnitTest --tests 'com.codex.im.auth.AuthRepositoryTest' --tests 'com.codex.im.auth.LoginViewModelTest' --tests 'com.codex.im.connection.ConnectionLifecycleManagerTest' --tests 'com.codex.im.connection.ConnectionStateReducerTest'`
+- Mock server:
+  - `mvn -q -Dtest=WebSocketFrameHandlerTest,MessageRouterTest test`
+
+Verified behaviors include:
+
+- `AUTH_NACK(TOKEN_EXPIRED|TOKEN_INVALID|TOKEN_MISSING)` handling path
+- reconnect using refreshed token instead of stale cached token
+- stopping reconnect when no valid session can be recovered
+- auto-resetting UI auth state after session clear
+- rejecting unauthenticated `SEND_MESSAGE`
+- rejecting unauthenticated `HEARTBEAT`
+
 ## Goal
 
 Define the concrete fix flow for the bug where:
