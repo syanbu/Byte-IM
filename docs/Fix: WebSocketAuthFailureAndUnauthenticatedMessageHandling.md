@@ -10,6 +10,26 @@ Define the concrete fix flow for the bug where:
 
 This document is the implementation guide for the fix, not only a root-cause analysis.
 
+## Observed Symptoms
+
+The issue was reported with the following mock-server logs:
+
+```text
+2026-05-28 09:49:58.703 [IM] AUTH rejected invalid or expired token
+2026-05-28 09:49:58.703 [IM] AUTH rejected invalid or expired token
+2026-05-28 09:55:26.577 [IM] SEND_MESSAGE sender=13900113900 receiver=13800113800 conversationId=single:13800113800:13900113900 messageId=13900113900-1779933324595-000001 clientSeq=1 serverSeq=1779845783814 content=1
+2026-05-28 09:55:26.582 [IM] MESSAGE_ACK skipped sender offline sender=13900113900 messageId=13900113900-1779933324595-000001
+2026-05-28 09:55:26.584 [IM] RECEIVE_MESSAGE queued receiver offline receiver=13800113800 messageId=13900113900-1779933324595-000001 serverSeq=1779845783814
+```
+
+User-visible symptoms:
+
+- Two Android emulators stopped sending heartbeat traffic.
+- WebSocket authentication had already failed on the server.
+- A sender could still trigger `SEND_MESSAGE` handling even though the connection was not authenticated.
+- The sender did not receive `MESSAGE_ACK`.
+- The receiver was treated as offline and the message was queued.
+
 ## Problem Summary
 
 The current behavior breaks in three places:
