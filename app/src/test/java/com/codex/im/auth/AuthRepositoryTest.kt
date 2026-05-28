@@ -180,7 +180,7 @@ class AuthRepositoryTest {
         )
         val refreshed = AuthSession(
             accessToken = "fresh-access",
-            refreshToken = "refresh-a",
+            refreshToken = "refresh-b",
             userId = "13800138000",
             username = "13800138000",
             accessExpiresAtMillis = 2_000L,
@@ -190,6 +190,7 @@ class AuthRepositoryTest {
 
         assertEquals(refreshed, repository.ensureValidSession())
         assertEquals("fresh-access", tokenStore.currentSession()?.accessToken)
+        assertEquals("refresh-b", tokenStore.currentSession()?.refreshToken)
     }
 
     @Test

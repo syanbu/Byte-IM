@@ -68,6 +68,7 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 ## Completed
 
 - B1 auth and token management are complete against the local mock server.
+- B1 refresh-token rotation now matches the intended dual-token contract: `/refresh` returns a new access/refresh token pair and revokes the previous refresh token.
 - B2 single-chat real-time send/receive is complete for the local two-client demo path.
 - B4 local history pagination is complete for SQLite-backed offline history.
 - B5 SQLite persistence foundation is complete.
@@ -90,6 +91,10 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 
 ## Newly Completed
 
+- B1 refresh-token rotation fix is complete:
+  - Mock-server `/refresh` now issues a new access token and a new refresh token together.
+  - The previous refresh token is revoked in the same SQLite rotation transaction and can no longer be reused.
+  - Android auth parsing/persistence tests now cover storing the rotated refresh token returned by refresh.
 - B5.5 mock-server durable message persistence is complete:
   - The mock server now persists accepted messages in `mock-server/data/mock-im-messages.sqlite`.
   - Accepted-message recovery now survives server restart, so sender-side `messageId` idempotency continues across restart.

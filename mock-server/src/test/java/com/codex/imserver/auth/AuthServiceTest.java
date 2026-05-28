@@ -7,6 +7,7 @@ import org.junit.Test;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertEquals;
@@ -112,26 +113,39 @@ public class AuthServiceTest {
     }
 
     @Test
-    public void refreshIssuesNewAccessTokenWhenRefreshTokenIsValid() throws Exception {
+    public void refreshIssuesNewTokenPairAndRevokesPreviousRefreshToken() throws Exception {
         MutableClock clock = new MutableClock(1_000L);
         UserStore store = new UserStore(tempDb());
+        AtomicInteger refreshTokenIndex = new AtomicInteger();
         AuthService service = new AuthService(
                 store,
                 new PasswordHasher(new FixedSaltGenerator("fixed-salt")),
-                new TokenService("test-secret", clock::now, 900_000L, 604_800_000L, () -> "refresh-token-a-with-enough-entropy-for-test")
+                new TokenService(
+                        "test-secret",
+                        clock::now,
+                        900_000L,
+                        604_800_000L,
+                        () -> refreshTokenIndex.getAndIncrement() == 0
+                                ? "refresh-token-a-with-enough-entropy-for-test"
+                                : "refresh-token-b-with-enough-entropy-for-test"
+                )
         );
         JsonObject registered = JsonParser.parseString(service.register("13800138003", "P@ssw0rd")).getAsJsonObject();
-        String refreshToken = registered.getAsJsonObject("data").get("refreshToken").getAsString();
+        String oldRefreshToken = registered.getAsJsonObject("data").get("refreshToken").getAsString();
 
         clock.now = 10_000L;
-        JsonObject refreshed = JsonParser.parseString(service.refresh(refreshToken)).getAsJsonObject();
+        JsonObject refreshed = JsonParser.parseString(service.refresh(oldRefreshToken)).getAsJsonObject();
 
         assertEquals(0, refreshed.get("code").getAsInt());
         JsonObject data = refreshed.getAsJsonObject("data");
         assertTrue(data.get("accessToken").getAsString().startsWith("mock-jwt."));
         assertEquals("13800138003", data.get("userId").getAsString());
         assertEquals(910_000L, data.get("accessExpiresAt").getAsLong());
-        assertEquals(refreshToken, data.get("refreshToken").getAsString());
+        assertEquals(604_810_000L, data.get("refreshExpiresAt").getAsLong());
+        assertNotEquals(oldRefreshToken, data.get("refreshToken").getAsString());
+
+        JsonObject oldRefreshRejected = JsonParser.parseString(service.refresh(oldRefreshToken)).getAsJsonObject();
+        assertEquals(401, oldRefreshRejected.get("code").getAsInt());
     }
 
     @Test

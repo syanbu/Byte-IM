@@ -88,8 +88,22 @@ public final class AuthService {
         if (record.isEmpty()) {
             return failure(401, "Refresh token expired or revoked");
         }
+        long now = tokenService.currentTimeMillis();
         TokenService.IssuedToken accessToken = tokenService.issue(record.get().phone());
-        return success(record.get().phone(), accessToken, refreshToken, record.get().expiresAt());
+        TokenService.IssuedRefreshToken nextRefreshToken = tokenService.issueRefreshToken();
+        userStore.rotateRefreshToken(
+                tokenHash,
+                record.get().phone(),
+                nextRefreshToken.hash(),
+                nextRefreshToken.expiresAtMillis(),
+                now
+        );
+        return success(
+                record.get().phone(),
+                accessToken,
+                nextRefreshToken.token(),
+                nextRefreshToken.expiresAtMillis()
+        );
     }
 
     public String logout(String refreshToken) {

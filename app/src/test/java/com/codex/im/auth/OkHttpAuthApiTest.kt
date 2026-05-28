@@ -67,7 +67,7 @@ class OkHttpAuthApiTest {
                     .protocol(Protocol.HTTP_1_1)
                     .code(200)
                     .message("OK")
-                    .body("""{"code":0,"message":"ok","data":{"accessToken":"fresh-access","refreshToken":"refresh-a","userId":"13800138000","username":"13800138000","accessExpiresAt":2000,"refreshExpiresAt":9000}}""".toResponseBody())
+                    .body("""{"code":0,"message":"ok","data":{"accessToken":"fresh-access","refreshToken":"refresh-b","userId":"13800138000","username":"13800138000","accessExpiresAt":2000,"refreshExpiresAt":9000}}""".toResponseBody())
                     .build()
             })
             .build()
@@ -79,6 +79,7 @@ class OkHttpAuthApiTest {
         assertTrue(capturedBody.get().contains(""""refreshToken":"refresh-a""""))
         assertTrue(result is AuthResult.Success)
         assertEquals("fresh-access", (result as AuthResult.Success).session.accessToken)
+        assertEquals("refresh-b", result.session.refreshToken)
     }
 
     @Test

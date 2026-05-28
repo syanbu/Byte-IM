@@ -169,6 +169,43 @@ public final class UserStore {
         }
     }
 
+    public synchronized void rotateRefreshToken(
+            String currentTokenHash,
+            String phone,
+            String nextTokenHash,
+            long nextExpiresAt,
+            long issuedAt
+    ) {
+        try (Connection connection = connect()) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement revokeStatement = connection.prepareStatement(
+                    "UPDATE refresh_tokens SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL"
+            );
+                 PreparedStatement insertStatement = connection.prepareStatement(
+                         "INSERT INTO refresh_tokens(token_hash, phone, expires_at, issued_at, revoked_at) VALUES(?, ?, ?, ?, NULL)"
+                 )) {
+                revokeStatement.setLong(1, issuedAt);
+                revokeStatement.setString(2, currentTokenHash);
+                revokeStatement.executeUpdate();
+
+                insertStatement.setString(1, nextTokenHash);
+                insertStatement.setString(2, phone);
+                insertStatement.setLong(3, nextExpiresAt);
+                insertStatement.setLong(4, issuedAt);
+                insertStatement.executeUpdate();
+
+                connection.commit();
+            } catch (SQLException error) {
+                connection.rollback();
+                throw error;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException error) {
+            throw new IllegalStateException("Unable to rotate refresh token", error);
+        }
+    }
+
     private void initialize() {
         try (Connection connection = connect();
              PreparedStatement statement = connection.prepareStatement(
