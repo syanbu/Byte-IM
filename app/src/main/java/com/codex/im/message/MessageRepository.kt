@@ -1,5 +1,6 @@
 package com.codex.im.message
 
+import com.codex.im.MessagesTabUnreadBadgeSource
 import com.codex.im.connection.ImConnection
 import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
@@ -26,11 +27,11 @@ class MessageRepository(
     private val seqGenerator: SeqGenerator,
     private val retryPolicy: MessageRetryPolicy = MessageRetryPolicy(),
     private val transactionRunner: TransactionRunner = TransactionRunner.immediate()
-) {
+) : MessagesTabUnreadBadgeSource {
     @Volatile
     private var activeConversationId: String? = null
     private val mutableConversationUpdates = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
-    val conversationUpdates: SharedFlow<Unit> = mutableConversationUpdates.asSharedFlow()
+    override val conversationUpdates: SharedFlow<Unit> = mutableConversationUpdates.asSharedFlow()
 
     fun sendText(senderId: String, receiverId: String, content: String, now: Long): ChatMessage {
         val conversationId = conversationIdFor(senderId, receiverId)
@@ -83,6 +84,8 @@ class MessageRepository(
     }
 
     fun conversations(limit: Int = 50) = conversationDao.listConversations(limit)
+
+    override fun totalUnreadCount(): Int = conversationDao.totalUnreadCount()
 
     fun retryDuePendingMessages(now: Long, limit: Int = DEFAULT_RETRY_BATCH_SIZE) {
         val dueMessages = pendingMessageDao.dueMessages(now, limit)

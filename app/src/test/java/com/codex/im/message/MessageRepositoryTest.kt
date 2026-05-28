@@ -231,6 +231,36 @@ class MessageRepositoryTest {
         assertTrue(fixture.connection.sentPackets.all { it.cmd == ImCommand.DELIVERY_ACK.value })
     }
 
+    @Test
+    fun totalUnreadCountReturnsUnreadAcrossAllConversations() {
+        val fixture = Fixture()
+
+        fixture.repository.handlePacket(
+            incomingMessagePacket(
+                messageId = "remote-1",
+                senderId = "u2",
+                receiverId = "u1",
+                clientSeq = 7,
+                serverSeq = 90,
+                content = "hi",
+                timestamp = 1_500L
+            )
+        )
+        fixture.repository.handlePacket(
+            incomingMessagePacket(
+                messageId = "remote-2",
+                senderId = "u3",
+                receiverId = "u1",
+                clientSeq = 8,
+                serverSeq = 91,
+                content = "hello",
+                timestamp = 1_600L
+            )
+        )
+
+        assertEquals(2, fixture.repository.totalUnreadCount())
+    }
+
     private class Fixture(
         transactionRunner: TransactionRunner? = null,
         events: MutableList<String> = mutableListOf()
@@ -278,5 +308,31 @@ class MessageRepositoryTest {
             block()
             events += "commit"
         }
+    }
+
+    private fun incomingMessagePacket(
+        messageId: String,
+        senderId: String,
+        receiverId: String,
+        clientSeq: Long,
+        serverSeq: Long,
+        content: String,
+        timestamp: Long
+    ): ImPacket {
+        return ImPacket(
+            cmd = ImCommand.RECEIVE_MESSAGE.value,
+            body = """
+                {
+                  "messageId":"$messageId",
+                  "conversationId":"single:$senderId:$receiverId",
+                  "senderId":"$senderId",
+                  "receiverId":"$receiverId",
+                  "clientSeq":$clientSeq,
+                  "serverSeq":$serverSeq,
+                  "content":"$content",
+                  "timestamp":$timestamp
+                }
+            """.trimIndent().toByteArray()
+        )
     }
 }

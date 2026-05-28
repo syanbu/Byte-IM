@@ -32,6 +32,16 @@ class ConversationDaoContractTest {
         assertEquals(1, conversations.first { it.conversationId == "c2" }.unreadCount)
     }
 
+    @Test
+    fun totalUnreadCountSumsAllConversations() {
+        val dao = InMemoryConversationDao()
+        dao.upsertFromMessage(message("c1", "u2", "one", createdAt = 100), incrementUnread = true)
+        dao.upsertFromMessage(message("c1", "u2", "two", createdAt = 200), incrementUnread = true)
+        dao.upsertFromMessage(message("c2", "u3", "three", createdAt = 300), incrementUnread = true)
+
+        assertEquals(3, dao.totalUnreadCount())
+    }
+
     private fun message(
         conversationId: String,
         peerId: String,

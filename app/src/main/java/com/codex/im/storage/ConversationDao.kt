@@ -6,6 +6,8 @@ interface ConversationDao {
     fun listConversations(limit: Int): List<Conversation>
 
     fun clearUnread(conversationId: String)
+
+    fun totalUnreadCount(): Int
 }
 
 class InMemoryConversationDao : ConversationDao {
@@ -43,4 +45,6 @@ class InMemoryConversationDao : ConversationDao {
         val current = conversations[conversationId] ?: return
         conversations[conversationId] = current.copy(unreadCount = 0)
     }
+
+    override fun totalUnreadCount(): Int = conversations.values.sumOf { it.unreadCount }
 }

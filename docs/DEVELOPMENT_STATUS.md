@@ -7,6 +7,8 @@ Design roadmap: `docs/superpowers/plans/2026-05-21-im-client-roadmap.md`.
 
 Development constraints: [`docs/DEVELOPMENT-CONSTRAINTS.md`](DEVELOPMENT-CONSTRAINTS.md).
 
+Feature note: [`docs/messages-conversation-summary-and-unread.md`](messages-conversation-summary-and-unread.md).
+
 ## Current Progress
 
 | Feature | Requirement | Status | Detail |
@@ -52,6 +54,7 @@ B3 is now complete for the current local single-chat scope:
 - Entering a conversation clears unread.
 - Incoming messages for the currently open conversation refresh the preview without incrementing unread.
 - Conversation rows refresh from Repository conversation update events, including messages processed by the chat screen.
+- The bottom `Messages` tab now shows the total unread badge across all conversations, hides at `0`, and caps display at `99+`.
 - Empty conversation lists no longer show a fixed mock contact; the two local demo accounts are exposed through the separate `Contacts` tab.
 - Connection/auth status and logout are only shown on the conversation list; the chat screen keeps only the back navigation.
 

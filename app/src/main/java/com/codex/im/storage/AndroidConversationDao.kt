@@ -50,6 +50,15 @@ class AndroidConversationDao(private val database: SQLiteDatabase) : Conversatio
         database.update("conversations", values, "conversation_id = ?", arrayOf(conversationId))
     }
 
+    override fun totalUnreadCount(): Int {
+        return database.rawQuery(
+            "SELECT COALESCE(SUM(unread_count), 0) AS total_unread_count FROM conversations",
+            null
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(cursor.getColumnIndexOrThrow("total_unread_count")) else 0
+        }
+    }
+
     private fun find(conversationId: String): Conversation? {
         return database.query(
             "conversations",

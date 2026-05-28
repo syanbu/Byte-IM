@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -191,6 +193,13 @@ private fun AuthenticatedImNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val activity = LocalContext.current.findActivity()
+    val unreadBadgeController = remember(session.userId) {
+        MessagesTabUnreadBadgeController(
+            repository = messageRepository,
+            scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+        )
+    }
+    val unreadMessagesCount by unreadBadgeController.unreadCount.collectAsState()
     val messagePacketProcessor = remember(session.userId) {
         MessagePacketProcessor(
             repository = messageRepository,
@@ -204,10 +213,12 @@ private fun AuthenticatedImNavHost(
         )
     }
 
-    DisposableEffect(messagePacketProcessor, messageOutboxWorker) {
+    DisposableEffect(messagePacketProcessor, messageOutboxWorker, unreadBadgeController) {
+        unreadBadgeController.start()
         messagePacketProcessor.start()
         messageOutboxWorker.start()
         onDispose {
+            unreadBadgeController.stop()
             messagePacketProcessor.stop()
             messageOutboxWorker.stop()
         }
@@ -225,7 +236,12 @@ private fun AuthenticatedImNavHost(
                                 navController.navigateToTopLevelTab(tab.route)
                             },
                             label = { Text(tab.label) },
-                            icon = { BottomNavigationIcon(tab) }
+                            icon = {
+                                BottomNavigationIcon(
+                                    spec = tab,
+                                    unreadCount = if (tab.route == BottomNavigationSpec.messages.route) unreadMessagesCount else 0
+                                )
+                            }
                         )
                     }
                 }
@@ -367,12 +383,28 @@ private fun TopLevelRouteBackHandler(
 }
 
 @Composable
-private fun BottomNavigationIcon(spec: BottomNavigationItemSpec) {
-    Image(
-        painter = painterResource(id = spec.iconResId),
-        contentDescription = spec.label,
-        modifier = Modifier.size(24.dp)
-    )
+private fun BottomNavigationIcon(spec: BottomNavigationItemSpec, unreadCount: Int = 0) {
+    val badgeText = MessagesTabUnreadBadgePolicy.badgeTextForCount(unreadCount)
+    val iconContent: @Composable () -> Unit = {
+        Image(
+            painter = painterResource(id = spec.iconResId),
+            contentDescription = spec.label,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+    if (badgeText == null) {
+        iconContent()
+        return
+    }
+    BadgedBox(
+        badge = {
+            Badge {
+                Text(text = badgeText)
+            }
+        }
+    ) {
+        iconContent()
+    }
 }
 
 private tailrec fun Context.findActivity(): Activity? {
