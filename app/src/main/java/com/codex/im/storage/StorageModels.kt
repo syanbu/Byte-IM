@@ -11,7 +11,16 @@ data class ChatMessage(
     val status: MessageStatus,
     val direction: MessageDirection,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val type: MessageType = MessageType.TEXT,
+    val imageUrl: String? = null,
+    val thumbnailUrl: String? = null,
+    val imageWidth: Int? = null,
+    val imageHeight: Int? = null,
+    val mimeType: String? = null,
+    val fileSizeBytes: Long? = null,
+    val localOriginalPath: String? = null,
+    val localThumbnailPath: String? = null
 )
 
 data class Conversation(
@@ -44,6 +53,8 @@ data class UserProfile(
 )
 
 enum class MessageStatus {
+    UPLOADING,
+    UPLOAD_FAILED,
     SENDING,
     SENT,
     FAILED,
@@ -53,4 +64,9 @@ enum class MessageStatus {
 enum class MessageDirection {
     OUTGOING,
     INCOMING
+}
+
+enum class MessageType {
+    TEXT,
+    IMAGE
 }

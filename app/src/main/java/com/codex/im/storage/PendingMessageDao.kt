@@ -5,6 +5,8 @@ interface PendingMessageDao {
 
     fun delete(messageId: String): Boolean
 
+    fun findByMessageId(messageId: String): PendingMessage?
+
     fun dueMessages(now: Long, limit: Int): List<PendingMessage>
 }
 
@@ -18,6 +20,8 @@ class InMemoryPendingMessageDao : PendingMessageDao {
     override fun delete(messageId: String): Boolean {
         return pendingById.remove(messageId) != null
     }
+
+    override fun findByMessageId(messageId: String): PendingMessage? = pendingById[messageId]
 
     override fun dueMessages(now: Long, limit: Int): List<PendingMessage> {
         return pendingById.values

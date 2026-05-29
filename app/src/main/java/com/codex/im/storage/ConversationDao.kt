@@ -18,13 +18,14 @@ class InMemoryConversationDao : ConversationDao {
         val peerId = if (message.direction == MessageDirection.INCOMING) message.senderId else message.receiverId
         val shouldReplacePreview = current == null || message.createdAt >= current.lastMessageTime
         val unreadCount = (current?.unreadCount ?: 0) + if (incrementUnread) 1 else 0
+        val preview = if (message.type == MessageType.IMAGE) "[图片]" else message.content
         val next = if (shouldReplacePreview) {
             Conversation(
                 conversationId = message.conversationId,
                 peerId = current?.peerId ?: peerId,
                 peerName = current?.peerName ?: peerId,
                 lastMessageId = message.messageId,
-                lastMessagePreview = message.content,
+                lastMessagePreview = preview,
                 lastMessageTime = message.createdAt,
                 unreadCount = unreadCount,
                 updatedAt = message.updatedAt

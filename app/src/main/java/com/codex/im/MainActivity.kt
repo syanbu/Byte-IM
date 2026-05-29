@@ -46,6 +46,7 @@ import com.codex.im.auth.LoginScreen
 import com.codex.im.auth.LoginViewModel
 import com.codex.im.auth.OkHttpAuthApi
 import com.codex.im.auth.SharedPreferencesTokenStore
+import com.codex.im.auth.ValidSessionProvider
 import com.codex.im.chat.ChatScreen
 import com.codex.im.chat.ChatViewModel
 import com.codex.im.connection.OkHttpImConnection
@@ -60,6 +61,8 @@ import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageOutboxWorker
 import com.codex.im.message.MessagePacketProcessor
 import com.codex.im.message.MessageRepository
+import com.codex.im.message.ImageUploadApi
+import com.codex.im.message.OkHttpImageUploadApi
 import com.codex.im.message.SeqGenerator
 import com.codex.im.profile.MeScreen
 import com.codex.im.profile.MeViewModel
@@ -107,10 +110,12 @@ class MainActivity : ComponentActivity() {
             val loginViewModel = remember { LoginViewModel(repository) }
             SelfHostedImApp(
                 loginViewModel = loginViewModel,
+                validSessionProvider = repository::ensureValidSession,
                 messageRepository = messageRepository,
                 connection = connection,
                 profileRepository = profileRepository,
-                avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = DEFAULT_MOCK_SERVER_URL)
+                avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = DEFAULT_MOCK_SERVER_URL),
+                imageUploadApi = OkHttpImageUploadApi(baseUrl = DEFAULT_MOCK_SERVER_URL)
             )
         }
     }
@@ -134,10 +139,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun SelfHostedImApp(
     loginViewModel: LoginViewModel? = null,
+    validSessionProvider: ValidSessionProvider? = null,
     messageRepository: MessageRepository? = null,
     connection: ImConnection? = null,
     profileRepository: ProfileRepository? = null,
-    avatarUploadApi: AvatarUploadApi? = null
+    avatarUploadApi: AvatarUploadApi? = null,
+    imageUploadApi: ImageUploadApi? = null
 ) {
     MaterialTheme {
         if (loginViewModel == null) {
@@ -156,13 +163,15 @@ fun SelfHostedImApp(
                 loginViewModel.restoreSession()
             }
             val session = state.session
-            if (state.isAuthenticated && session != null && messageRepository != null && connection != null && profileRepository != null && avatarUploadApi != null) {
+            if (state.isAuthenticated && session != null && validSessionProvider != null && messageRepository != null && connection != null && profileRepository != null && avatarUploadApi != null && imageUploadApi != null) {
                 AuthenticatedImNavHost(
                     session = session,
+                    validSessionProvider = validSessionProvider,
                     messageRepository = messageRepository,
                     connection = connection,
                     profileRepository = profileRepository,
                     avatarUploadApi = avatarUploadApi,
+                    imageUploadApi = imageUploadApi,
                     onLogout = {
                         messageRepository.closeConversation()
                         connection.disconnect()
@@ -183,10 +192,12 @@ fun SelfHostedImApp(
 @Composable
 private fun AuthenticatedImNavHost(
     session: AuthSession,
+    validSessionProvider: ValidSessionProvider,
     messageRepository: MessageRepository,
     connection: ImConnection,
     profileRepository: ProfileRepository,
     avatarUploadApi: AvatarUploadApi,
+    imageUploadApi: ImageUploadApi,
     onLogout: suspend () -> Unit
 ) {
     val navController = rememberNavController()
@@ -266,7 +277,8 @@ private fun AuthenticatedImNavHost(
                         session = session,
                         repository = messageRepository,
                         connection = connection,
-                        profileRepository = profileRepository
+                        profileRepository = profileRepository,
+                        validSessionProvider = validSessionProvider
                     )
                 }
                 val conversationState by conversationListViewModel.state.collectAsState()
@@ -289,7 +301,8 @@ private fun AuthenticatedImNavHost(
                     ContactListViewModel(
                         session = session,
                         profileRepository = profileRepository,
-                        contactResolver = DemoContactResolver::contactsFor
+                        contactResolver = DemoContactResolver::contactsFor,
+                        validSessionProvider = validSessionProvider
                     )
                 }
                 val contactState by contactListViewModel.state.collectAsState()
@@ -312,7 +325,8 @@ private fun AuthenticatedImNavHost(
                     MeViewModel(
                         session = session,
                         profileRepository = profileRepository,
-                        avatarUploadApi = avatarUploadApi
+                        avatarUploadApi = avatarUploadApi,
+                        validSessionProvider = validSessionProvider
                     )
                 }
                 val meState by meViewModel.state.collectAsState()
@@ -336,7 +350,9 @@ private fun AuthenticatedImNavHost(
                         repository = messageRepository,
                         connection = connection,
                         profileRepository = profileRepository,
-                        initialPeerId = peerUserId
+                        initialPeerId = peerUserId,
+                        imageUploadApi = imageUploadApi,
+                        validSessionProvider = validSessionProvider
                     )
                 }
                 val chatState by chatViewModel.state.collectAsState()

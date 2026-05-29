@@ -9,6 +9,7 @@ import com.codex.im.storage.ConversationDao
 import com.codex.im.storage.MessageDao
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
+import com.codex.im.storage.MessageType
 import com.codex.im.storage.PendingMessage
 import com.codex.im.storage.PendingMessageDao
 import com.codex.im.storage.TransactionRunner
@@ -68,6 +69,97 @@ class MessageRepository(
         return message
     }
 
+    fun createLocalImageMessage(
+        senderId: String,
+        receiverId: String,
+        localOriginalPath: String,
+        localThumbnailPath: String,
+        mimeType: String,
+        now: Long
+    ): ChatMessage {
+        val conversationId = conversationIdFor(senderId, receiverId)
+        val message = ChatMessage(
+            messageId = messageIdGenerator.next(senderId, now),
+            conversationId = conversationId,
+            senderId = senderId,
+            receiverId = receiverId,
+            clientSeq = seqGenerator.next(conversationId),
+            serverSeq = null,
+            content = IMAGE_PLACEHOLDER_CONTENT,
+            status = MessageStatus.UPLOADING,
+            direction = MessageDirection.OUTGOING,
+            createdAt = now,
+            updatedAt = now,
+            type = MessageType.IMAGE,
+            mimeType = mimeType,
+            localOriginalPath = localOriginalPath,
+            localThumbnailPath = localThumbnailPath
+        )
+        transactionRunner.runInTransaction {
+            messageDao.insertOrIgnore(message)
+            conversationDao.upsertFromMessage(message, incrementUnread = false)
+        }
+        notifyConversationChanged()
+        return message
+    }
+
+    fun completeImageUploadAndQueueSend(
+        messageId: String,
+        imageUrl: String,
+        thumbnailUrl: String,
+        imageWidth: Int,
+        imageHeight: Int,
+        mimeType: String,
+        fileSizeBytes: Long,
+        now: Long
+    ) {
+        val message = messageDao.findByMessageId(messageId) ?: error("Missing message $messageId")
+        val packetMessage = message.copy(
+            imageUrl = imageUrl,
+            thumbnailUrl = thumbnailUrl,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            mimeType = mimeType,
+            fileSizeBytes = fileSizeBytes,
+            status = MessageStatus.SENDING,
+            updatedAt = now
+        )
+        val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = packetMessage.toSendBody().toByteArray())
+        transactionRunner.runInTransaction {
+            messageDao.updateImageUploadResult(
+                messageId = messageId,
+                imageUrl = imageUrl,
+                thumbnailUrl = thumbnailUrl,
+                imageWidth = imageWidth,
+                imageHeight = imageHeight,
+                mimeType = mimeType,
+                fileSizeBytes = fileSizeBytes,
+                status = MessageStatus.SENDING,
+                updatedAt = now
+            )
+            pendingMessageDao.upsert(
+                PendingMessage(
+                    messageId = messageId,
+                    packetCmd = packet.cmd,
+                    packetBody = packet.body.decodeToString(),
+                    retryCount = 0,
+                    nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
+                    createdAt = packetMessage.createdAt
+                )
+            )
+        }
+        notifyConversationChanged()
+        connection.send(packet)
+    }
+
+    fun markImageUploadFailed(messageId: String, now: Long): Boolean {
+        val changed = messageDao.markStatus(messageId, MessageStatus.UPLOAD_FAILED, now)
+        if (changed) {
+            notifyConversationChanged()
+        }
+        return changed
+    }
+
     fun handlePacket(packet: ImPacket) {
         when (packet.cmd) {
             ImCommand.MESSAGE_ACK.value -> handleAck(packet.body.decodeToString())
@@ -91,6 +183,19 @@ class MessageRepository(
         val dueMessages = pendingMessageDao.dueMessages(now, limit)
         var changed = false
         dueMessages.forEach { pending ->
+            val current = messageDao.findByMessageId(pending.messageId)
+            if (current == null) {
+                if (pendingMessageDao.delete(pending.messageId)) {
+                    changed = true
+                }
+                return@forEach
+            }
+            if (current.status == MessageStatus.SENT && current.serverSeq != null) {
+                if (pendingMessageDao.delete(pending.messageId)) {
+                    changed = true
+                }
+                return@forEach
+            }
             if (retryPolicy.isExhausted(pending.retryCount)) {
                 if (messageDao.markFailed(pending.messageId, now)) {
                     changed = true
@@ -108,6 +213,16 @@ class MessageRepository(
                     body = pending.packetBody.toByteArray()
                 )
             )
+            val latest = messageDao.findByMessageId(pending.messageId)
+            if (latest?.status == MessageStatus.SENT && latest.serverSeq != null) {
+                if (pendingMessageDao.delete(pending.messageId)) {
+                    changed = true
+                }
+                return@forEach
+            }
+            if (pendingMessageDao.findByMessageId(pending.messageId) == null) {
+                return@forEach
+            }
             pendingMessageDao.upsert(
                 pending.copy(
                     retryCount = retryAttempt,
@@ -154,6 +269,11 @@ class MessageRepository(
         val senderId = body.requiredString("senderId")
         val receiverId = body.requiredString("receiverId")
         val serverSeq = body.optionalLong("serverSeq")
+        val type = body.optionalString("type")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { MessageType.valueOf(it) }
+            ?: MessageType.TEXT
+        val imagePayload = body.optionalObject("image")
         val message = ChatMessage(
             messageId = body.requiredString("messageId"),
             conversationId = conversationIdFor(senderId, receiverId),
@@ -165,7 +285,14 @@ class MessageRepository(
             status = MessageStatus.RECEIVED,
             direction = MessageDirection.INCOMING,
             createdAt = timestamp,
-            updatedAt = timestamp
+            updatedAt = timestamp,
+            type = type,
+            imageUrl = imagePayload?.optionalString("imageUrl"),
+            thumbnailUrl = imagePayload?.optionalString("thumbnailUrl"),
+            imageWidth = imagePayload?.optionalInt("width"),
+            imageHeight = imagePayload?.optionalInt("height"),
+            mimeType = imagePayload?.optionalString("mimeType"),
+            fileSizeBytes = imagePayload?.optionalLong("sizeBytes")
         )
         val inserted = messageDao.insertOrIgnore(message)
         if (inserted) {
@@ -198,6 +325,28 @@ class MessageRepository(
     }
 
     private fun ChatMessage.toSendBody(): String {
+        if (type == MessageType.IMAGE) {
+            return """
+                {
+                  "messageId":"${messageId.escapeJson()}",
+                  "conversationId":"${conversationId.escapeJson()}",
+                  "senderId":"${senderId.escapeJson()}",
+                  "receiverId":"${receiverId.escapeJson()}",
+                  "clientSeq":$clientSeq,
+                  "type":"IMAGE",
+                  "content":"${content.escapeJson()}",
+                  "image":{
+                    "imageUrl":"${imageUrl.orEmpty().escapeJson()}",
+                    "thumbnailUrl":"${thumbnailUrl.orEmpty().escapeJson()}",
+                    "width":${imageWidth ?: 0},
+                    "height":${imageHeight ?: 0},
+                    "mimeType":"${mimeType.orEmpty().escapeJson()}",
+                    "sizeBytes":${fileSizeBytes ?: 0}
+                  },
+                  "timestamp":$createdAt
+                }
+            """.trimIndent()
+        }
         return """
             {
               "messageId":"${messageId.escapeJson()}",
@@ -223,6 +372,20 @@ class MessageRepository(
         return get(name)?.asLong
     }
 
+    private fun JsonObject.optionalInt(name: String): Int? {
+        return get(name)?.asInt
+    }
+
+    private fun JsonObject.optionalString(name: String): String? {
+        val value = get(name) ?: return null
+        return if (value.isJsonNull) null else value.asString
+    }
+
+    private fun JsonObject.optionalObject(name: String): JsonObject? {
+        val value = get(name) ?: return null
+        return if (value.isJsonObject) value.asJsonObject else null
+    }
+
     private fun String.escapeJson(): String {
         return replace("\\", "\\\\").replace("\"", "\\\"")
     }
@@ -230,5 +393,6 @@ class MessageRepository(
     private companion object {
         const val DEFAULT_ACK_TIMEOUT_MS = 5_000L
         const val DEFAULT_RETRY_BATCH_SIZE = 50
+        const val IMAGE_PLACEHOLDER_CONTENT = "[图片]"
     }
 }

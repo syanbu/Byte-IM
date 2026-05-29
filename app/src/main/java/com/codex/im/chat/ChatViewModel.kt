@@ -1,12 +1,18 @@
 package com.codex.im.chat
 
 import com.codex.im.auth.AuthSession
+import com.codex.im.auth.ValidSessionProvider
 import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
+import com.codex.im.message.DisabledImageUploadApi
+import com.codex.im.message.ImageUploadApi
+import com.codex.im.message.ImageUploadTargetsResult
 import com.codex.im.message.MessageRepository
+import com.codex.im.message.SelectedChatImage
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageOrderingPolicy
+import com.codex.im.profile.AvatarPutResult
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +42,8 @@ class ChatViewModel(
     private val connection: ImConnection,
     private val profileRepository: ProfileRepository,
     initialPeerId: String = "",
+    private val imageUploadApi: ImageUploadApi = DisabledImageUploadApi,
+    private val validSessionProvider: ValidSessionProvider = { session },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -111,6 +119,98 @@ class ChatViewModel(
         }
     }
 
+    suspend fun sendImage(selectedImage: SelectedChatImage, now: Long = System.currentTimeMillis()) {
+        if (mutableState.value.peerId.isBlank()) {
+            return
+        }
+        withContext(dispatcher) {
+            val localMessage = repository.createLocalImageMessage(
+                senderId = session.userId,
+                receiverId = mutableState.value.peerId,
+                localOriginalPath = selectedImage.localOriginalPath,
+                localThumbnailPath = selectedImage.localThumbnailPath,
+                mimeType = selectedImage.mimeType,
+                now = now
+            )
+            refreshKeepingHistory()
+
+            val validSession = validSessionProvider()
+            if (validSession == null) {
+                repository.markImageUploadFailed(localMessage.messageId, System.currentTimeMillis())
+                mutableState.value = mutableState.value.copy(
+                    errorMessage = "Image upload target request failed: Session expired"
+                )
+                refreshKeepingHistoryPreservingError()
+                return@withContext
+            }
+
+            val targets = imageUploadApi.requestUploadTargets(
+                accessToken = validSession.accessToken,
+                messageId = localMessage.messageId,
+                contentType = selectedImage.mimeType
+            )
+            when (targets) {
+                is ImageUploadTargetsResult.Failure -> {
+                    repository.markImageUploadFailed(localMessage.messageId, System.currentTimeMillis())
+                    mutableState.value = mutableState.value.copy(
+                        errorMessage = "Image upload target request failed: ${targets.message}"
+                    )
+                    refreshKeepingHistoryPreservingError()
+                    return@withContext
+                }
+                is ImageUploadTargetsResult.Success -> Unit
+            }
+
+            val thumbnailUpload = imageUploadApi.upload(
+                uploadUrl = targets.targets.thumbnail.uploadUrl,
+                contentType = selectedImage.mimeType,
+                bytes = selectedImage.thumbnailBytes
+            )
+            when (thumbnailUpload) {
+                is AvatarPutResult.Failure -> {
+                    repository.markImageUploadFailed(localMessage.messageId, System.currentTimeMillis())
+                    mutableState.value = mutableState.value.copy(
+                        errorMessage = "Image upload failed: ${thumbnailUpload.message}"
+                    )
+                    refreshKeepingHistoryPreservingError()
+                    return@withContext
+                }
+                AvatarPutResult.Success -> Unit
+            }
+
+            val originalUpload = imageUploadApi.upload(
+                uploadUrl = targets.targets.original.uploadUrl,
+                contentType = selectedImage.mimeType,
+                bytes = selectedImage.originalBytes
+            )
+            when (originalUpload) {
+                is AvatarPutResult.Failure -> {
+                    repository.markImageUploadFailed(localMessage.messageId, System.currentTimeMillis())
+                    mutableState.value = mutableState.value.copy(
+                        errorMessage = "Image upload failed: ${originalUpload.message}"
+                    )
+                    refreshKeepingHistoryPreservingError()
+                    return@withContext
+                }
+                AvatarPutResult.Success -> Unit
+            }
+
+            val sendPhaseNow = System.currentTimeMillis()
+            repository.completeImageUploadAndQueueSend(
+                messageId = localMessage.messageId,
+                imageUrl = targets.targets.original.publicUrl,
+                thumbnailUrl = targets.targets.thumbnail.publicUrl,
+                imageWidth = selectedImage.width,
+                imageHeight = selectedImage.height,
+                mimeType = selectedImage.mimeType,
+                fileSizeBytes = selectedImage.originalBytes.size.toLong(),
+                now = sendPhaseNow
+            )
+            mutableState.value = mutableState.value.copy(errorMessage = null)
+            refreshKeepingHistory()
+        }
+    }
+
     suspend fun loadMoreHistory() {
         val current = mutableState.value
         if (current.isLoadingMore || !current.hasMoreLocal || current.messages.isEmpty()) {
@@ -169,13 +269,14 @@ class ChatViewModel(
     }
 
     private suspend fun refreshProfiles() {
-        profileRepository.bootstrapSession(session)
+        val currentSession = validSessionProvider() ?: session
+        profileRepository.bootstrapSession(currentSession)
         val peerId = mutableState.value.peerId
         if (peerId.isNotBlank()) {
-            profileRepository.refreshProfiles(session.accessToken, listOf(session.userId, peerId))
+            profileRepository.refreshProfiles(currentSession.accessToken, listOf(currentSession.userId, peerId))
         }
         val peerProfile = profileRepository.localProfile(peerId)
-        val currentUserProfile = profileRepository.localProfile(session.userId)
+        val currentUserProfile = profileRepository.localProfile(currentSession.userId)
         mutableState.value = mutableState.value.copy(
             peerName = peerProfile?.nickname ?: peerId,
             peerAvatarUrl = peerProfile?.avatarUrl,
@@ -199,6 +300,24 @@ class ChatViewModel(
         mutableState.value = mutableState.value.copy(
             messages = mergeMessages(currentMessages, latestMessages),
             errorMessage = null
+        )
+    }
+
+    private fun refreshKeepingHistoryPreservingError() {
+        val peerId = mutableState.value.peerId
+        if (peerId.isEmpty()) {
+            return
+        }
+        val current = mutableState.value
+        val limit = maxOf(HISTORY_PAGE_SIZE, current.messages.size)
+        val latestMessages = repository.historyPage(
+            userId = session.userId,
+            peerId = peerId,
+            beforeTime = null,
+            limit = limit
+        )
+        mutableState.value = current.copy(
+            messages = mergeMessages(current.messages, latestMessages)
         )
     }
 

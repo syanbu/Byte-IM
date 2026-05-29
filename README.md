@@ -22,7 +22,7 @@ The `mock-server` directory contains a Java/Netty server for local testing.
 ```powershell
 cd D:\Desktop\engine\IM\mock-server
 mvn -q test
-mvn -q exec:java
+mvn -q compile exec:java
 ```
 
 Use these addresses:

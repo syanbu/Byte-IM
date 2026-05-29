@@ -1,6 +1,7 @@
 package com.codex.im.contacts
 
 import com.codex.im.auth.AuthSession
+import com.codex.im.auth.ValidSessionProvider
 import com.codex.im.profile.ProfileRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +28,7 @@ class ContactListViewModel(
     private val session: AuthSession,
     private val profileRepository: ProfileRepository,
     private val contactResolver: (String) -> List<String>,
+    private val validSessionProvider: ValidSessionProvider = { session },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -67,7 +69,10 @@ class ContactListViewModel(
         refreshJob = scope.launch(dispatcher) {
             profileRepository.bootstrapSession(session)
             val contactIds = contactResolver(session.userId)
-            profileRepository.refreshProfiles(session.accessToken, contactIds)
+            val validSession = validSessionProvider()
+            if (validSession != null) {
+                profileRepository.refreshProfiles(validSession.accessToken, contactIds)
+            }
             val items = contactIds.map { contactId ->
                 val profile = profileRepository.localProfile(contactId)
                 ContactListItem(

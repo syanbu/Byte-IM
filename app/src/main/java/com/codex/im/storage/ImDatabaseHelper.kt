@@ -24,6 +24,15 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
               client_seq INTEGER NOT NULL,
               server_seq INTEGER,
               content TEXT NOT NULL,
+              message_type TEXT NOT NULL,
+              image_url TEXT,
+              thumbnail_url TEXT,
+              image_width INTEGER,
+              image_height INTEGER,
+              mime_type TEXT,
+              file_size_bytes INTEGER,
+              local_original_path TEXT,
+              local_thumbnail_path TEXT,
               status TEXT NOT NULL,
               direction TEXT NOT NULL,
               created_at INTEGER NOT NULL,
@@ -87,7 +96,6 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             createUserProfilesTable(db)
-            return
         }
         db.execSQL("DROP TABLE IF EXISTS pending_messages")
         db.execSQL("DROP TABLE IF EXISTS user_profiles")
@@ -98,6 +106,6 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 3
     }
 }

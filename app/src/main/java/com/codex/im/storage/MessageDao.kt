@@ -5,6 +5,22 @@ interface MessageDao {
 
     fun queryPage(conversationId: String, beforeTime: Long?, limit: Int): List<ChatMessage>
 
+    fun findByMessageId(messageId: String): ChatMessage?
+
+    fun updateImageUploadResult(
+        messageId: String,
+        imageUrl: String,
+        thumbnailUrl: String,
+        imageWidth: Int,
+        imageHeight: Int,
+        mimeType: String,
+        fileSizeBytes: Long,
+        status: MessageStatus,
+        updatedAt: Long
+    ): Boolean
+
+    fun markStatus(messageId: String, status: MessageStatus, updatedAt: Long): Boolean
+
     fun markAcked(messageId: String, serverSeq: Long, updatedAt: Long): Boolean
 
     fun markFailed(messageId: String, updatedAt: Long): Boolean
@@ -31,6 +47,42 @@ class InMemoryMessageDao : MessageDao {
             .toList()
     }
 
+    override fun findByMessageId(messageId: String): ChatMessage? = messagesById[messageId]
+
+    override fun updateImageUploadResult(
+        messageId: String,
+        imageUrl: String,
+        thumbnailUrl: String,
+        imageWidth: Int,
+        imageHeight: Int,
+        mimeType: String,
+        fileSizeBytes: Long,
+        status: MessageStatus,
+        updatedAt: Long
+    ): Boolean {
+        val current = messagesById[messageId] ?: return false
+        messagesById[messageId] = current.copy(
+            imageUrl = imageUrl,
+            thumbnailUrl = thumbnailUrl,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            mimeType = mimeType,
+            fileSizeBytes = fileSizeBytes,
+            status = status,
+            updatedAt = updatedAt
+        )
+        return true
+    }
+
+    override fun markStatus(messageId: String, status: MessageStatus, updatedAt: Long): Boolean {
+        val current = messagesById[messageId] ?: return false
+        messagesById[messageId] = current.copy(
+            status = status,
+            updatedAt = updatedAt
+        )
+        return true
+    }
+
     override fun markAcked(messageId: String, serverSeq: Long, updatedAt: Long): Boolean {
         val current = messagesById[messageId] ?: return false
         messagesById[messageId] = current.copy(
@@ -42,11 +94,6 @@ class InMemoryMessageDao : MessageDao {
     }
 
     override fun markFailed(messageId: String, updatedAt: Long): Boolean {
-        val current = messagesById[messageId] ?: return false
-        messagesById[messageId] = current.copy(
-            status = MessageStatus.FAILED,
-            updatedAt = updatedAt
-        )
-        return true
+        return markStatus(messageId, MessageStatus.FAILED, updatedAt)
     }
 }

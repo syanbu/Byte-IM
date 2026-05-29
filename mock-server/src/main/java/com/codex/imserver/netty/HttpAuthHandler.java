@@ -1,6 +1,7 @@
 package com.codex.imserver.netty;
 
 import com.codex.imserver.auth.AuthService;
+import com.codex.imserver.ImServerLogger;
 import com.codex.imserver.oss.OssUploadService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -85,6 +86,34 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
                 String response = ossUploadService.avatarUploadTarget(
                         authenticatedPhone.get(),
                         readString(json, "contentType", "image/jpeg")
+                );
+                writeJson(context, request, HttpResponseStatus.OK, response);
+                return;
+            }
+
+            if (request.method() == HttpMethod.POST && "/oss/message-image/upload-targets".equals(path)) {
+                Optional<String> authenticatedPhone = authenticatedPhone(request);
+                if (authenticatedPhone.isEmpty()) {
+                    writeJson(context, request, HttpResponseStatus.UNAUTHORIZED, authService.failure(401, "Unauthorized"));
+                    return;
+                }
+                String body = request.content().toString(CharsetUtil.UTF_8);
+                JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
+                ImServerLogger.log(
+                        "[IM] IMAGE_UPLOAD_TARGET_REQUEST userId=%s messageId=%s contentType=%s",
+                        authenticatedPhone.get(),
+                        readString(json, "messageId", ""),
+                        readString(json, "contentType", "image/jpeg")
+                );
+                String response = ossUploadService.messageImageUploadTargets(
+                        authenticatedPhone.get(),
+                        readString(json, "messageId", ""),
+                        readString(json, "contentType", "image/jpeg")
+                );
+                ImServerLogger.log(
+                        "[IM] IMAGE_UPLOAD_TARGET_ISSUED userId=%s messageId=%s",
+                        authenticatedPhone.get(),
+                        readString(json, "messageId", "")
                 );
                 writeJson(context, request, HttpResponseStatus.OK, response);
                 return;

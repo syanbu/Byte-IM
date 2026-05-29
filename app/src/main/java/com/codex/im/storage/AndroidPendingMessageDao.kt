@@ -18,6 +18,21 @@ class AndroidPendingMessageDao(private val database: SQLiteDatabase) : PendingMe
         return database.delete("pending_messages", "message_id = ?", arrayOf(messageId)) > 0
     }
 
+    override fun findByMessageId(messageId: String): PendingMessage? {
+        return database.query(
+            "pending_messages",
+            null,
+            "message_id = ?",
+            arrayOf(messageId),
+            null,
+            null,
+            null,
+            "1"
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.toPendingMessage() else null
+        }
+    }
+
     override fun dueMessages(now: Long, limit: Int): List<PendingMessage> {
         return database.query(
             "pending_messages",

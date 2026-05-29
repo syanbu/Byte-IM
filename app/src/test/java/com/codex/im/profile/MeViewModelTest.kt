@@ -137,10 +137,63 @@ class MeViewModelTest {
         assertEquals("https://oss.example.com/avatars/13800138000/2000.jpg", api.lastAvatarUrl)
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun saveProfileUsesFreshAccessTokenFromProvider() = runTest {
+        val uploadApi = FakeAvatarUploadApi()
+        val api = FakeProfileApi(
+            updatedProfile = UserProfile("13800138000", "13800138000", "Syan", "https://oss.example.com/avatars/13800138000/2000.jpg", 2L, 2L)
+        )
+        val freshSession = AuthSession(
+            accessToken = "fresh-token",
+            refreshToken = "fresh-refresh",
+            userId = "13800138000",
+            username = "Syan",
+            phone = "13800138000",
+            nickname = "Syan",
+            avatarUrl = "https://example.com/me.jpg",
+            avatarUpdatedAt = 1_000L,
+            profileUpdatedAt = 1_000L,
+            accessExpiresAtMillis = 5_000L,
+            refreshExpiresAtMillis = 10_000L
+        )
+        val fixture = Fixture(
+            this,
+            profileApi = api,
+            avatarUploadApi = uploadApi,
+            validSessionProvider = { freshSession }
+        )
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditing()
+        fixture.viewModel.setSelectedAvatarBytes(byteArrayOf(1, 2, 3))
+
+        fixture.viewModel.saveProfile()
+        runCurrent()
+
+        assertEquals("fresh-token", uploadApi.lastRequestedAccessToken)
+        assertEquals("fresh-token", api.lastUpdateAccessToken)
+    }
+
     private class Fixture(
         scope: TestScope,
         profileApi: FakeProfileApi = FakeProfileApi(),
-        avatarUploadApi: AvatarUploadApi = FakeAvatarUploadApi()
+        avatarUploadApi: AvatarUploadApi = FakeAvatarUploadApi(),
+        validSessionProvider: suspend () -> AuthSession? = {
+            AuthSession(
+                accessToken = "token",
+                refreshToken = "refresh",
+                userId = "13800138000",
+                username = "Syan",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = "https://example.com/me.jpg",
+                avatarUpdatedAt = 1_000L,
+                profileUpdatedAt = 1_000L,
+                accessExpiresAtMillis = 2_000L,
+                refreshExpiresAtMillis = 3_000L
+            )
+        }
     ) {
         private val dao = InMemoryUserProfileDao()
         val viewModel = MeViewModel(
@@ -159,6 +212,7 @@ class MeViewModelTest {
             ),
             profileRepository = ProfileRepository(dao, profileApi),
             avatarUploadApi = avatarUploadApi,
+            validSessionProvider = validSessionProvider,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )
@@ -171,6 +225,7 @@ class MeViewModelTest {
         var lastNickname: String? = null
         var lastAvatarUrl: String? = null
         var lastAvatarObjectKey: String? = null
+        var lastUpdateAccessToken: String? = null
 
         override suspend fun me(accessToken: String): ProfileResult {
             return ProfileResult.Success(currentProfile)
@@ -188,6 +243,7 @@ class MeViewModelTest {
             avatarUrl: String?,
             avatarObjectKey: String?
         ): ProfileResult {
+            lastUpdateAccessToken = accessToken
             lastNickname = nickname
             lastAvatarUrl = avatarUrl
             lastAvatarObjectKey = avatarObjectKey
@@ -197,8 +253,10 @@ class MeViewModelTest {
 
     private class FakeAvatarUploadApi : AvatarUploadApi {
         var lastUploadedBytes: ByteArray? = null
+        var lastRequestedAccessToken: String? = null
 
         override suspend fun requestUploadTarget(accessToken: String, contentType: String): AvatarUploadResult {
+            lastRequestedAccessToken = accessToken
             return AvatarUploadResult.Success(
                 AvatarUploadTarget(
                     objectKey = "avatars/13800138000/2000.jpg",

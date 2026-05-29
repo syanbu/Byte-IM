@@ -50,4 +50,38 @@ public class OssUploadServiceTest {
         assertEquals(500, root.get("code").getAsInt());
         assertEquals("OSS upload is not configured", root.get("message").getAsString());
     }
+
+    @Test
+    public void createsSignedMessageImageUploadTargets() {
+        OssUploadService service = new OssUploadService(
+                new OssUploadService.Config(
+                        "test-key",
+                        "test-secret",
+                        "oss-cn-shenzhen.aliyuncs.com",
+                        "im-byte",
+                        "https://im-byte.oss-cn-shenzhen.aliyuncs.com",
+                        () -> 2_000L
+                )
+        );
+
+        JsonObject root = JsonParser.parseString(
+                service.messageImageUploadTargets("13800138000", "m-1", "image/jpeg")
+        ).getAsJsonObject();
+        JsonObject data = root.getAsJsonObject("data");
+        JsonObject thumbnail = data.getAsJsonObject("thumbnail");
+        JsonObject original = data.getAsJsonObject("original");
+
+        assertEquals(0, root.get("code").getAsInt());
+        assertEquals("m-1", data.get("messageId").getAsString());
+        assertEquals(
+                "chat-images/13800138000/m-1/thumb.jpg",
+                thumbnail.get("objectKey").getAsString()
+        );
+        assertEquals(
+                "chat-images/13800138000/m-1/origin.jpg",
+                original.get("objectKey").getAsString()
+        );
+        assertTrue(thumbnail.get("uploadUrl").getAsString().contains("OSSAccessKeyId=test-key"));
+        assertTrue(original.get("publicUrl").getAsString().endsWith("/origin.jpg"));
+    }
 }

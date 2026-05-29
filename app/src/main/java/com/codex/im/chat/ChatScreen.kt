@@ -1,5 +1,7 @@
 package com.codex.im.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,10 +39,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.codex.im.message.ChatImageCompressor
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
+import com.codex.im.storage.MessageType
 import com.codex.im.ui.AvatarImage
 import kotlinx.coroutines.launch
 
@@ -52,10 +57,22 @@ fun ChatScreen(
     onBack: (() -> Unit)? = null
 ) {
     var draft by remember { mutableStateOf("") }
+    var previewMessage by remember { mutableStateOf<ChatMessage?>(null) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val context = LocalContext.current
     var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
     val latestMessageId = state.messages.firstOrNull()?.messageId
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val prepared = ChatImageCompressor.prepareSelectedImage(context, context.contentResolver, uri)
+                if (prepared != null) {
+                    viewModel.sendImage(prepared)
+                }
+            }
+        }
+    }
     val shouldLoadEarlierHistory by remember(
         listState,
         state.messages.size,
@@ -130,7 +147,8 @@ fun ChatScreen(
                     message = message,
                     peerName = state.peerName,
                     peerAvatarUrl = state.peerAvatarUrl,
-                    currentUserAvatarUrl = state.currentUserAvatarUrl
+                    currentUserAvatarUrl = state.currentUserAvatarUrl,
+                    onOpenImagePreview = { previewMessage = it }
                 )
             }
             if (state.messages.isNotEmpty()) {
@@ -157,6 +175,7 @@ fun ChatScreen(
             draft = draft,
             onDraftChange = { draft = it },
             canSend = ChatDisplayPolicy.shouldShowSendButton(draft) && state.peerId.isNotBlank(),
+            onPickImage = { imagePicker.launch("image/*") },
             onSend = {
                 val content = draft
                 draft = ""
@@ -166,6 +185,12 @@ fun ChatScreen(
             }
         )
     }
+    previewMessage?.let { message ->
+        ChatImagePreviewScreen(
+            message = message,
+            onDismiss = { previewMessage = null }
+        )
+    }
 }
 
 @Composable
@@ -173,6 +198,7 @@ private fun ChatComposerBar(
     draft: String,
     onDraftChange: (String) -> Unit,
     canSend: Boolean,
+    onPickImage: () -> Unit,
     onSend: () -> Unit
 ) {
     val barColor = MaterialTheme.colorScheme.surfaceContainer
@@ -219,6 +245,12 @@ private fun ChatComposerBar(
                     )
                 )
             }
+            Button(
+                onClick = onPickImage,
+                contentPadding = ButtonDefaults.ContentPadding
+            ) {
+                Text("Image")
+            }
             AnimatedVisibility(visible = canSend) {
                 Button(
                     onClick = onSend,
@@ -236,7 +268,8 @@ private fun ChatMessageRow(
     message: ChatMessage,
     peerName: String,
     peerAvatarUrl: String?,
-    currentUserAvatarUrl: String?
+    currentUserAvatarUrl: String?,
+    onOpenImagePreview: (ChatMessage) -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
     Row(
@@ -256,11 +289,19 @@ private fun ChatMessageRow(
         if (outgoing) {
             OutgoingMessageStatus(message.status)
         }
-        Text(
-            text = message.content,
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(horizontal = 10.dp)
-        )
+        if (message.type == MessageType.IMAGE) {
+            ChatImageBubble(
+                message = message,
+                modifier = Modifier.padding(horizontal = 10.dp),
+                onOpenPreview = onOpenImagePreview
+            )
+        } else {
+            Text(
+                text = message.content,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(horizontal = 10.dp)
+            )
+        }
         if (outgoing) {
             AvatarImage(
                 avatarUrl = currentUserAvatarUrl,
@@ -278,10 +319,12 @@ private fun OutgoingMessageStatus(status: MessageStatus) {
         contentAlignment = Alignment.Center
     ) {
         when (status) {
+            MessageStatus.UPLOADING,
             MessageStatus.SENDING -> CircularProgressIndicator(
                 modifier = Modifier.size(14.dp),
                 strokeWidth = 2.dp
             )
+            MessageStatus.UPLOAD_FAILED,
             MessageStatus.FAILED -> Text(
                 text = "!",
                 style = MaterialTheme.typography.labelLarge,

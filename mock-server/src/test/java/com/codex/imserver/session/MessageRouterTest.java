@@ -83,6 +83,46 @@ public class MessageRouterTest {
     }
 
     @Test
+    public void duplicateImageMessageIdReturnsOriginalAckWithoutDuplicateForward() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
+        MessageRouter router = new MessageRouter(registry);
+        ImPacket packet = packet("""
+            {
+              "messageId":"same-image-message",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "type":"IMAGE",
+              "content":"[图片]",
+              "image":{
+                "imageUrl":"https://oss.example.com/origin.jpg",
+                "thumbnailUrl":"https://oss.example.com/thumb.jpg",
+                "width":900,
+                "height":600,
+                "mimeType":"image/jpeg",
+                "sizeBytes":456789
+              },
+              "timestamp":1000
+            }
+            """);
+
+        router.handleSendMessage("13800113800", packet);
+        router.handleSendMessage("13800113800", packet);
+
+        assertEquals(2, sender.sentPackets.size());
+        assertEquals(1, receiver.sentPackets.size());
+        JsonObject received = body(receiver.sentPackets.get(0));
+        assertEquals("[图片]", received.get("content").getAsString());
+        assertTrue(received.has("image"));
+        assertEquals("https://oss.example.com/thumb.jpg", received.getAsJsonObject("image").get("thumbnailUrl").getAsString());
+    }
+
+    @Test
     public void sendMessageQueuesReceiveMessageForOfflineReceiverUntilAuth() {
         ClientSessionRegistry registry = new ClientSessionRegistry();
         TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);

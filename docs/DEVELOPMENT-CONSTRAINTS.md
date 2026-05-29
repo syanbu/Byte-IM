@@ -1,5 +1,15 @@
 # Development Constraints
 
+## Android Authenticated Request Semantics
+
+Every authenticated client request must resolve a fresh valid `accessToken` immediately before the request is sent.
+
+- Do not reuse a page-scoped or ViewModel-scoped `AuthSession.accessToken` snapshot for later HTTP requests.
+- Before any authenticated HTTP request, call a shared session provider such as `AuthRepository.ensureValidSession()`.
+- If a fresh valid session cannot be resolved, the request must not be sent with a stale token.
+- This rule applies to OSS upload target requests, profile fetch/update requests, avatar upload target requests, and any future authenticated HTTP endpoints.
+- WebSocket reconnect/auth flows must also use the same valid-session rule through a token provider instead of stale cached tokens.
+
 ## Android Message Receive Semantics
 
 The Android client must receive and persist IM messages for the authenticated user regardless of which top-level page is visible.

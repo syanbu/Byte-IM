@@ -9,6 +9,7 @@ import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
+import com.codex.im.storage.MessageType
 import com.codex.im.storage.TransactionRunner
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -90,6 +91,26 @@ class MessageRepositoryTest {
         assertEquals(message.messageId, pending.messageId)
         assertEquals(1, pending.retryCount)
         assertEquals(11_000L, pending.nextRetryAt)
+    }
+
+    @Test
+    fun retryDuePendingMessagesDoesNotRecreatePendingAfterAckArrivesDuringRetrySend() {
+        val fixture = Fixture()
+        val message = fixture.repository.sendText("u1", "u2", "hello", now = 1_000L)
+        fixture.connection.onSend = {
+            fixture.repository.handlePacket(
+                ImPacket(
+                    cmd = ImCommand.MESSAGE_ACK.value,
+                    body = """{"messageId":"${message.messageId}","serverSeq":88,"serverTime":1200}""".toByteArray()
+                )
+            )
+        }
+
+        fixture.repository.retryDuePendingMessages(now = 6_000L)
+
+        val stored = fixture.messageDao.findByMessageId(message.messageId)
+        assertEquals(MessageStatus.SENT, stored?.status)
+        assertTrue(fixture.pendingDao.dueMessages(now = 999_999L, limit = 10).isEmpty())
     }
 
     @Test
@@ -261,6 +282,151 @@ class MessageRepositoryTest {
         assertEquals(2, fixture.repository.totalUnreadCount())
     }
 
+    @Test
+    fun createLocalImageMessageStoresUploadingMessageWithoutPendingRow() {
+        val fixture = Fixture()
+
+        val message = fixture.repository.createLocalImageMessage(
+            senderId = "u1",
+            receiverId = "u2",
+            localOriginalPath = "cache/original.jpg",
+            localThumbnailPath = "cache/thumb.jpg",
+            mimeType = "image/jpeg",
+            now = 1_000L
+        )
+
+        val stored = fixture.messageDao.findByMessageId(message.messageId)
+        assertEquals(MessageStatus.UPLOADING, stored?.status)
+        assertEquals(MessageType.IMAGE, stored?.type)
+        assertEquals("[图片]", stored?.content)
+        assertEquals("cache/original.jpg", stored?.localOriginalPath)
+        assertTrue(fixture.pendingDao.dueMessages(now = 999_999L, limit = 10).isEmpty())
+        assertEquals("[图片]", fixture.conversationDao.listConversations(limit = 20).single().lastMessagePreview)
+        assertTrue(fixture.connection.sentPackets.isEmpty())
+    }
+
+    @Test
+    fun completeImageUploadAndQueueSendCreatesPendingRowAndSendsPacket() {
+        val fixture = Fixture()
+        val message = fixture.repository.createLocalImageMessage(
+            senderId = "u1",
+            receiverId = "u2",
+            localOriginalPath = "cache/original.jpg",
+            localThumbnailPath = "cache/thumb.jpg",
+            mimeType = "image/jpeg",
+            now = 1_000L
+        )
+
+        fixture.repository.completeImageUploadAndQueueSend(
+            messageId = message.messageId,
+            imageUrl = "https://oss.example.com/origin.jpg",
+            thumbnailUrl = "https://oss.example.com/thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
+            mimeType = "image/jpeg",
+            fileSizeBytes = 345_678L,
+            now = 2_000L
+        )
+
+        val stored = fixture.messageDao.findByMessageId(message.messageId)
+        assertEquals(MessageStatus.SENDING, stored?.status)
+        assertEquals("https://oss.example.com/origin.jpg", stored?.imageUrl)
+        assertEquals("https://oss.example.com/thumb.jpg", stored?.thumbnailUrl)
+        assertEquals(ImCommand.SEND_MESSAGE.value, fixture.connection.sentPackets.single().cmd)
+        assertEquals(message.messageId, fixture.pendingDao.dueMessages(now = 9_999L, limit = 10).single().messageId)
+    }
+
+    @Test
+    fun markImageUploadFailedDoesNotCreatePendingRow() {
+        val fixture = Fixture()
+        val message = fixture.repository.createLocalImageMessage(
+            senderId = "u1",
+            receiverId = "u2",
+            localOriginalPath = "cache/original.jpg",
+            localThumbnailPath = "cache/thumb.jpg",
+            mimeType = "image/jpeg",
+            now = 1_000L
+        )
+
+        fixture.repository.markImageUploadFailed(message.messageId, now = 2_000L)
+
+        val stored = fixture.messageDao.findByMessageId(message.messageId)
+        assertEquals(MessageStatus.UPLOAD_FAILED, stored?.status)
+        assertTrue(fixture.pendingDao.dueMessages(now = 999_999L, limit = 10).isEmpty())
+        assertTrue(fixture.connection.sentPackets.isEmpty())
+    }
+
+    @Test
+    fun incomingImageMessagePersistsTypeAndImageFields() {
+        val fixture = Fixture()
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-image-1",
+                      "conversationId":"single:u2:u1",
+                      "senderId":"u2",
+                      "receiverId":"u1",
+                      "clientSeq":10,
+                      "serverSeq":93,
+                      "type":"IMAGE",
+                      "content":"[图片]",
+                      "image":{
+                        "imageUrl":"https://oss.example.com/origin.jpg",
+                        "thumbnailUrl":"https://oss.example.com/thumb.jpg",
+                        "width":900,
+                        "height":600,
+                        "mimeType":"image/jpeg",
+                        "sizeBytes":456789
+                      },
+                      "timestamp":1800
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        val stored = fixture.messageDao.findByMessageId("remote-image-1")
+        assertEquals(MessageType.IMAGE, stored?.type)
+        assertEquals("https://oss.example.com/origin.jpg", stored?.imageUrl)
+        assertEquals("https://oss.example.com/thumb.jpg", stored?.thumbnailUrl)
+        assertEquals(900, stored?.imageWidth)
+        assertEquals(600, stored?.imageHeight)
+        assertEquals("image/jpeg", stored?.mimeType)
+        assertEquals(456_789L, stored?.fileSizeBytes)
+        assertEquals(MessageStatus.RECEIVED, stored?.status)
+    }
+
+    @Test
+    fun completeImageUploadAndQueueSendBuildsImagePayloadJson() {
+        val fixture = Fixture()
+        val message = fixture.repository.createLocalImageMessage(
+            senderId = "u1",
+            receiverId = "u2",
+            localOriginalPath = "cache/original.jpg",
+            localThumbnailPath = "cache/thumb.jpg",
+            mimeType = "image/jpeg",
+            now = 1_000L
+        )
+
+        fixture.repository.completeImageUploadAndQueueSend(
+            messageId = message.messageId,
+            imageUrl = "https://oss.example.com/origin.jpg",
+            thumbnailUrl = "https://oss.example.com/thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
+            mimeType = "image/jpeg",
+            fileSizeBytes = 345_678L,
+            now = 2_000L
+        )
+
+        val body = fixture.connection.sentPackets.single().body.decodeToString()
+        assertTrue(body.contains(""""type":"IMAGE""""))
+        assertTrue(body.contains(""""imageUrl":"https://oss.example.com/origin.jpg""""))
+        assertTrue(body.contains(""""thumbnailUrl":"https://oss.example.com/thumb.jpg""""))
+    }
+
     private class Fixture(
         transactionRunner: TransactionRunner? = null,
         events: MutableList<String> = mutableListOf()
@@ -286,6 +452,7 @@ class MessageRepositoryTest {
     ) : ImConnection {
         val sentPackets = mutableListOf<ImPacket>()
         var sendSucceeds = true
+        var onSend: (() -> Unit)? = null
         override val states: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Connected)
         override val incomingPackets: SharedFlow<ImPacket> = MutableSharedFlow()
 
@@ -296,6 +463,7 @@ class MessageRepositoryTest {
         override fun send(packet: ImPacket): Boolean {
             events += "send"
             sentPackets.add(packet)
+            onSend?.invoke()
             return sendSucceeds
         }
     }

@@ -1,6 +1,7 @@
 package com.codex.im.conversation
 
 import com.codex.im.auth.AuthSession
+import com.codex.im.auth.ValidSessionProvider
 import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
 import com.codex.im.message.MessageRepository
@@ -38,6 +39,7 @@ class ConversationListViewModel(
     private val repository: MessageRepository,
     private val connection: ImConnection,
     private val profileRepository: ProfileRepository,
+    private val validSessionProvider: ValidSessionProvider = { session },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -99,10 +101,13 @@ class ConversationListViewModel(
         val conversations = repository.conversations(limit = 50)
         profileRepository.bootstrapSession(session)
         updateItems(conversations)
-        profileRepository.refreshProfiles(
-            accessToken = session.accessToken,
-            userIds = conversations.map { it.peerIdForCurrentSession() }
-        )
+        val validSession = validSessionProvider()
+        if (validSession != null) {
+            profileRepository.refreshProfiles(
+                accessToken = validSession.accessToken,
+                userIds = conversations.map { it.peerIdForCurrentSession() }
+            )
+        }
         updateItems(conversations)
     }
 

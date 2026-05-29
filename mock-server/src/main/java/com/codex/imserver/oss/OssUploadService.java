@@ -53,11 +53,52 @@ public final class OssUploadService {
         return root.toString();
     }
 
+    public String messageImageUploadTargets(String userId, String messageId, String contentType) {
+        if (!config.isConfigured()) {
+            return failure(500, "OSS upload is not configured");
+        }
+        String normalizedContentType = contentType == null || contentType.isBlank() ? "image/jpeg" : contentType;
+        long now = config.nowMillis().getAsLong();
+        long expiresAtMillis = now + DEFAULT_EXPIRES_MILLIS;
+        String basePath = "chat-images/" + safePathSegment(userId) + "/" + safePathSegment(messageId);
+
+        JsonObject data = new JsonObject();
+        data.addProperty("messageId", messageId);
+        data.add("thumbnail", signedTarget(basePath + "/thumb.jpg", normalizedContentType, expiresAtMillis));
+        data.add("original", signedTarget(basePath + "/origin.jpg", normalizedContentType, expiresAtMillis));
+        data.addProperty("expiresAt", expiresAtMillis);
+
+        JsonObject root = new JsonObject();
+        root.addProperty("code", 0);
+        root.addProperty("message", "ok");
+        root.add("data", data);
+        return root.toString();
+    }
+
     private String failure(int code, String message) {
         JsonObject root = new JsonObject();
         root.addProperty("code", code);
         root.addProperty("message", message);
         return root.toString();
+    }
+
+    private JsonObject signedTarget(String objectKey, String contentType, long expiresAtMillis) {
+        long expiresSeconds = expiresAtMillis / 1000L;
+        String publicUrl = config.publicBaseUrl().replaceAll("/+$", "") + "/" + objectKey;
+        String resource = "/" + config.bucket() + "/" + objectKey;
+        String stringToSign = "PUT\n\n" + contentType + "\n" + expiresSeconds + "\n" + resource;
+        String signature = hmacSha1(config.accessKeySecret(), stringToSign);
+        String uploadUrl = publicUrl
+                + "?OSSAccessKeyId=" + urlEncode(config.accessKeyId())
+                + "&Expires=" + expiresSeconds
+                + "&Signature=" + urlEncode(signature);
+
+        JsonObject target = new JsonObject();
+        target.addProperty("objectKey", objectKey);
+        target.addProperty("uploadUrl", uploadUrl);
+        target.addProperty("publicUrl", publicUrl);
+        target.addProperty("expiresAt", expiresAtMillis);
+        return target;
     }
 
     private String safePathSegment(String value) {

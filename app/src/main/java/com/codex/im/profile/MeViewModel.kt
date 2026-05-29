@@ -1,6 +1,7 @@
 package com.codex.im.profile
 
 import com.codex.im.auth.AuthSession
+import com.codex.im.auth.ValidSessionProvider
 import com.codex.im.storage.UserProfile
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +26,7 @@ class MeViewModel(
     private val session: AuthSession,
     private val profileRepository: ProfileRepository,
     private val avatarUploadApi: AvatarUploadApi = DisabledAvatarUploadApi,
+    private val validSessionProvider: ValidSessionProvider = { session },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -42,7 +44,12 @@ class MeViewModel(
             errorMessage = null
         )
         job = scope.launch(dispatcher) {
-            val profile = profileRepository.currentUserProfile(session)
+            val validSession = validSessionProvider()
+            val profile = if (validSession == null) {
+                profileRepository.bootstrapSession(session)
+            } else {
+                profileRepository.currentUserProfile(validSession)
+            }
             mutableState.value = mutableState.value.copy(
                 profile = profile,
                 isLoading = false,
@@ -112,7 +119,15 @@ class MeViewModel(
         val current = mutableState.value
         mutableState.value = current.copy(isSaving = true, errorMessage = null)
         scope.launch(dispatcher) {
-            val upload = uploadSelectedAvatarIfNeeded()
+            val validSession = validSessionProvider()
+            if (validSession == null) {
+                mutableState.value = mutableState.value.copy(
+                    isSaving = false,
+                    errorMessage = "Session expired. Please log in again."
+                )
+                return@launch
+            }
+            val upload = uploadSelectedAvatarIfNeeded(validSession)
             if (upload is UploadOutcome.Failure) {
                 mutableState.value = mutableState.value.copy(
                     isSaving = false,
@@ -123,7 +138,7 @@ class MeViewModel(
             val avatar = upload as UploadOutcome.Success
             val fallbackAvatarUrl = mutableState.value.profile?.avatarUrl
             val updated = profileRepository.updateMe(
-                session = session,
+                session = validSession,
                 nickname = nickname,
                 avatarUrl = avatar.publicUrl ?: fallbackAvatarUrl,
                 avatarObjectKey = avatar.objectKey
@@ -146,9 +161,9 @@ class MeViewModel(
         }
     }
 
-    private suspend fun uploadSelectedAvatarIfNeeded(): UploadOutcome {
+    private suspend fun uploadSelectedAvatarIfNeeded(validSession: AuthSession): UploadOutcome {
         val bytes = selectedAvatarBytes ?: return UploadOutcome.Success(publicUrl = null, objectKey = null)
-        val target = when (val result = avatarUploadApi.requestUploadTarget(session.accessToken, AvatarImageCompressor.JPEG_CONTENT_TYPE)) {
+        val target = when (val result = avatarUploadApi.requestUploadTarget(validSession.accessToken, AvatarImageCompressor.JPEG_CONTENT_TYPE)) {
             is AvatarUploadResult.Success -> result.target
             is AvatarUploadResult.Failure -> return UploadOutcome.Failure(result.message)
         }

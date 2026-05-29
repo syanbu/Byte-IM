@@ -2,6 +2,8 @@ package com.codex.im.storage
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,7 +69,91 @@ class MessageDaoContractTest {
         assertEquals(150L, message.updatedAt)
     }
 
-    private fun sampleMessage(messageId: String, createdAt: Long, serverSeq: Long? = null): ChatMessage {
+    @Test
+    fun insertAndQueryImageMessagePersistsImageFields() {
+        val dao = InMemoryMessageDao()
+        val message = sampleMessage(
+            messageId = "img-1",
+            createdAt = 100,
+            content = "[图片]",
+            status = MessageStatus.UPLOADING,
+            type = MessageType.IMAGE,
+            imageUrl = null,
+            thumbnailUrl = "https://oss.example.com/thumb.jpg",
+            imageWidth = 1080,
+            imageHeight = 720,
+            mimeType = "image/jpeg",
+            fileSizeBytes = 123_456L,
+            localOriginalPath = "cache/original.jpg",
+            localThumbnailPath = "cache/thumb.jpg"
+        )
+
+        assertTrue(dao.insertOrIgnore(message))
+
+        val loaded = dao.queryPage("single:u1:u2", beforeTime = null, limit = 20).single()
+        assertEquals(MessageType.IMAGE, loaded.type)
+        assertNull(loaded.imageUrl)
+        assertEquals("https://oss.example.com/thumb.jpg", loaded.thumbnailUrl)
+        assertEquals(1080, loaded.imageWidth)
+        assertEquals(720, loaded.imageHeight)
+        assertEquals("image/jpeg", loaded.mimeType)
+        assertEquals(123_456L, loaded.fileSizeBytes)
+        assertEquals("cache/original.jpg", loaded.localOriginalPath)
+        assertEquals("cache/thumb.jpg", loaded.localThumbnailPath)
+    }
+
+    @Test
+    fun updateImageUploadResultTransitionsToSending() {
+        val dao = InMemoryMessageDao()
+        val message = sampleMessage(
+            messageId = "img-2",
+            createdAt = 100,
+            content = "[图片]",
+            status = MessageStatus.UPLOADING,
+            type = MessageType.IMAGE,
+            localOriginalPath = "cache/original.jpg",
+            localThumbnailPath = "cache/thumb.jpg"
+        )
+        dao.insertOrIgnore(message)
+
+        assertTrue(
+            dao.updateImageUploadResult(
+                messageId = "img-2",
+                imageUrl = "https://oss.example.com/origin.jpg",
+                thumbnailUrl = "https://oss.example.com/thumb.jpg",
+                imageWidth = 1440,
+                imageHeight = 960,
+                mimeType = "image/jpeg",
+                fileSizeBytes = 345_678L,
+                status = MessageStatus.SENDING,
+                updatedAt = 200L
+            )
+        )
+
+        val updated = dao.findByMessageId("img-2")
+        assertNotNull(updated)
+        assertEquals(MessageStatus.SENDING, updated?.status)
+        assertEquals("https://oss.example.com/origin.jpg", updated?.imageUrl)
+        assertEquals("https://oss.example.com/thumb.jpg", updated?.thumbnailUrl)
+        assertEquals(345_678L, updated?.fileSizeBytes)
+    }
+
+    private fun sampleMessage(
+        messageId: String,
+        createdAt: Long,
+        serverSeq: Long? = null,
+        content: String = "hello",
+        status: MessageStatus = MessageStatus.SENDING,
+        type: MessageType = MessageType.TEXT,
+        imageUrl: String? = null,
+        thumbnailUrl: String? = null,
+        imageWidth: Int? = null,
+        imageHeight: Int? = null,
+        mimeType: String? = null,
+        fileSizeBytes: Long? = null,
+        localOriginalPath: String? = null,
+        localThumbnailPath: String? = null
+    ): ChatMessage {
         return ChatMessage(
             messageId = messageId,
             conversationId = "single:u1:u2",
@@ -75,11 +161,20 @@ class MessageDaoContractTest {
             receiverId = "u2",
             clientSeq = createdAt,
             serverSeq = serverSeq,
-            content = "hello",
-            status = MessageStatus.SENDING,
+            content = content,
+            status = status,
             direction = MessageDirection.OUTGOING,
             createdAt = createdAt,
-            updatedAt = createdAt
+            updatedAt = createdAt,
+            type = type,
+            imageUrl = imageUrl,
+            thumbnailUrl = thumbnailUrl,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            mimeType = mimeType,
+            fileSizeBytes = fileSizeBytes,
+            localOriginalPath = localOriginalPath,
+            localThumbnailPath = localThumbnailPath
         )
     }
 }
