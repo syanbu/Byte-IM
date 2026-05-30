@@ -117,7 +117,9 @@ fun ChatScreen(
     }
 
     Column(
-        modifier = modifier.fillMaxSize()
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding()
     ) {
         Row(
             modifier = Modifier
@@ -218,7 +220,6 @@ private fun ChatComposerBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(barColor)
-            .imePadding()
     ) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
         Row(

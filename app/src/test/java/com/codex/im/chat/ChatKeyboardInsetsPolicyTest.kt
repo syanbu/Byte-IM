@@ -9,15 +9,18 @@ class ChatKeyboardInsetsPolicyTest {
     @Test
     fun mainActivityLetsComposeHandleKeyboardInsets() {
         val manifest = sourceFile("src/main/AndroidManifest.xml").readText()
+        val mainActivity = sourceFile("src/main/java/com/codex/im/MainActivity.kt").readText()
 
         assertTrue(manifest.contains("""android:windowSoftInputMode="adjustNothing""""))
+        assertTrue(mainActivity.contains("WindowCompat.setDecorFitsSystemWindows(window, false)"))
+        assertTrue(mainActivity.contains("systemBarsPadding()"))
     }
 
     @Test
-    fun chatScreenAddsImePaddingToComposer() {
+    fun chatScreenAddsImePaddingToRootLayout() {
         val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
 
-        assertTrue(chatScreen.contains("imePadding"))
+        assertTrue(chatScreen.contains("modifier = modifier\n            .fillMaxSize()\n            .imePadding()"))
         assertFalse(chatScreen.contains("""android:windowSoftInputMode="adjustResize""""))
     }
 

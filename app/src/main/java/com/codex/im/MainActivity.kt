@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +40,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.core.view.WindowCompat
 import com.codex.im.app.AppInfo
 import com.codex.im.app.MockServerConfig
 import com.codex.im.auth.AuthRepository
@@ -85,6 +87,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         val database = ImDatabaseHelper(this).writableDatabase
         val mockServerConfig = MockServerConfig.load(this)
         val rawConnection = OkHttpImConnection(mockServerConfig.webSocketUrl)
@@ -148,7 +151,12 @@ fun SelfHostedImApp(
     imageUploadApi: ImageUploadApi? = null
 ) {
     MaterialTheme {
-        if (loginViewModel == null) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+        ) {
+            if (loginViewModel == null) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -158,7 +166,7 @@ fun SelfHostedImApp(
                 Text(text = AppInfo.name, style = MaterialTheme.typography.headlineMedium)
                 Text(text = "Project skeleton ready", style = MaterialTheme.typography.bodyLarge)
             }
-        } else {
+            } else {
             val state by loginViewModel.state.collectAsState()
             LaunchedEffect(loginViewModel) {
                 loginViewModel.restoreSession()
@@ -186,6 +194,7 @@ fun SelfHostedImApp(
                     onRegister = loginViewModel::register
                 )
             }
+        }
         }
     }
 }
