@@ -8,8 +8,16 @@ object ChatDisplayPolicy {
     const val backButtonSymbol = "<"
     val composerLabel: String? = null
 
+    fun composerAction(draft: String): ChatComposerAction {
+        return if (draft.trim().isEmpty()) {
+            ChatComposerAction.PICK_IMAGE
+        } else {
+            ChatComposerAction.SEND_TEXT
+        }
+    }
+
     fun shouldShowSendButton(draft: String): Boolean {
-        return draft.trim().isNotEmpty()
+        return composerAction(draft) == ChatComposerAction.SEND_TEXT
     }
 
     fun messageLine(message: ChatMessage): String {
@@ -27,4 +35,9 @@ object ChatDisplayPolicy {
             else -> null
         }
     }
+}
+
+enum class ChatComposerAction {
+    PICK_IMAGE,
+    SEND_TEXT
 }

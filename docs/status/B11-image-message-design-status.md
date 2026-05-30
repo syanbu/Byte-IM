@@ -5,22 +5,21 @@
 Support single-chat image messages with:
 
 - gallery pick only
-- single image per send action
+- multi-image gallery pick, expanded into one image message per selected image
 - OSS upload before message send
 - placeholder, loading, failure, and progressive display in chat
 
 ## Status
 
-Implemented for the first-pass single-image gallery-send scope.
+Implemented for gallery image send with multi-select expansion into independent image messages.
 
 ## Agreed Scope
 
 - Single chat only
 - Static images only
 - Gallery picker only
-- One image per send action
+- Up to 9 images per picker action, stored/sent as independent image messages
 - No camera capture
-- No multi-select send
 - No GIF or video
 - No OSS orphan-file cleanup in this pass
 - Use reliable state machine plus compensation instead of strict cross-system atomicity
@@ -47,11 +46,18 @@ Implemented for the first-pass single-image gallery-send scope.
 - Mock-server now exposes `POST /oss/message-image/upload-targets` and returns signed targets for thumbnail and original uploads.
 - Mock-server continues to preserve duplicate `messageId` idempotency for image messages.
 - Chat screen now supports:
-  - gallery image pick
+  - gallery multi-image pick
   - local thumbnail bubble preview
   - image bubble loading state
   - upload/send failure text state
+  - one-tap retry via the same red failure indicator for both `UPLOAD_FAILED` and `FAILED`
   - image preview overlay for the original image
+  - stable image bubble sizing from metadata before upload completion
+  - mutually exclusive composer actions: image pick when the draft is empty, send when the draft has text
+  - multi-image send that continues processing later images when one image upload fails
+  - strict receiver-side thumbnail display: incoming image messages are hidden from chat until `localThumbnailPath` is available
+  - receiver-side thumbnail compensation retry on chat open and active conversation updates
+  - Coil preloading for the target chat's recent local thumbnails before navigation from the conversation list
 - `coil-compose` is now used for chat-image loading.
 
 ## Core Design
@@ -82,6 +88,50 @@ The same message carries two image resources:
 - `imageUrl`: full image for image preview
 
 Sending-side local preview also uses cached local files before OSS upload completes.
+
+## Chat Bubble Display and Cache Clarification
+
+For image messages, the chat list/bubble must display the thumbnail resource, not the original image:
+
+- outgoing messages prefer `localThumbnailPath`, then `thumbnailUrl`
+- incoming messages prefer `localThumbnailPath` if a local thumbnail cache exists, then `thumbnailUrl`
+- `imageUrl` is reserved for full-screen preview or another explicit original-image action
+
+The bubble size is now stable before the thumbnail finishes loading. The sender stores `imageWidth` and `imageHeight` when the local `UPLOADING` row is first created, so the client can compute a bounded display size and apply that same size to the placeholder, loading state, loaded thumbnail, and failure state. This prevents the previous visual jump where the bubble used a fallback size during upload and then expanded after upload metadata was written.
+
+Receiver-side thumbnail caching is now strict for chat display:
+
+- on receive, the message row first persists URLs and metadata
+- the repository attempts to download the thumbnail into app cache and update `localThumbnailPath`
+- chat history display filters out incoming image messages whose `localThumbnailPath` is still missing
+- after thumbnail caching succeeds and `localThumbnailPath` is written, the repository emits an update and the message appears in chat
+- if thumbnail caching fails, the message remains persisted but temporarily hidden from chat while retry attempts continue
+
+Receiver-side thumbnail retry strategy:
+
+- opening a chat triggers an immediate compensation scan for `INCOMING + IMAGE + localThumbnailPath IS NULL`
+- active conversation updates also schedule lightweight retries for newly hidden incoming image messages
+- each message retries thumbnail caching at most three times in the current chat ViewModel lifecycle
+- retry delays are `2s -> 10s -> 30s`
+- retries only download/cache the thumbnail; original image loading remains on demand
+- success writes `localThumbnailPath` and refreshes chat display
+- final failure keeps the message hidden but persisted for a future chat-open compensation attempt
+
+The original image should remain on-demand for receivers. It should be loaded only when the user opens image preview.
+
+Sender-side original storage is a cache, not the authoritative copy after upload:
+
+- before upload succeeds, `localOriginalPath` is required for preview and upload retry
+- after upload succeeds, `imageUrl` is the durable remote copy and `localOriginalPath` is only a local convenience cache
+- if the local original cache is later cleared, preview must fall back to `imageUrl`
+- this pass does not require a local original cleanup policy
+
+Conversation-list-to-chat image preloading:
+
+- when the user taps a conversation row, the conversation list ViewModel exposes the navigation target first and starts local thumbnail preloading in a fire-and-forget background task
+- the preload scope is intentionally narrow: the most recent 5 image messages that already have `localThumbnailPath`
+- the preloader only enqueues local thumbnail files into Coil; it does not download remote `thumbnailUrl` resources
+- this reduces the first visible decode/loading spinner after app restart while keeping navigation lightweight and avoiding broad app-start cache scans
 
 ## Data Model Changes
 
@@ -250,7 +300,13 @@ The implementation should still keep the new schema internally consistent, but i
 
 ### Normal Success Path
 
-1. User picks one image from gallery.
+1. User picks one or more images from gallery.
+2. Android expands the selection into independent image-message send flows, capped at 9 images.
+3. Each selected image follows the single-image flow below and owns its own message status.
+
+### Per-Image Normal Success Path
+
+1. Android prepares one selected image.
 2. Android creates local cached files:
    - one original file for preview and upload
    - one thumbnail file for bubble preview and upload
@@ -259,6 +315,7 @@ The implementation should still keep the new schema internally consistent, but i
    - `content = [图片]`
    - `status = UPLOADING`
    - local file paths saved
+   - image width and height saved immediately for stable bubble sizing
 4. Chat UI immediately shows the local thumbnail bubble.
 5. Android requests OSS upload targets from backend.
 6. Android uploads thumbnail to OSS.
@@ -279,8 +336,9 @@ The implementation should still keep the new schema internally consistent, but i
 2. Upload target request or OSS upload fails.
 3. Repository marks the local row `UPLOAD_FAILED`.
 4. No `pending_messages` row is created.
-5. User can tap retry.
-6. Retry repeats only the upload phase and uses the same local message row.
+5. User can tap the red failure indicator.
+6. Retry repeats only the OSS upload phase from the local cached original/thumbnail files and uses the same local message row.
+7. After upload succeeds, retry enters the normal message phase and queues the `SEND_MESSAGE` packet.
 
 ### Message Send Failure Path
 
@@ -290,6 +348,8 @@ The implementation should still keep the new schema internally consistent, but i
 4. If `MESSAGE_ACK` does not arrive, the existing outbox worker retries the original packet body.
 5. Upload is not repeated.
 6. If retries are exhausted, repository marks the row `FAILED`.
+7. User can tap the same red failure indicator.
+8. Retry rebuilds the lightweight `SEND_MESSAGE` packet from the persisted OSS URLs and image metadata, re-enters `pending_messages`, and does not upload OSS files again.
 
 ### App Death During Upload
 
@@ -371,6 +431,7 @@ Current [ChatViewModel](D:\Desktop\engine\IM\app\src\main\java\com\codex\im\chat
 ### Suggested ViewModel API Additions
 
 - `sendImage(...)`
+- `sendImages(...)`
 - `retryImageMessage(messageId: String)`
 
 ### UI State Considerations
@@ -515,4 +576,7 @@ Likely new mock-server tests:
   - real OSS upload against the configured bucket
   - bubble rendering for very large images
   - preview dismissal behavior
-- Manual retry for `UPLOAD_FAILED` is not implemented yet; the first pass currently distinguishes the failure states correctly but does not expose a retry action in UI.
+- Manual retry is implemented through the red failure indicator:
+  - `UPLOAD_FAILED` retries OSS upload first, then sends the message.
+  - `FAILED` retries the lightweight IM message send only and reuses existing OSS URLs.
+  - The UI intentionally keeps one visual affordance while the repository/ViewModel preserve distinct internal states.

@@ -8,11 +8,14 @@ import com.codex.im.message.DisabledImageUploadApi
 import com.codex.im.message.ImageUploadApi
 import com.codex.im.message.ImageUploadTargetsResult
 import com.codex.im.message.MessageRepository
+import com.codex.im.message.SelectedChatImageResolver
 import com.codex.im.message.SelectedChatImage
+import com.codex.im.message.ChatImageCompressor
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageOrderingPolicy
 import com.codex.im.profile.AvatarPutResult
+import com.codex.im.storage.MessageStatus
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -43,6 +47,7 @@ class ChatViewModel(
     private val profileRepository: ProfileRepository,
     initialPeerId: String = "",
     private val imageUploadApi: ImageUploadApi = DisabledImageUploadApi,
+    private val imageResolver: SelectedChatImageResolver = ChatImageCompressor,
     private val validSessionProvider: ValidSessionProvider = { session },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -51,6 +56,8 @@ class ChatViewModel(
     val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
     private var started = false
     private val jobs = mutableListOf<Job>()
+    private val thumbnailRetryCounts = mutableMapOf<String, Int>()
+    private val thumbnailRetryJobs = mutableMapOf<String, Job>()
 
     fun start() {
         if (started) {
@@ -64,11 +71,13 @@ class ChatViewModel(
         jobs += scope.launch(dispatcher) {
             repository.conversationUpdates.collect {
                 refreshKeepingHistory()
+                scheduleMissingThumbnailRetries(immediate = false)
             }
         }
         jobs += scope.launch(dispatcher) {
             refreshProfiles()
             refreshInitialPage()
+            scheduleMissingThumbnailRetries(immediate = true)
         }
     }
 
@@ -78,6 +87,9 @@ class ChatViewModel(
         }
         jobs.forEach { it.cancel() }
         jobs.clear()
+        thumbnailRetryJobs.values.forEach { it.cancel() }
+        thumbnailRetryJobs.clear()
+        thumbnailRetryCounts.clear()
         repository.closeConversation()
         started = false
     }
@@ -100,6 +112,7 @@ class ChatViewModel(
             }
             refreshProfiles()
             refreshInitialPage()
+            scheduleMissingThumbnailRetries(immediate = true)
         }
     }
 
@@ -129,34 +142,76 @@ class ChatViewModel(
                 receiverId = mutableState.value.peerId,
                 localOriginalPath = selectedImage.localOriginalPath,
                 localThumbnailPath = selectedImage.localThumbnailPath,
+                imageWidth = selectedImage.width,
+                imageHeight = selectedImage.height,
                 mimeType = selectedImage.mimeType,
                 now = now
             )
             refreshKeepingHistory()
 
+            uploadImageAndQueueSend(localMessage.messageId, selectedImage)
+        }
+    }
+
+    suspend fun sendImages(selectedImages: List<SelectedChatImage>, now: Long = System.currentTimeMillis()) {
+        selectedImages
+            .take(MAX_IMAGES_PER_SEND)
+            .forEachIndexed { index, selectedImage ->
+                sendImage(selectedImage, now + index)
+            }
+    }
+
+    suspend fun retryImageMessage(messageId: String, now: Long = System.currentTimeMillis()) {
+        withContext(dispatcher) {
+            val message = repository.findMessageById(messageId) ?: return@withContext
+            when (message.status) {
+                MessageStatus.UPLOAD_FAILED -> {
+                    val selectedImage = imageResolver.resolve(message)
+                    if (selectedImage == null) {
+                        mutableState.value = mutableState.value.copy(errorMessage = "Image retry failed: local image cache missing")
+                        return@withContext
+                    }
+                    repository.markImageUploading(messageId, now)
+                    refreshKeepingHistory()
+                    uploadImageAndQueueSend(messageId, selectedImage)
+                }
+                MessageStatus.FAILED -> {
+                    repository.requeueImageMessageSend(messageId, now)
+                    mutableState.value = mutableState.value.copy(errorMessage = null)
+                    refreshKeepingHistory()
+                }
+                MessageStatus.UPLOADING,
+                MessageStatus.SENDING,
+                MessageStatus.SENT,
+                MessageStatus.RECEIVED -> Unit
+            }
+        }
+    }
+
+    private suspend fun uploadImageAndQueueSend(messageId: String, selectedImage: SelectedChatImage) {
             val validSession = validSessionProvider()
             if (validSession == null) {
-                repository.markImageUploadFailed(localMessage.messageId, System.currentTimeMillis())
+                repository.markImageUploadFailed(messageId, System.currentTimeMillis())
                 mutableState.value = mutableState.value.copy(
                     errorMessage = "Image upload target request failed: Session expired"
                 )
                 refreshKeepingHistoryPreservingError()
-                return@withContext
+                return
             }
 
             val targets = imageUploadApi.requestUploadTargets(
                 accessToken = validSession.accessToken,
-                messageId = localMessage.messageId,
+                messageId = messageId,
                 contentType = selectedImage.mimeType
             )
             when (targets) {
                 is ImageUploadTargetsResult.Failure -> {
-                    repository.markImageUploadFailed(localMessage.messageId, System.currentTimeMillis())
+                    repository.markImageUploadFailed(messageId, System.currentTimeMillis())
                     mutableState.value = mutableState.value.copy(
                         errorMessage = "Image upload target request failed: ${targets.message}"
                     )
                     refreshKeepingHistoryPreservingError()
-                    return@withContext
+                    return
                 }
                 is ImageUploadTargetsResult.Success -> Unit
             }
@@ -168,12 +223,12 @@ class ChatViewModel(
             )
             when (thumbnailUpload) {
                 is AvatarPutResult.Failure -> {
-                    repository.markImageUploadFailed(localMessage.messageId, System.currentTimeMillis())
+                    repository.markImageUploadFailed(messageId, System.currentTimeMillis())
                     mutableState.value = mutableState.value.copy(
                         errorMessage = "Image upload failed: ${thumbnailUpload.message}"
                     )
                     refreshKeepingHistoryPreservingError()
-                    return@withContext
+                    return
                 }
                 AvatarPutResult.Success -> Unit
             }
@@ -185,19 +240,19 @@ class ChatViewModel(
             )
             when (originalUpload) {
                 is AvatarPutResult.Failure -> {
-                    repository.markImageUploadFailed(localMessage.messageId, System.currentTimeMillis())
+                    repository.markImageUploadFailed(messageId, System.currentTimeMillis())
                     mutableState.value = mutableState.value.copy(
                         errorMessage = "Image upload failed: ${originalUpload.message}"
                     )
                     refreshKeepingHistoryPreservingError()
-                    return@withContext
+                    return
                 }
                 AvatarPutResult.Success -> Unit
             }
 
             val sendPhaseNow = System.currentTimeMillis()
             repository.completeImageUploadAndQueueSend(
-                messageId = localMessage.messageId,
+                messageId = messageId,
                 imageUrl = targets.targets.original.publicUrl,
                 thumbnailUrl = targets.targets.thumbnail.publicUrl,
                 imageWidth = selectedImage.width,
@@ -208,7 +263,6 @@ class ChatViewModel(
             )
             mutableState.value = mutableState.value.copy(errorMessage = null)
             refreshKeepingHistory()
-        }
     }
 
     suspend fun loadMoreHistory() {
@@ -321,6 +375,47 @@ class ChatViewModel(
         )
     }
 
+    private fun scheduleMissingThumbnailRetries(immediate: Boolean) {
+        val peerId = mutableState.value.peerId
+        if (peerId.isEmpty()) {
+            return
+        }
+        repository.missingIncomingImageThumbnails(
+            userId = session.userId,
+            peerId = peerId,
+            limit = MISSING_THUMBNAIL_RETRY_BATCH_SIZE
+        ).forEach { message ->
+            if (thumbnailRetryJobs[message.messageId]?.isActive == true) {
+                return@forEach
+            }
+            if ((thumbnailRetryCounts[message.messageId] ?: 0) >= THUMBNAIL_RETRY_DELAYS_MS.size) {
+                return@forEach
+            }
+            thumbnailRetryJobs[message.messageId] = scope.launch(dispatcher) {
+                retryMissingThumbnail(message.messageId, immediate)
+            }
+        }
+    }
+
+    private suspend fun retryMissingThumbnail(messageId: String, immediate: Boolean) {
+        try {
+            while ((thumbnailRetryCounts[messageId] ?: 0) < THUMBNAIL_RETRY_DELAYS_MS.size) {
+                val attemptIndex = thumbnailRetryCounts[messageId] ?: 0
+                if (!immediate || attemptIndex > 0) {
+                    delay(THUMBNAIL_RETRY_DELAYS_MS[attemptIndex])
+                }
+                thumbnailRetryCounts[messageId] = attemptIndex + 1
+                if (repository.retryIncomingImageThumbnail(messageId)) {
+                    thumbnailRetryCounts.remove(messageId)
+                    refreshKeepingHistory()
+                    return
+                }
+            }
+        } finally {
+            thumbnailRetryJobs.remove(messageId)
+        }
+    }
+
     private fun mergeMessages(current: List<ChatMessage>, incoming: List<ChatMessage>): List<ChatMessage> {
         return (current + incoming)
             .associateBy { it.messageId }
@@ -343,5 +438,8 @@ class ChatViewModel(
     private companion object {
         const val HISTORY_PAGE_SIZE = 20
         const val MAX_RETAINED_MESSAGES = 2_000
+        const val MAX_IMAGES_PER_SEND = 9
+        const val MISSING_THUMBNAIL_RETRY_BATCH_SIZE = 20
+        val THUMBNAIL_RETRY_DELAYS_MS = longArrayOf(2_000L, 10_000L, 30_000L)
     }
 }

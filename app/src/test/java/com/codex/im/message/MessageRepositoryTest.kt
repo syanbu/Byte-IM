@@ -4,6 +4,7 @@ import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
 import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
+import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
@@ -291,6 +292,8 @@ class MessageRepositoryTest {
             receiverId = "u2",
             localOriginalPath = "cache/original.jpg",
             localThumbnailPath = "cache/thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
             mimeType = "image/jpeg",
             now = 1_000L
         )
@@ -300,6 +303,8 @@ class MessageRepositoryTest {
         assertEquals(MessageType.IMAGE, stored?.type)
         assertEquals("[图片]", stored?.content)
         assertEquals("cache/original.jpg", stored?.localOriginalPath)
+        assertEquals(1440, stored?.imageWidth)
+        assertEquals(960, stored?.imageHeight)
         assertTrue(fixture.pendingDao.dueMessages(now = 999_999L, limit = 10).isEmpty())
         assertEquals("[图片]", fixture.conversationDao.listConversations(limit = 20).single().lastMessagePreview)
         assertTrue(fixture.connection.sentPackets.isEmpty())
@@ -313,6 +318,8 @@ class MessageRepositoryTest {
             receiverId = "u2",
             localOriginalPath = "cache/original.jpg",
             localThumbnailPath = "cache/thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
             mimeType = "image/jpeg",
             now = 1_000L
         )
@@ -344,6 +351,8 @@ class MessageRepositoryTest {
             receiverId = "u2",
             localOriginalPath = "cache/original.jpg",
             localThumbnailPath = "cache/thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
             mimeType = "image/jpeg",
             now = 1_000L
         )
@@ -399,6 +408,200 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun incomingImageMessageCachesRemoteThumbnailAfterPersistingMessage() {
+        val thumbnailCache = FakeThumbnailCache(localPath = "cache/thumb-remote-image-1.jpg")
+        val fixture = Fixture(thumbnailCache = thumbnailCache)
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-image-1",
+                      "conversationId":"single:u2:u1",
+                      "senderId":"u2",
+                      "receiverId":"u1",
+                      "clientSeq":10,
+                      "serverSeq":93,
+                      "type":"IMAGE",
+                      "content":"[图片]",
+                      "image":{
+                        "imageUrl":"https://oss.example.com/origin.jpg",
+                        "thumbnailUrl":"https://oss.example.com/thumb.jpg",
+                        "width":900,
+                        "height":600,
+                        "mimeType":"image/jpeg",
+                        "sizeBytes":456789
+                      },
+                      "timestamp":1800
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        val stored = fixture.messageDao.findByMessageId("remote-image-1")
+        assertEquals(listOf("remote-image-1" to "https://oss.example.com/thumb.jpg"), thumbnailCache.requests)
+        assertEquals("cache/thumb-remote-image-1.jpg", stored?.localThumbnailPath)
+    }
+
+    @Test
+    fun historyPageHidesIncomingImageMessageUntilThumbnailIsCached() {
+        val thumbnailCache = FakeThumbnailCache(localPath = null)
+        val fixture = Fixture(thumbnailCache = thumbnailCache)
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-image-uncached",
+                      "conversationId":"single:u2:u1",
+                      "senderId":"u2",
+                      "receiverId":"u1",
+                      "clientSeq":10,
+                      "serverSeq":93,
+                      "type":"IMAGE",
+                      "content":"[图片]",
+                      "image":{
+                        "imageUrl":"https://oss.example.com/origin.jpg",
+                        "thumbnailUrl":"https://oss.example.com/thumb.jpg",
+                        "width":900,
+                        "height":600,
+                        "mimeType":"image/jpeg",
+                        "sizeBytes":456789
+                      },
+                      "timestamp":1800
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        assertEquals("remote-image-uncached", fixture.messageDao.findByMessageId("remote-image-uncached")?.messageId)
+        assertEquals(
+            emptyList<ChatMessage>(),
+            fixture.repository.historyPage(userId = "u1", peerId = "u2", beforeTime = null, limit = 20)
+        )
+    }
+
+    @Test
+    fun historyPageShowsIncomingImageMessageAfterThumbnailIsCached() {
+        val thumbnailCache = FakeThumbnailCache(localPath = "cache/thumb-remote-image-cached.jpg")
+        val fixture = Fixture(thumbnailCache = thumbnailCache)
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"remote-image-cached",
+                      "conversationId":"single:u2:u1",
+                      "senderId":"u2",
+                      "receiverId":"u1",
+                      "clientSeq":10,
+                      "serverSeq":93,
+                      "type":"IMAGE",
+                      "content":"[图片]",
+                      "image":{
+                        "imageUrl":"https://oss.example.com/origin.jpg",
+                        "thumbnailUrl":"https://oss.example.com/thumb.jpg",
+                        "width":900,
+                        "height":600,
+                        "mimeType":"image/jpeg",
+                        "sizeBytes":456789
+                      },
+                      "timestamp":1800
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        assertEquals(
+            listOf("remote-image-cached"),
+            fixture.repository.historyPage(userId = "u1", peerId = "u2", beforeTime = null, limit = 20)
+                .map { it.messageId }
+        )
+    }
+
+    @Test
+    fun missingIncomingImageThumbnailsReturnsPersistedHiddenImages() {
+        val thumbnailCache = FakeThumbnailCache(localPath = null)
+        val fixture = Fixture(thumbnailCache = thumbnailCache)
+        fixture.repository.handlePacket(incomingImagePacket(messageId = "remote-image-missing"))
+
+        assertEquals(
+            listOf("remote-image-missing"),
+            fixture.repository.missingIncomingImageThumbnails(userId = "u1", peerId = "u2", limit = 20)
+                .map { it.messageId }
+        )
+    }
+
+    @Test
+    fun retryIncomingImageThumbnailCachesImageAndMakesItDisplayable() {
+        val thumbnailCache = FakeThumbnailCache(localPaths = mutableListOf(null, "cache/thumb-after-retry.jpg"))
+        val fixture = Fixture(thumbnailCache = thumbnailCache)
+        fixture.repository.handlePacket(incomingImagePacket(messageId = "remote-image-retry"))
+
+        val changed = fixture.repository.retryIncomingImageThumbnail("remote-image-retry")
+
+        assertEquals(true, changed)
+        assertEquals("cache/thumb-after-retry.jpg", fixture.messageDao.findByMessageId("remote-image-retry")?.localThumbnailPath)
+        assertEquals(
+            listOf("remote-image-retry"),
+            fixture.repository.historyPage(userId = "u1", peerId = "u2", beforeTime = null, limit = 20)
+                .map { it.messageId }
+        )
+    }
+
+    @Test
+    fun retryIncomingImageThumbnailKeepsImageHiddenWhenCacheStillFails() {
+        val thumbnailCache = FakeThumbnailCache(localPath = null)
+        val fixture = Fixture(thumbnailCache = thumbnailCache)
+        fixture.repository.handlePacket(incomingImagePacket(messageId = "remote-image-still-hidden"))
+
+        val changed = fixture.repository.retryIncomingImageThumbnail("remote-image-still-hidden")
+
+        assertEquals(false, changed)
+        assertEquals(
+            emptyList<ChatMessage>(),
+            fixture.repository.historyPage(userId = "u1", peerId = "u2", beforeTime = null, limit = 20)
+        )
+    }
+
+    @Test
+    fun recentLocalThumbnailPathsReturnsCachedImagePathsForPeer() {
+        val fixture = Fixture()
+        fixture.messageDao.insertOrIgnore(
+            sampleImageMessage(
+                messageId = "image-older",
+                createdAt = 1_000L,
+                localThumbnailPath = "cache/older.jpg"
+            )
+        )
+        fixture.messageDao.insertOrIgnore(
+            sampleImageMessage(
+                messageId = "image-newer",
+                createdAt = 2_000L,
+                localThumbnailPath = "cache/newer.jpg"
+            )
+        )
+        fixture.messageDao.insertOrIgnore(
+            sampleImageMessage(
+                messageId = "image-uncached",
+                createdAt = 3_000L,
+                localThumbnailPath = null
+            )
+        )
+
+        val paths = fixture.repository.recentLocalThumbnailPaths(
+            userId = "u1",
+            peerId = "u2",
+            limit = 10
+        )
+
+        assertEquals(listOf("cache/newer.jpg", "cache/older.jpg"), paths)
+    }
+
+    @Test
     fun completeImageUploadAndQueueSendBuildsImagePayloadJson() {
         val fixture = Fixture()
         val message = fixture.repository.createLocalImageMessage(
@@ -406,6 +609,8 @@ class MessageRepositoryTest {
             receiverId = "u2",
             localOriginalPath = "cache/original.jpg",
             localThumbnailPath = "cache/thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
             mimeType = "image/jpeg",
             now = 1_000L
         )
@@ -427,9 +632,35 @@ class MessageRepositoryTest {
         assertTrue(body.contains(""""thumbnailUrl":"https://oss.example.com/thumb.jpg""""))
     }
 
+    @Test
+    fun requeueFailedImageMessageCreatesPendingRowAndSendsExistingOssPayload() {
+        val fixture = Fixture()
+        val message = sampleImageMessage(
+            messageId = "failed-image-1",
+            createdAt = 1_000L,
+            localThumbnailPath = "cache/thumb.jpg"
+        ).copy(
+            status = MessageStatus.FAILED,
+            imageUrl = "https://oss.example.com/origin-existing.jpg",
+            thumbnailUrl = "https://oss.example.com/thumb-existing.jpg"
+        )
+        fixture.messageDao.insertOrIgnore(message)
+
+        val changed = fixture.repository.requeueImageMessageSend("failed-image-1", now = 2_000L)
+
+        val stored = fixture.messageDao.findByMessageId("failed-image-1")
+        assertEquals(true, changed)
+        assertEquals(MessageStatus.SENDING, stored?.status)
+        assertEquals("failed-image-1", fixture.pendingDao.dueMessages(now = 7_000L, limit = 10).single().messageId)
+        val body = fixture.connection.sentPackets.single().body.decodeToString()
+        assertTrue(body.contains(""""imageUrl":"https://oss.example.com/origin-existing.jpg""""))
+        assertTrue(body.contains(""""thumbnailUrl":"https://oss.example.com/thumb-existing.jpg""""))
+    }
+
     private class Fixture(
         transactionRunner: TransactionRunner? = null,
-        events: MutableList<String> = mutableListOf()
+        events: MutableList<String> = mutableListOf(),
+        thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache
     ) {
         val events = events
         val messageDao = InMemoryMessageDao()
@@ -443,7 +674,8 @@ class MessageRepositoryTest {
             connection = connection,
             messageIdGenerator = MessageIdGenerator(startCounter = 1),
             seqGenerator = SeqGenerator(),
-            transactionRunner = transactionRunner ?: TransactionRunner.immediate()
+            transactionRunner = transactionRunner ?: TransactionRunner.immediate(),
+            thumbnailCache = thumbnailCache
         )
     }
 
@@ -477,6 +709,72 @@ class MessageRepositoryTest {
             events += "commit"
         }
     }
+
+    private class FakeThumbnailCache(
+        private val localPaths: MutableList<String?>
+    ) : ChatThumbnailCache {
+        constructor(localPath: String?) : this(mutableListOf(localPath))
+
+        val requests = mutableListOf<Pair<String, String>>()
+
+        override fun cacheThumbnail(messageId: String, thumbnailUrl: String): String? {
+            requests += messageId to thumbnailUrl
+            return if (localPaths.size > 1) localPaths.removeAt(0) else localPaths.firstOrNull()
+        }
+    }
+
+    private fun incomingImagePacket(messageId: String): ImPacket {
+        return ImPacket(
+            cmd = ImCommand.RECEIVE_MESSAGE.value,
+            body = """
+                {
+                  "messageId":"$messageId",
+                  "conversationId":"single:u2:u1",
+                  "senderId":"u2",
+                  "receiverId":"u1",
+                  "clientSeq":10,
+                  "serverSeq":93,
+                  "type":"IMAGE",
+                  "content":"[图片]",
+                  "image":{
+                    "imageUrl":"https://oss.example.com/origin.jpg",
+                    "thumbnailUrl":"https://oss.example.com/thumb.jpg",
+                    "width":900,
+                    "height":600,
+                    "mimeType":"image/jpeg",
+                    "sizeBytes":456789
+                  },
+                  "timestamp":1800
+                }
+            """.trimIndent().toByteArray()
+        )
+    }
+
+    private fun sampleImageMessage(
+        messageId: String,
+        createdAt: Long,
+        localThumbnailPath: String?
+    ) = com.codex.im.storage.ChatMessage(
+        messageId = messageId,
+        conversationId = "single:u1:u2",
+        senderId = "u1",
+        receiverId = "u2",
+        clientSeq = createdAt,
+        serverSeq = null,
+        content = "[图片]",
+        status = MessageStatus.SENT,
+        direction = MessageDirection.OUTGOING,
+        createdAt = createdAt,
+        updatedAt = createdAt,
+        type = MessageType.IMAGE,
+        imageUrl = "https://oss.example.com/origin.jpg",
+        thumbnailUrl = "https://oss.example.com/thumb.jpg",
+        imageWidth = 900,
+        imageHeight = 600,
+        mimeType = "image/jpeg",
+        fileSizeBytes = 123L,
+        localThumbnailPath = localThumbnailPath
+    )
 
     private fun incomingMessagePacket(
         messageId: String,

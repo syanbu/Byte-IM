@@ -27,7 +27,8 @@ class MessageRepository(
     private val messageIdGenerator: MessageIdGenerator,
     private val seqGenerator: SeqGenerator,
     private val retryPolicy: MessageRetryPolicy = MessageRetryPolicy(),
-    private val transactionRunner: TransactionRunner = TransactionRunner.immediate()
+    private val transactionRunner: TransactionRunner = TransactionRunner.immediate(),
+    private val thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache
 ) : MessagesTabUnreadBadgeSource {
     @Volatile
     private var activeConversationId: String? = null
@@ -74,6 +75,8 @@ class MessageRepository(
         receiverId: String,
         localOriginalPath: String,
         localThumbnailPath: String,
+        imageWidth: Int,
+        imageHeight: Int,
         mimeType: String,
         now: Long
     ): ChatMessage {
@@ -91,6 +94,8 @@ class MessageRepository(
             createdAt = now,
             updatedAt = now,
             type = MessageType.IMAGE,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
             mimeType = mimeType,
             localOriginalPath = localOriginalPath,
             localThumbnailPath = localThumbnailPath
@@ -152,12 +157,52 @@ class MessageRepository(
         connection.send(packet)
     }
 
+    fun requeueImageMessageSend(messageId: String, now: Long): Boolean {
+        val message = messageDao.findByMessageId(messageId) ?: return false
+        if (message.type != MessageType.IMAGE || message.imageUrl.isNullOrBlank() || message.thumbnailUrl.isNullOrBlank()) {
+            return false
+        }
+        val packetMessage = message.copy(
+            status = MessageStatus.SENDING,
+            updatedAt = now
+        )
+        val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = packetMessage.toSendBody().toByteArray())
+        transactionRunner.runInTransaction {
+            messageDao.markStatus(messageId, MessageStatus.SENDING, now)
+            pendingMessageDao.upsert(
+                PendingMessage(
+                    messageId = messageId,
+                    packetCmd = packet.cmd,
+                    packetBody = packet.body.decodeToString(),
+                    retryCount = 0,
+                    nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
+                    createdAt = message.createdAt
+                )
+            )
+        }
+        notifyConversationChanged()
+        connection.send(packet)
+        return true
+    }
+
     fun markImageUploadFailed(messageId: String, now: Long): Boolean {
         val changed = messageDao.markStatus(messageId, MessageStatus.UPLOAD_FAILED, now)
         if (changed) {
             notifyConversationChanged()
         }
         return changed
+    }
+
+    fun markImageUploading(messageId: String, now: Long): Boolean {
+        val changed = messageDao.markStatus(messageId, MessageStatus.UPLOADING, now)
+        if (changed) {
+            notifyConversationChanged()
+        }
+        return changed
+    }
+
+    fun findMessageById(messageId: String): ChatMessage? {
+        return messageDao.findByMessageId(messageId)
     }
 
     fun handlePacket(packet: ImPacket) {
@@ -173,6 +218,26 @@ class MessageRepository(
 
     fun historyPage(userId: String, peerId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
         return messageDao.queryPage(conversationIdFor(userId, peerId), beforeTime, limit)
+            .filter { it.isReadyForChatDisplay() }
+    }
+
+    fun missingIncomingImageThumbnails(userId: String, peerId: String, limit: Int): List<ChatMessage> {
+        return messageDao.queryIncomingImagesMissingLocalThumbnail(
+            conversationId = conversationIdFor(userId, peerId),
+            limit = limit
+        )
+    }
+
+    fun retryIncomingImageThumbnail(messageId: String): Boolean {
+        val message = messageDao.findByMessageId(messageId) ?: return false
+        return cacheIncomingThumbnailIfNeeded(inserted = true, message = message)
+    }
+
+    fun recentLocalThumbnailPaths(userId: String, peerId: String, limit: Int): List<String> {
+        return messageDao.queryRecentImagesWithLocalThumbnail(
+            conversationId = conversationIdFor(userId, peerId),
+            limit = limit
+        ).mapNotNull { it.localThumbnailPath }
     }
 
     fun conversations(limit: Int = 50) = conversationDao.listConversations(limit)
@@ -318,6 +383,26 @@ class MessageRepository(
                 )
             )
         }
+        cacheIncomingThumbnailIfNeeded(inserted, message)
+    }
+
+    private fun cacheIncomingThumbnailIfNeeded(inserted: Boolean, message: ChatMessage): Boolean {
+        if (!inserted || message.type != MessageType.IMAGE || message.localThumbnailPath != null) {
+            return false
+        }
+        val thumbnailUrl = message.thumbnailUrl?.takeIf { it.isNotBlank() } ?: return false
+        val localPath = thumbnailCache.cacheThumbnail(message.messageId, thumbnailUrl) ?: return false
+        val changed = messageDao.updateLocalThumbnailPath(message.messageId, localPath, System.currentTimeMillis())
+        if (changed) {
+            notifyConversationChanged()
+        }
+        return changed
+    }
+
+    private fun ChatMessage.isReadyForChatDisplay(): Boolean {
+        return direction != MessageDirection.INCOMING ||
+            type != MessageType.IMAGE ||
+            localThumbnailPath != null
     }
 
     private fun notifyConversationChanged() {

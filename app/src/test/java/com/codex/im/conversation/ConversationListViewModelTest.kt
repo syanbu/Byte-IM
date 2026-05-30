@@ -3,14 +3,20 @@ package com.codex.im.conversation
 import com.codex.im.auth.AuthSession
 import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
+import com.codex.im.message.ChatThumbnailPreloader
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageRepository
+import com.codex.im.message.NoopChatThumbnailPreloader
 import com.codex.im.message.SeqGenerator
 import com.codex.im.protocol.ImPacket
+import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
 import com.codex.im.storage.InMemoryUserProfileDao
+import com.codex.im.storage.MessageDirection
+import com.codex.im.storage.MessageStatus
+import com.codex.im.storage.MessageType
 import com.codex.im.storage.UserProfile
 import com.codex.im.profile.ProfileApi
 import com.codex.im.profile.ProfileBatchResult
@@ -203,6 +209,40 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun openConversationNavigatesBeforePreloadingRecentLocalThumbnails() = runTest {
+        val thumbnailPreloader = FakeThumbnailPreloader()
+        val fixture = Fixture(this, thumbnailPreloader = thumbnailPreloader)
+        fixture.messageDao.insertOrIgnore(
+            imageMessage(
+                messageId = "image-older",
+                createdAt = 1_000L,
+                localThumbnailPath = "cache/older.jpg"
+            )
+        )
+        fixture.messageDao.insertOrIgnore(
+            imageMessage(
+                messageId = "image-newer",
+                createdAt = 2_000L,
+                localThumbnailPath = "cache/newer.jpg"
+            )
+        )
+        fixture.messageDao.insertOrIgnore(
+            imageMessage(
+                messageId = "image-uncached",
+                createdAt = 3_000L,
+                localThumbnailPath = null
+            )
+        )
+
+        fixture.viewModel.openConversation("13900113900")
+        runCurrent()
+
+        assertEquals("13900113900", fixture.viewModel.state.value.navigationTargetPeerId)
+        assertEquals(listOf(listOf("cache/newer.jpg", "cache/older.jpg")), thumbnailPreloader.calls)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun consumeNavigationTargetClearsIt() = runTest {
         val fixture = Fixture(this)
         fixture.viewModel.openConversation("13900113900")
@@ -242,13 +282,18 @@ class ConversationListViewModelTest {
         assertEquals(emptyList<ConversationListItem>(), fixture.viewModel.state.value.items)
     }
 
-    private class Fixture(scope: TestScope, profileApi: ProfileApi = FakeProfileApi()) {
+    private class Fixture(
+        scope: TestScope,
+        profileApi: ProfileApi = FakeProfileApi(),
+        thumbnailPreloader: ChatThumbnailPreloader = NoopChatThumbnailPreloader
+    ) {
         val connection = FakeConnection()
+        val messageDao = InMemoryMessageDao()
         private val conversationDao = InMemoryConversationDao()
         val profileDao = InMemoryUserProfileDao()
         private val profileRepository = ProfileRepository(profileDao, profileApi)
         val repository = MessageRepository(
-            messageDao = InMemoryMessageDao(),
+            messageDao = messageDao,
             conversationDao = conversationDao,
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = connection,
@@ -260,6 +305,7 @@ class ConversationListViewModelTest {
             repository = repository,
             connection = connection,
             profileRepository = profileRepository,
+            thumbnailPreloader = thumbnailPreloader,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )
@@ -278,6 +324,42 @@ class ConversationListViewModelTest {
         override fun disconnect() = Unit
 
         override fun send(packet: ImPacket): Boolean = true
+    }
+
+    private class FakeThumbnailPreloader : ChatThumbnailPreloader {
+        val calls = mutableListOf<List<String>>()
+
+        override fun preload(localThumbnailPaths: List<String>) {
+            calls += localThumbnailPaths
+        }
+    }
+
+    private fun imageMessage(
+        messageId: String,
+        createdAt: Long,
+        localThumbnailPath: String?
+    ): ChatMessage {
+        return ChatMessage(
+            messageId = messageId,
+            conversationId = "single:13800113800:13900113900",
+            senderId = "13900113900",
+            receiverId = "13800113800",
+            clientSeq = createdAt,
+            serverSeq = createdAt,
+            content = "[图片]",
+            status = MessageStatus.RECEIVED,
+            direction = MessageDirection.INCOMING,
+            createdAt = createdAt,
+            updatedAt = createdAt,
+            type = MessageType.IMAGE,
+            imageUrl = "https://oss.example.com/origin.jpg",
+            thumbnailUrl = "https://oss.example.com/thumb.jpg",
+            imageWidth = 900,
+            imageHeight = 600,
+            mimeType = "image/jpeg",
+            fileSizeBytes = 123L,
+            localThumbnailPath = localThumbnailPath
+        )
     }
 
     private class FakeProfileApi : ProfileApi {

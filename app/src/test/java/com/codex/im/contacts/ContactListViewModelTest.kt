@@ -24,7 +24,10 @@ class ContactListViewModelTest {
         fixture.viewModel.start()
         runCurrent()
 
-        assertEquals(listOf("13900113900"), fixture.viewModel.state.value.items.map { it.userId })
+        assertEquals(
+            listOf("13267100423", "13900113900", "17724734511"),
+            fixture.viewModel.state.value.items.map { it.userId }
+        )
     }
 
     @Test
@@ -35,7 +38,22 @@ class ContactListViewModelTest {
         fixture.viewModel.start()
         runCurrent()
 
-        assertEquals(listOf("13800113800"), fixture.viewModel.state.value.items.map { it.userId })
+        assertEquals(
+            listOf("13267100423", "13800113800", "17724734511"),
+            fixture.viewModel.state.value.items.map { it.userId }
+        )
+    }
+
+    @Test
+    fun demoContactResolverMakesFourDemoAccountsMutualContacts() {
+        assertEquals(
+            listOf("13267100423", "13800113800", "13900113900"),
+            DemoContactResolver.contactsFor("17724734511")
+        )
+        assertEquals(
+            listOf("13800113800", "13900113900", "17724734511"),
+            DemoContactResolver.contactsFor("13267100423")
+        )
     }
 
     @Test
@@ -56,7 +74,7 @@ class ContactListViewModelTest {
         fixture.viewModel.start()
         runCurrent()
 
-        val item = fixture.viewModel.state.value.items.single()
+        val item = fixture.viewModel.state.value.items.single { it.userId == "13900113900" }
         assertEquals("Megumi", item.displayName)
         assertEquals("https://example.com/megumi.jpg", item.avatarUrl)
     }

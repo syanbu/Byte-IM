@@ -35,6 +35,10 @@ data class SelectedChatImage(
     val mimeType: String
 )
 
+interface SelectedChatImageResolver {
+    suspend fun resolve(message: com.codex.im.storage.ChatMessage): SelectedChatImage?
+}
+
 object DisabledImageUploadApi : ImageUploadApi {
     override suspend fun requestUploadTargets(
         accessToken: String,

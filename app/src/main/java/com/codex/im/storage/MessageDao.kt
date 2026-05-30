@@ -5,6 +5,10 @@ interface MessageDao {
 
     fun queryPage(conversationId: String, beforeTime: Long?, limit: Int): List<ChatMessage>
 
+    fun queryIncomingImagesMissingLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage>
+
+    fun queryRecentImagesWithLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage>
+
     fun findByMessageId(messageId: String): ChatMessage?
 
     fun updateImageUploadResult(
@@ -18,6 +22,8 @@ interface MessageDao {
         status: MessageStatus,
         updatedAt: Long
     ): Boolean
+
+    fun updateLocalThumbnailPath(messageId: String, localThumbnailPath: String, updatedAt: Long): Boolean
 
     fun markStatus(messageId: String, status: MessageStatus, updatedAt: Long): Boolean
 
@@ -47,6 +53,29 @@ class InMemoryMessageDao : MessageDao {
             .toList()
     }
 
+    override fun queryIncomingImagesMissingLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage> {
+        return messagesById.values
+            .asSequence()
+            .filter { it.conversationId == conversationId }
+            .filter { it.direction == MessageDirection.INCOMING }
+            .filter { it.type == MessageType.IMAGE }
+            .filter { it.localThumbnailPath == null }
+            .sortedWith(MessageOrderingPolicy.newestFirst)
+            .take(limit)
+            .toList()
+    }
+
+    override fun queryRecentImagesWithLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage> {
+        return messagesById.values
+            .asSequence()
+            .filter { it.conversationId == conversationId }
+            .filter { it.type == MessageType.IMAGE }
+            .filter { it.localThumbnailPath != null }
+            .sortedWith(MessageOrderingPolicy.newestFirst)
+            .take(limit)
+            .toList()
+    }
+
     override fun findByMessageId(messageId: String): ChatMessage? = messagesById[messageId]
 
     override fun updateImageUploadResult(
@@ -69,6 +98,15 @@ class InMemoryMessageDao : MessageDao {
             mimeType = mimeType,
             fileSizeBytes = fileSizeBytes,
             status = status,
+            updatedAt = updatedAt
+        )
+        return true
+    }
+
+    override fun updateLocalThumbnailPath(messageId: String, localThumbnailPath: String, updatedAt: Long): Boolean {
+        val current = messagesById[messageId] ?: return false
+        messagesById[messageId] = current.copy(
+            localThumbnailPath = localThumbnailPath,
             updatedAt = updatedAt
         )
         return true

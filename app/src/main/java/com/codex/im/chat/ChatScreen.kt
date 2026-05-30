@@ -2,9 +2,10 @@ package com.codex.im.chat
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,12 +64,14 @@ fun ChatScreen(
     val context = LocalContext.current
     var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
     val latestMessageId = state.messages.firstOrNull()?.messageId
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(9)) { uris ->
+        if (uris.isNotEmpty()) {
             scope.launch {
-                val prepared = ChatImageCompressor.prepareSelectedImage(context, context.contentResolver, uri)
-                if (prepared != null) {
-                    viewModel.sendImage(prepared)
+                val preparedImages = uris.mapNotNull { uri ->
+                    ChatImageCompressor.prepareSelectedImage(context, context.contentResolver, uri)
+                }
+                if (preparedImages.isNotEmpty()) {
+                    viewModel.sendImages(preparedImages)
                 }
             }
         }
@@ -148,7 +151,12 @@ fun ChatScreen(
                     peerName = state.peerName,
                     peerAvatarUrl = state.peerAvatarUrl,
                     currentUserAvatarUrl = state.currentUserAvatarUrl,
-                    onOpenImagePreview = { previewMessage = it }
+                    onOpenImagePreview = { previewMessage = it },
+                    onRetryImage = { message ->
+                        scope.launch {
+                            viewModel.retryImageMessage(message.messageId)
+                        }
+                    }
                 )
             }
             if (state.messages.isNotEmpty()) {
@@ -175,7 +183,9 @@ fun ChatScreen(
             draft = draft,
             onDraftChange = { draft = it },
             canSend = ChatDisplayPolicy.shouldShowSendButton(draft) && state.peerId.isNotBlank(),
-            onPickImage = { imagePicker.launch("image/*") },
+            onPickImage = {
+                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
             onSend = {
                 val content = draft
                 draft = ""
@@ -203,6 +213,7 @@ private fun ChatComposerBar(
 ) {
     val barColor = MaterialTheme.colorScheme.surfaceContainer
     val inputShape = RoundedCornerShape(18.dp)
+    val action = ChatDisplayPolicy.composerAction(draft)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -245,15 +256,16 @@ private fun ChatComposerBar(
                     )
                 )
             }
-            Button(
-                onClick = onPickImage,
-                contentPadding = ButtonDefaults.ContentPadding
-            ) {
-                Text("Image")
-            }
-            AnimatedVisibility(visible = canSend) {
-                Button(
+            when (action) {
+                ChatComposerAction.PICK_IMAGE -> Button(
+                    onClick = onPickImage,
+                    contentPadding = ButtonDefaults.ContentPadding
+                ) {
+                    Text("Image")
+                }
+                ChatComposerAction.SEND_TEXT -> Button(
                     onClick = onSend,
+                    enabled = canSend,
                     contentPadding = ButtonDefaults.ContentPadding
                 ) {
                     Text("Send")
@@ -269,7 +281,8 @@ private fun ChatMessageRow(
     peerName: String,
     peerAvatarUrl: String?,
     currentUserAvatarUrl: String?,
-    onOpenImagePreview: (ChatMessage) -> Unit
+    onOpenImagePreview: (ChatMessage) -> Unit,
+    onRetryImage: (ChatMessage) -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
     Row(
@@ -287,7 +300,14 @@ private fun ChatMessageRow(
             )
         }
         if (outgoing) {
-            OutgoingMessageStatus(message.status)
+            OutgoingMessageStatus(
+                status = message.status,
+                onRetry = {
+                    if (message.type == MessageType.IMAGE) {
+                        onRetryImage(message)
+                    }
+                }
+            )
         }
         if (message.type == MessageType.IMAGE) {
             ChatImageBubble(
@@ -313,7 +333,7 @@ private fun ChatMessageRow(
 }
 
 @Composable
-private fun OutgoingMessageStatus(status: MessageStatus) {
+private fun OutgoingMessageStatus(status: MessageStatus, onRetry: () -> Unit = {}) {
     Box(
         modifier = Modifier.size(18.dp),
         contentAlignment = Alignment.Center
@@ -328,7 +348,8 @@ private fun OutgoingMessageStatus(status: MessageStatus) {
             MessageStatus.FAILED -> Text(
                 text = "!",
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.clickable(onClick = onRetry)
             )
             MessageStatus.SENT,
             MessageStatus.RECEIVED -> Unit

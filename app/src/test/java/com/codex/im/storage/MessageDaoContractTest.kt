@@ -138,6 +138,87 @@ class MessageDaoContractTest {
         assertEquals(345_678L, updated?.fileSizeBytes)
     }
 
+    @Test
+    fun queryIncomingImagesMissingLocalThumbnailReturnsOnlyUncachedIncomingImages() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "incoming-missing",
+                createdAt = 300,
+                content = "[图片]",
+                status = MessageStatus.RECEIVED,
+                type = MessageType.IMAGE,
+                thumbnailUrl = "https://oss.example.com/thumb.jpg",
+                direction = MessageDirection.INCOMING,
+                localThumbnailPath = null
+            )
+        )
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "incoming-cached",
+                createdAt = 200,
+                content = "[图片]",
+                status = MessageStatus.RECEIVED,
+                type = MessageType.IMAGE,
+                direction = MessageDirection.INCOMING,
+                localThumbnailPath = "cache/thumb.jpg"
+            )
+        )
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "outgoing-missing",
+                createdAt = 100,
+                content = "[图片]",
+                status = MessageStatus.SENT,
+                type = MessageType.IMAGE,
+                direction = MessageDirection.OUTGOING,
+                localThumbnailPath = null
+            )
+        )
+
+        val missing = dao.queryIncomingImagesMissingLocalThumbnail("single:u1:u2", limit = 20)
+
+        assertEquals(listOf("incoming-missing"), missing.map { it.messageId })
+    }
+
+    @Test
+    fun queryRecentImagesWithLocalThumbnailReturnsOnlyCachedImagesNewestFirst() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "older-cached",
+                createdAt = 100,
+                content = "[图片]",
+                type = MessageType.IMAGE,
+                localThumbnailPath = "cache/older.jpg"
+            )
+        )
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "newer-cached",
+                createdAt = 300,
+                content = "[图片]",
+                type = MessageType.IMAGE,
+                localThumbnailPath = "cache/newer.jpg"
+            )
+        )
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "newer-uncached",
+                createdAt = 400,
+                content = "[图片]",
+                type = MessageType.IMAGE,
+                localThumbnailPath = null
+            )
+        )
+        dao.insertOrIgnore(sampleMessage(messageId = "text", createdAt = 500))
+
+        val images = dao.queryRecentImagesWithLocalThumbnail("single:u1:u2", limit = 20)
+
+        assertEquals(listOf("newer-cached", "older-cached"), images.map { it.messageId })
+        assertEquals(listOf("cache/newer.jpg", "cache/older.jpg"), images.map { it.localThumbnailPath })
+    }
+
     private fun sampleMessage(
         messageId: String,
         createdAt: Long,
@@ -152,7 +233,8 @@ class MessageDaoContractTest {
         mimeType: String? = null,
         fileSizeBytes: Long? = null,
         localOriginalPath: String? = null,
-        localThumbnailPath: String? = null
+        localThumbnailPath: String? = null,
+        direction: MessageDirection = MessageDirection.OUTGOING
     ): ChatMessage {
         return ChatMessage(
             messageId = messageId,
@@ -163,7 +245,7 @@ class MessageDaoContractTest {
             serverSeq = serverSeq,
             content = content,
             status = status,
-            direction = MessageDirection.OUTGOING,
+            direction = direction,
             createdAt = createdAt,
             updatedAt = createdAt,
             type = type,

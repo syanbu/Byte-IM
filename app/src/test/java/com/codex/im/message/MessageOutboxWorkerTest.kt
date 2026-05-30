@@ -7,7 +7,6 @@ import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
-import com.codex.im.storage.PendingMessage
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,27 +24,18 @@ class MessageOutboxWorkerTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     fun authenticatedStateTriggersDuePendingResend() = runTest {
         val fixture = Fixture(this)
-        fixture.pendingDao.upsert(
-            PendingMessage(
-                messageId = "pending-1",
-                packetCmd = ImCommand.SEND_MESSAGE.value,
-                packetBody = """{"messageId":"pending-1"}""",
-                retryCount = 0,
-                nextRetryAt = 0L,
-                createdAt = 0L
-            )
-        )
+        val originalPacketBody = fixture.createPendingMessageBody()
 
         fixture.worker.start()
         fixture.connection.state.value = ConnectionState.Authenticated
         runCurrent()
 
-        assertEquals(listOf("""{"messageId":"pending-1"}"""), fixture.connection.sentPackets.map { it.body.decodeToString() })
+        assertEquals(listOf(originalPacketBody), fixture.connection.sentPackets.map { it.body.decodeToString() })
     }
 
     private class Fixture(scope: TestScope) {
         val connection = FakeConnection()
-        val pendingDao = InMemoryPendingMessageDao()
+        private val pendingDao = InMemoryPendingMessageDao()
         private val repository = MessageRepository(
             messageDao = InMemoryMessageDao(),
             conversationDao = InMemoryConversationDao(),
@@ -60,6 +50,13 @@ class MessageOutboxWorkerTest {
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )
+
+        fun createPendingMessageBody(): String {
+            repository.sendText(senderId = "u1", receiverId = "u2", content = "hello", now = 0L)
+            val originalPacketBody = connection.sentPackets.single().body.decodeToString()
+            connection.sentPackets.clear()
+            return originalPacketBody
+        }
     }
 
     private class FakeConnection : ImConnection {

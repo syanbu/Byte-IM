@@ -40,6 +40,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.codex.im.app.AppInfo
+import com.codex.im.app.MockServerConfig
 import com.codex.im.auth.AuthRepository
 import com.codex.im.auth.AuthSession
 import com.codex.im.auth.LoginScreen
@@ -57,6 +58,8 @@ import com.codex.im.contacts.ContactListViewModel
 import com.codex.im.contacts.DemoContactResolver
 import com.codex.im.conversation.ConversationListScreen
 import com.codex.im.conversation.ConversationListViewModel
+import com.codex.im.message.AndroidChatThumbnailCache
+import com.codex.im.message.CoilChatThumbnailPreloader
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageOutboxWorker
 import com.codex.im.message.MessagePacketProcessor
@@ -83,9 +86,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val database = ImDatabaseHelper(this).writableDatabase
-        val rawConnection = OkHttpImConnection(DEFAULT_MOCK_SERVER_WS_URL)
+        val mockServerConfig = MockServerConfig.load(this)
+        val rawConnection = OkHttpImConnection(mockServerConfig.webSocketUrl)
         val repository = AuthRepository(
-            authApi = OkHttpAuthApi(baseUrl = DEFAULT_MOCK_SERVER_URL),
+            authApi = OkHttpAuthApi(baseUrl = mockServerConfig.httpBaseUrl),
             tokenStore = SharedPreferencesTokenStore(this)
         )
         val connection = ConnectionLifecycleManager(
@@ -100,11 +104,12 @@ class MainActivity : ComponentActivity() {
             connection = connection,
             messageIdGenerator = MessageIdGenerator(),
             seqGenerator = SeqGenerator(),
-            transactionRunner = AndroidTransactionRunner(database)
+            transactionRunner = AndroidTransactionRunner(database),
+            thumbnailCache = AndroidChatThumbnailCache(this)
         )
         val profileRepository = ProfileRepository(
             userProfileDao = AndroidUserProfileDao(database),
-            profileApi = OkHttpProfileApi(baseUrl = DEFAULT_MOCK_SERVER_URL)
+            profileApi = OkHttpProfileApi(baseUrl = mockServerConfig.httpBaseUrl)
         )
         setContent {
             val loginViewModel = remember { LoginViewModel(repository) }
@@ -114,8 +119,8 @@ class MainActivity : ComponentActivity() {
                 messageRepository = messageRepository,
                 connection = connection,
                 profileRepository = profileRepository,
-                avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = DEFAULT_MOCK_SERVER_URL),
-                imageUploadApi = OkHttpImageUploadApi(baseUrl = DEFAULT_MOCK_SERVER_URL)
+                avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = mockServerConfig.httpBaseUrl),
+                imageUploadApi = OkHttpImageUploadApi(baseUrl = mockServerConfig.httpBaseUrl)
             )
         }
     }
@@ -130,10 +135,6 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    private companion object {
-        const val DEFAULT_MOCK_SERVER_URL = "http://10.0.2.2:8080"
-        const val DEFAULT_MOCK_SERVER_WS_URL = "ws://10.0.2.2:8080/ws"
-    }
 }
 
 @Composable
@@ -200,6 +201,7 @@ private fun AuthenticatedImNavHost(
     imageUploadApi: ImageUploadApi,
     onLogout: suspend () -> Unit
 ) {
+    val context = LocalContext.current
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -278,7 +280,8 @@ private fun AuthenticatedImNavHost(
                         repository = messageRepository,
                         connection = connection,
                         profileRepository = profileRepository,
-                        validSessionProvider = validSessionProvider
+                        validSessionProvider = validSessionProvider,
+                        thumbnailPreloader = CoilChatThumbnailPreloader(context)
                     )
                 }
                 val conversationState by conversationListViewModel.state.collectAsState()

@@ -86,6 +86,13 @@ class ChatDisplayPolicyTest {
         assertEquals(true, ChatDisplayPolicy.shouldShowSendButton("hello"))
     }
 
+    @Test
+    fun composerPrimaryActionSwitchesBetweenImageAndSend() {
+        assertEquals(ChatComposerAction.PICK_IMAGE, ChatDisplayPolicy.composerAction(""))
+        assertEquals(ChatComposerAction.PICK_IMAGE, ChatDisplayPolicy.composerAction("   "))
+        assertEquals(ChatComposerAction.SEND_TEXT, ChatDisplayPolicy.composerAction("hello"))
+    }
+
     private fun message(
         senderId: String = "13800113800",
         content: String = "hello",

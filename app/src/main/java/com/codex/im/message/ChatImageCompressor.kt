@@ -5,13 +5,14 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import com.codex.im.storage.ChatMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 
-object ChatImageCompressor {
+object ChatImageCompressor : SelectedChatImageResolver {
     private const val THUMBNAIL_MAX_EDGE = 480
     private const val ORIGINAL_QUALITY = 90
     private const val THUMBNAIL_QUALITY = 78
@@ -48,6 +49,27 @@ object ChatImageCompressor {
             } finally {
                 source.recycle()
             }
+        }
+    }
+
+    override suspend fun resolve(message: ChatMessage): SelectedChatImage? {
+        return withContext(Dispatchers.IO) {
+            val originalPath = message.localOriginalPath ?: return@withContext null
+            val thumbnailPath = message.localThumbnailPath ?: return@withContext null
+            val originalFile = File(originalPath)
+            val thumbnailFile = File(thumbnailPath)
+            if (!originalFile.isFile || !thumbnailFile.isFile) {
+                return@withContext null
+            }
+            SelectedChatImage(
+                originalBytes = originalFile.readBytes(),
+                thumbnailBytes = thumbnailFile.readBytes(),
+                localOriginalPath = originalPath,
+                localThumbnailPath = thumbnailPath,
+                width = message.imageWidth ?: return@withContext null,
+                height = message.imageHeight ?: return@withContext null,
+                mimeType = message.mimeType ?: JPEG_CONTENT_TYPE
+            )
         }
     }
 

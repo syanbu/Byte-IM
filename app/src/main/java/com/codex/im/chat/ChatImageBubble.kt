@@ -3,9 +3,8 @@ package com.codex.im.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -27,11 +26,14 @@ fun ChatImageBubble(
     onOpenPreview: (ChatMessage) -> Unit = {}
 ) {
     val bubbleShape = RoundedCornerShape(18.dp)
-    val model = message.localThumbnailPath ?: message.thumbnailUrl ?: message.localOriginalPath ?: message.imageUrl
+    val model = message.localThumbnailPath ?: message.thumbnailUrl
+    val bubbleSize = ChatImageBubbleLayoutPolicy.displaySize(
+        imageWidth = message.imageWidth,
+        imageHeight = message.imageHeight
+    )
     Box(
         modifier = modifier
-            .widthIn(max = 220.dp)
-            .heightIn(min = 120.dp)
+            .size(width = bubbleSize.widthDp.dp, height = bubbleSize.heightDp.dp)
             .clip(bubbleShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(
@@ -46,7 +48,7 @@ fun ChatImageBubble(
                 model = model,
                 contentDescription = message.content,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxSize(),
                 loading = {
                     CircularProgressIndicator()
                 },

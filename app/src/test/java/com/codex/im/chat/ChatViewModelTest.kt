@@ -3,12 +3,14 @@ package com.codex.im.chat
 import com.codex.im.auth.AuthSession
 import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
+import com.codex.im.message.ChatThumbnailCache
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.ImageUploadApi
 import com.codex.im.message.ImageUploadTargets
 import com.codex.im.message.ImageUploadTargetsResult
 import com.codex.im.message.SelectedChatImage
 import com.codex.im.message.MessageRepository
+import com.codex.im.message.NoopChatThumbnailCache
 import com.codex.im.message.SeqGenerator
 import com.codex.im.protocol.ImPacket
 import com.codex.im.profile.AvatarPutResult
@@ -32,6 +34,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -39,6 +42,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class ChatViewModelTest {
     @Test
@@ -487,10 +491,185 @@ class ChatViewModelTest {
         assertTrue(fixture.uploadApi.requests.isEmpty())
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun retryUploadFailedImageUploadsLocalFilesAndQueuesSend() = runTest {
+        val fixture = Fixture(
+            this,
+            uploadApi = FakeImageUploadApi(
+                uploadResults = mutableListOf(AvatarPutResult.Failure("HTTP 500"))
+            )
+        )
+        fixture.viewModel.selectPeer("13900113900")
+        val originalFile = writeTempImageBytes(byteArrayOf(1, 2, 3))
+        val thumbnailFile = writeTempImageBytes(byteArrayOf(4, 5))
+
+        fixture.viewModel.sendImage(
+            SelectedChatImage(
+                originalBytes = byteArrayOf(1, 2, 3),
+                thumbnailBytes = byteArrayOf(4, 5),
+                localOriginalPath = originalFile.absolutePath,
+                localThumbnailPath = thumbnailFile.absolutePath,
+                width = 1440,
+                height = 960,
+                mimeType = "image/jpeg"
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+        assertEquals(MessageStatus.UPLOAD_FAILED, fixture.viewModel.state.value.messages.single().status)
+
+        fixture.uploadApi.uploadResults += AvatarPutResult.Success
+        fixture.uploadApi.uploadResults += AvatarPutResult.Success
+        fixture.viewModel.retryImageMessage(fixture.viewModel.state.value.messages.single().messageId)
+        runCurrent()
+
+        val stored = fixture.messageDao.queryPage("single:13800113800:13900113900", null, 20).single()
+        assertEquals(MessageStatus.SENDING, stored.status)
+        assertEquals(2, fixture.uploadApi.requests.size)
+        assertEquals(3, fixture.uploadApi.uploadCalls.size)
+        assertEquals(1, fixture.connection.sentPackets.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun retryFailedImageMessageRequeuesSendWithoutUploadingAgain() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+        fixture.viewModel.sendImage(
+            SelectedChatImage(
+                originalBytes = byteArrayOf(1, 2, 3),
+                thumbnailBytes = byteArrayOf(4, 5, 6),
+                localOriginalPath = "cache/original.jpg",
+                localThumbnailPath = "cache/thumb.jpg",
+                width = 1440,
+                height = 960,
+                mimeType = "image/jpeg"
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+        val messageId = fixture.viewModel.state.value.messages.single().messageId
+        fixture.messageDao.markStatus(messageId, MessageStatus.FAILED, updatedAt = 6_000L)
+        runCurrent()
+        fixture.connection.sentPackets.clear()
+        fixture.uploadApi.requests.clear()
+        fixture.uploadApi.uploadCalls.clear()
+
+        fixture.viewModel.retryImageMessage(messageId)
+        runCurrent()
+
+        val stored = fixture.messageDao.findByMessageId(messageId)
+        assertEquals(MessageStatus.SENDING, stored?.status)
+        assertEquals(emptyList<String>(), fixture.uploadApi.requests)
+        assertEquals(emptyList<String>(), fixture.uploadApi.uploadCalls)
+        assertEquals(1, fixture.connection.sentPackets.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesContinuesAfterOneUploadFailure() = runTest {
+        val fixture = Fixture(
+            this,
+            uploadApi = FakeImageUploadApi(
+                uploadResults = mutableListOf(
+                    AvatarPutResult.Success,
+                    AvatarPutResult.Success,
+                    AvatarPutResult.Failure("HTTP 500"),
+                    AvatarPutResult.Success,
+                    AvatarPutResult.Success
+                )
+            )
+        )
+        fixture.viewModel.selectPeer("13900113900")
+
+        fixture.viewModel.sendImages(
+            listOf(
+                selectedImage(originalSize = 3, thumbnailSize = 2),
+                selectedImage(originalSize = 4, thumbnailSize = 2),
+                selectedImage(originalSize = 5, thumbnailSize = 2)
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+
+        val messages = fixture.messageDao.queryPage("single:13800113800:13900113900", null, 20)
+        assertEquals(3, messages.size)
+        assertEquals(
+            listOf(MessageStatus.SENDING, MessageStatus.UPLOAD_FAILED, MessageStatus.SENDING),
+            messages.sortedBy { it.createdAt }.map { it.status }
+        )
+        assertEquals(3, fixture.uploadApi.requests.size)
+        assertEquals(5, fixture.uploadApi.uploadCalls.size)
+        assertEquals(2, fixture.connection.sentPackets.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesLimitsBatchToNineImages() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+
+        fixture.viewModel.sendImages(
+            List(10) { selectedImage(originalSize = it + 1, thumbnailSize = 1) },
+            now = 1_000L
+        )
+        runCurrent()
+
+        val messages = fixture.messageDao.queryPage("single:13800113800:13900113900", null, 20)
+        assertEquals(9, messages.size)
+        assertEquals(9, fixture.uploadApi.requests.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startRetriesMissingIncomingImageThumbnailImmediately() = runTest {
+        val thumbnailCache = FakeThumbnailCache(localPaths = mutableListOf(null, "cache/thumb-after-start.jpg"))
+        val fixture = Fixture(this, thumbnailCache = thumbnailCache)
+        fixture.repository.handlePacket(incomingImagePacket(messageId = "remote-image-start"))
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals("cache/thumb-after-start.jpg", fixture.messageDao.findByMessageId("remote-image-start")?.localThumbnailPath)
+        assertEquals(listOf("remote-image-start"), fixture.viewModel.state.value.messages.map { it.messageId })
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun repositoryUpdateSchedulesDelayedThumbnailRetriesWithBackoff() = runTest {
+        val thumbnailCache = FakeThumbnailCache(localPaths = mutableListOf(null, null, null, "cache/thumb-after-delay.jpg"))
+        val fixture = Fixture(this, thumbnailCache = thumbnailCache)
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.repository.handlePacket(incomingImagePacket(messageId = "remote-image-delayed"))
+        runCurrent()
+        assertEquals(emptyList<String>(), fixture.viewModel.state.value.messages.map { it.messageId })
+
+        advanceTimeBy(1_999L)
+        runCurrent()
+        assertEquals(emptyList<String>(), fixture.viewModel.state.value.messages.map { it.messageId })
+
+        advanceTimeBy(1L)
+        runCurrent()
+        assertEquals(emptyList<String>(), fixture.viewModel.state.value.messages.map { it.messageId })
+
+        advanceTimeBy(10_000L)
+        runCurrent()
+        assertEquals(emptyList<String>(), fixture.viewModel.state.value.messages.map { it.messageId })
+
+        advanceTimeBy(30_000L)
+        runCurrent()
+        assertEquals("cache/thumb-after-delay.jpg", fixture.messageDao.findByMessageId("remote-image-delayed")?.localThumbnailPath)
+        assertEquals(listOf("remote-image-delayed"), fixture.viewModel.state.value.messages.map { it.messageId })
+    }
+
     private class Fixture(
         scope: TestScope,
         initialPeerId: String? = "13900113900",
         val uploadApi: FakeImageUploadApi = FakeImageUploadApi(),
+        thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache,
         val validSessionProvider: suspend () -> AuthSession? = {
             AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L)
         }
@@ -506,7 +685,8 @@ class ChatViewModelTest {
             pendingMessageDao = pendingDao,
             connection = connection,
             messageIdGenerator = MessageIdGenerator(startCounter = 1),
-            seqGenerator = SeqGenerator()
+            seqGenerator = SeqGenerator(),
+            thumbnailCache = thumbnailCache
         )
         val viewModel = if (initialPeerId == null) {
             ChatViewModel(
@@ -595,7 +775,8 @@ class ChatViewModelTest {
                 expiresAt = 3_000L
             )
         ),
-        private val uploadResult: AvatarPutResult = AvatarPutResult.Success
+        private val uploadResult: AvatarPutResult = AvatarPutResult.Success,
+        val uploadResults: MutableList<AvatarPutResult> = mutableListOf()
     ) : ImageUploadApi {
         val requests = mutableListOf<String>()
         val requestedAccessTokens = mutableListOf<String>()
@@ -618,8 +799,65 @@ class ChatViewModelTest {
 
         override suspend fun upload(uploadUrl: String, contentType: String, bytes: ByteArray): AvatarPutResult {
             uploadCalls += "$uploadUrl|$contentType|${bytes.size}"
-            return uploadResult
+            return if (uploadResults.isNotEmpty()) uploadResults.removeAt(0) else uploadResult
         }
+    }
+
+    private class FakeThumbnailCache(
+        private val localPaths: MutableList<String?>
+    ) : ChatThumbnailCache {
+        val requests = mutableListOf<Pair<String, String>>()
+
+        override fun cacheThumbnail(messageId: String, thumbnailUrl: String): String? {
+            requests += messageId to thumbnailUrl
+            return if (localPaths.size > 1) localPaths.removeAt(0) else localPaths.firstOrNull()
+        }
+    }
+
+    private fun incomingImagePacket(messageId: String): ImPacket {
+        return ImPacket(
+            cmd = 12,
+            body = """
+                {
+                  "messageId":"$messageId",
+                  "conversationId":"single:13900113900:13800113800",
+                  "senderId":"13900113900",
+                  "receiverId":"13800113800",
+                  "clientSeq":10,
+                  "serverSeq":93,
+                  "type":"IMAGE",
+                  "content":"[图片]",
+                  "image":{
+                    "imageUrl":"https://oss.example.com/origin.jpg",
+                    "thumbnailUrl":"https://oss.example.com/thumb.jpg",
+                    "width":900,
+                    "height":600,
+                    "mimeType":"image/jpeg",
+                    "sizeBytes":456789
+                  },
+                  "timestamp":1800
+                }
+            """.trimIndent().toByteArray()
+        )
+    }
+
+    private fun writeTempImageBytes(bytes: ByteArray): File {
+        return File.createTempFile("chat-image-test", ".jpg").also { file ->
+            file.writeBytes(bytes)
+            file.deleteOnExit()
+        }
+    }
+
+    private fun selectedImage(originalSize: Int, thumbnailSize: Int): SelectedChatImage {
+        return SelectedChatImage(
+            originalBytes = ByteArray(originalSize) { 1 },
+            thumbnailBytes = ByteArray(thumbnailSize) { 2 },
+            localOriginalPath = "cache/original-$originalSize.jpg",
+            localThumbnailPath = "cache/thumb-$originalSize.jpg",
+            width = 1440,
+            height = 960,
+            mimeType = "image/jpeg"
+        )
     }
 
     private class FakeProfileApi : ProfileApi {

@@ -59,3 +59,14 @@ Android emulator should use:
 
 - HTTP: `http://10.0.2.2:8080`
 - WebSocket: `ws://10.0.2.2:8080/ws`
+
+USB-connected real devices can use adb reverse instead:
+
+```powershell
+adb reverse tcp:8080 tcp:8080
+```
+
+Then configure the Android app with:
+
+- HTTP host: `127.0.0.1`
+- Port: `8080`

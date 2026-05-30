@@ -53,6 +53,63 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
         }
     }
 
+    override fun queryIncomingImagesMissingLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage> {
+        return database.query(
+            "messages",
+            null,
+            """
+            conversation_id = ?
+              AND direction = ?
+              AND message_type = ?
+              AND local_thumbnail_path IS NULL
+            """.trimIndent(),
+            arrayOf(conversationId, MessageDirection.INCOMING.name, MessageType.IMAGE.name),
+            null,
+            null,
+            "created_at DESC, server_seq DESC, message_id DESC",
+            limit.toString()
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.toChatMessage())
+                }
+            }
+        }
+    }
+
+    override fun queryRecentImagesWithLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage> {
+        return database.query(
+            "messages",
+            null,
+            """
+            conversation_id = ?
+              AND message_type = ?
+              AND local_thumbnail_path IS NOT NULL
+            """.trimIndent(),
+            arrayOf(conversationId, MessageType.IMAGE.name),
+            null,
+            null,
+            """
+            CASE
+              WHEN server_seq IS NULL AND status IN ('UPLOADING', 'UPLOAD_FAILED', 'SENDING', 'FAILED') THEN 0
+              WHEN server_seq IS NOT NULL THEN 1
+              ELSE 2
+            END ASC,
+            server_seq DESC,
+            created_at DESC,
+            client_seq DESC,
+            message_id DESC
+            """.trimIndent(),
+            limit.toString()
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.toChatMessage())
+                }
+            }
+        }
+    }
+
     override fun findByMessageId(messageId: String): ChatMessage? {
         return database.query(
             "messages",
@@ -87,6 +144,14 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             put("mime_type", mimeType)
             put("file_size_bytes", fileSizeBytes)
             put("status", status.name)
+            put("updated_at", updatedAt)
+        }
+        return database.update("messages", values, "message_id = ?", arrayOf(messageId)) > 0
+    }
+
+    override fun updateLocalThumbnailPath(messageId: String, localThumbnailPath: String, updatedAt: Long): Boolean {
+        val values = ContentValues().apply {
+            put("local_thumbnail_path", localThumbnailPath)
             put("updated_at", updatedAt)
         }
         return database.update("messages", values, "message_id = ?", arrayOf(messageId)) > 0

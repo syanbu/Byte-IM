@@ -28,12 +28,45 @@ mvn -q compile exec:java
 Use these addresses:
 
 - Windows/Postman: `http://127.0.0.1:8080`, `ws://127.0.0.1:8080/ws`
+- USB real device with adb reverse: `http://127.0.0.1:8080`, `ws://127.0.0.1:8080/ws`
 - Android emulator: `http://10.0.2.2:8080`, `ws://10.0.2.2:8080/ws`
+
+The Android app reads mock-server host and port from:
+
+```text
+app/src/main/assets/mock-server.properties
+```
+
+Default configuration targets USB real-device debugging:
+
+```properties
+host=127.0.0.1
+port=8080
+```
+
+Before running the app on a USB-connected real device, forward the device port
+to the computer mock server:
+
+```powershell
+adb reverse tcp:8080 tcp:8080
+```
+
+For Android emulator debugging, change only the host:
+
+```properties
+host=10.0.2.2
+port=8080
+```
 
 Register users before logging in. Suggested local test accounts:
 
 - `13800113800 / 123456`
 - `13900113900 / 123456`
+- `17724734511 / 123456`
+- `13267100423 / 123456`
+
+These four demo accounts are mutual contacts in the Android client, so each one
+sees the other three on the Contacts tab.
 
 Login/register returns a signed local mock access JWT with a 15-minute expiry
 and a refresh token with a 7-day expiry. The Android client restores a saved

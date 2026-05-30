@@ -4,7 +4,9 @@ import com.codex.im.auth.AuthSession
 import com.codex.im.auth.ValidSessionProvider
 import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
+import com.codex.im.message.ChatThumbnailPreloader
 import com.codex.im.message.MessageRepository
+import com.codex.im.message.NoopChatThumbnailPreloader
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.storage.Conversation
 import kotlinx.coroutines.CoroutineDispatcher
@@ -40,6 +42,7 @@ class ConversationListViewModel(
     private val connection: ImConnection,
     private val profileRepository: ProfileRepository,
     private val validSessionProvider: ValidSessionProvider = { session },
+    private val thumbnailPreloader: ChatThumbnailPreloader = NoopChatThumbnailPreloader,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -90,6 +93,15 @@ class ConversationListViewModel(
             repository.openConversation(session.userId, trimmedPeerId)
             refresh()
             mutableState.value = mutableState.value.copy(navigationTargetPeerId = trimmedPeerId)
+            launch {
+                thumbnailPreloader.preload(
+                    repository.recentLocalThumbnailPaths(
+                        userId = session.userId,
+                        peerId = trimmedPeerId,
+                        limit = RECENT_THUMBNAIL_PRELOAD_LIMIT
+                    )
+                )
+            }
         }
     }
 
@@ -165,5 +177,9 @@ class ConversationListViewModel(
             }
         }
         return peerId
+    }
+
+    private companion object {
+        const val RECENT_THUMBNAIL_PRELOAD_LIMIT = 5
     }
 }

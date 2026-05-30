@@ -10,7 +10,8 @@
         <!--        绑定程序入口-->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <!--                主入口-->
                 <action android:name="android.intent.action.MAIN" />
