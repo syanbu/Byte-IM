@@ -48,7 +48,7 @@ class InMemoryMessageDao : MessageDao {
             .asSequence()
             .filter { it.conversationId == conversationId }
             .filter { beforeTime == null || it.createdAt < beforeTime }
-            .sortedWith(MessageOrderingPolicy.newestFirst)
+            .let { MessageOrderingPolicy.sortNewestFirst(it.asIterable()) }
             .take(limit)
             .toList()
     }
@@ -60,7 +60,7 @@ class InMemoryMessageDao : MessageDao {
             .filter { it.direction == MessageDirection.INCOMING }
             .filter { it.type == MessageType.IMAGE }
             .filter { it.localThumbnailPath == null }
-            .sortedWith(MessageOrderingPolicy.newestFirst)
+            .let { MessageOrderingPolicy.sortNewestFirst(it.asIterable()) }
             .take(limit)
             .toList()
     }
@@ -71,7 +71,7 @@ class InMemoryMessageDao : MessageDao {
             .filter { it.conversationId == conversationId }
             .filter { it.type == MessageType.IMAGE }
             .filter { it.localThumbnailPath != null }
-            .sortedWith(MessageOrderingPolicy.newestFirst)
+            .let { MessageOrderingPolicy.sortNewestFirst(it.asIterable()) }
             .take(limit)
             .toList()
     }

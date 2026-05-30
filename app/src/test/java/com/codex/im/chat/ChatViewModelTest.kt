@@ -12,6 +12,7 @@ import com.codex.im.message.SelectedChatImage
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.NoopChatThumbnailCache
 import com.codex.im.message.SeqGenerator
+import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
 import com.codex.im.profile.AvatarPutResult
 import com.codex.im.profile.AvatarUploadTarget
@@ -602,6 +603,50 @@ class ChatViewModelTest {
         assertEquals(3, fixture.uploadApi.requests.size)
         assertEquals(5, fixture.uploadApi.uploadCalls.size)
         assertEquals(2, fixture.connection.sentPackets.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun ackedImageSentAfterFailedUploadStaysNewestInChatState() = runTest {
+        val fixture = Fixture(
+            this,
+            uploadApi = FakeImageUploadApi(
+                uploadResults = mutableListOf(
+                    AvatarPutResult.Success,
+                    AvatarPutResult.Failure("HTTP 500"),
+                    AvatarPutResult.Success,
+                    AvatarPutResult.Success
+                )
+            )
+        )
+        fixture.viewModel.selectPeer("13900113900")
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.sendImages(
+            listOf(
+                selectedImage(originalSize = 3, thumbnailSize = 2),
+                selectedImage(originalSize = 4, thumbnailSize = 2)
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+
+        val sentMessage = fixture.messageDao
+            .queryPage("single:13800113800:13900113900", null, 20)
+            .single { it.status == MessageStatus.SENDING }
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.MESSAGE_ACK.value,
+                body = """{"messageId":"${sentMessage.messageId}","serverSeq":8,"serverTime":2000}""".toByteArray()
+            )
+        )
+        runCurrent()
+
+        val messages = fixture.viewModel.state.value.messages
+        assertEquals(MessageStatus.SENT, messages.first().status)
+        assertEquals(sentMessage.messageId, messages.first().messageId)
+        assertEquals(MessageStatus.UPLOAD_FAILED, messages[1].status)
     }
 
     @Test

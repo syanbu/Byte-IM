@@ -58,7 +58,21 @@ Implemented for gallery image send with multi-select expansion into independent 
   - strict receiver-side thumbnail display: incoming image messages are hidden from chat until `localThumbnailPath` is available
   - receiver-side thumbnail compensation retry on chat open and active conversation updates
   - Coil preloading for the target chat's recent local thumbnails before navigation from the conversation list
+- Chat screen keyboard handling has been stabilized across tested Android devices:
+  - `MainActivity` calls `WindowCompat.setDecorFitsSystemWindows(window, false)`
+  - the app root applies `systemBarsPadding()`
+  - the chat screen root keeps `Modifier.imePadding()`
+  - `AndroidManifest.xml` keeps `android:windowSoftInputMode="adjustNothing"`
+  - this lets Compose own system bar and IME inset handling instead of relying on device/ROM-specific Activity resize behavior
 - `coil-compose` is now used for chat-image loading.
+
+## Resolved Device Compatibility Notes
+
+- Keyboard / IME overlap issue: completed on 2026-05-30.
+- Affected behavior: on some Android versions or ROMs, especially when IME insets were not delivered consistently, tapping the chat input could leave the keyboard covering the Activity or leave excessive blank space above the composer.
+- Final strategy: system does not resize the Activity; Compose receives and applies insets explicitly with `setDecorFitsSystemWindows(false)`, app-level `systemBarsPadding()`, chat-level `imePadding()`, and manifest `adjustNothing`.
+- Regression guard: `ChatKeyboardInsetsPolicyTest` asserts the chosen inset strategy.
+- Detailed bug note: `docs/bug/Fix-HonorKeyboardImeOverlay.md`.
 
 ## Core Design
 

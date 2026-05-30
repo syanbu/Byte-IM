@@ -57,6 +57,94 @@ class MessageDaoContractTest {
     }
 
     @Test
+    fun queryPagePlacesFailedLocalMessagesByCreateTimeAmongServerSequencedMessages() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(sampleMessage(messageId = "seq-3", createdAt = 3_000, serverSeq = 3, status = MessageStatus.SENT))
+        dao.insertOrIgnore(sampleMessage(messageId = "failed-2500", createdAt = 2_500, serverSeq = null, status = MessageStatus.UPLOAD_FAILED))
+        dao.insertOrIgnore(sampleMessage(messageId = "seq-2", createdAt = 2_000, serverSeq = 2, status = MessageStatus.SENT))
+        dao.insertOrIgnore(sampleMessage(messageId = "failed-1500", createdAt = 1_500, serverSeq = null, status = MessageStatus.FAILED))
+        dao.insertOrIgnore(sampleMessage(messageId = "seq-1", createdAt = 1_000, serverSeq = 1, status = MessageStatus.SENT))
+        dao.insertOrIgnore(sampleMessage(messageId = "sending", createdAt = 500, serverSeq = null, status = MessageStatus.SENDING))
+
+        val page = dao.queryPage("single:u1:u2", beforeTime = null, limit = 20)
+
+        assertEquals(
+            listOf("sending", "seq-3", "failed-2500", "seq-2", "failed-1500", "seq-1"),
+            page.map { it.messageId }
+        )
+    }
+
+    @Test
+    fun queryPageInsertsFailedLocalMessageByCreateTimeWhenServerSeqAndTimeDisagree() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(sampleMessage(messageId = "server-newest", createdAt = 1_000, serverSeq = 3, status = MessageStatus.SENT))
+        dao.insertOrIgnore(sampleMessage(messageId = "failed-local", createdAt = 2_500, serverSeq = null, status = MessageStatus.UPLOAD_FAILED))
+        dao.insertOrIgnore(sampleMessage(messageId = "server-middle", createdAt = 3_000, serverSeq = 2, status = MessageStatus.SENT))
+        dao.insertOrIgnore(sampleMessage(messageId = "server-oldest", createdAt = 4_000, serverSeq = 1, status = MessageStatus.SENT))
+
+        val page = dao.queryPage("single:u1:u2", beforeTime = null, limit = 20)
+
+        assertEquals(
+            listOf("failed-local", "server-newest", "server-middle", "server-oldest"),
+            page.map { it.messageId }
+        )
+    }
+
+    @Test
+    fun queryPageDoesNotKeepOlderFailedUploadAboveNewerSentMessage() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "failed-upload",
+                createdAt = 1_000,
+                serverSeq = null,
+                status = MessageStatus.UPLOAD_FAILED,
+                type = MessageType.IMAGE
+            )
+        )
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "newer-sent",
+                createdAt = 2_000,
+                serverSeq = 8,
+                status = MessageStatus.SENT,
+                type = MessageType.IMAGE
+            )
+        )
+
+        val page = dao.queryPage("single:u1:u2", beforeTime = null, limit = 20)
+
+        assertEquals(listOf("newer-sent", "failed-upload"), page.map { it.messageId })
+    }
+
+    @Test
+    fun queryPageOrdersNewerFailedUploadByCreateTimeAgainstOlderSentMessage() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "older-sent",
+                createdAt = 1_000,
+                serverSeq = 8,
+                status = MessageStatus.SENT,
+                type = MessageType.IMAGE
+            )
+        )
+        dao.insertOrIgnore(
+            sampleMessage(
+                messageId = "newer-failed-upload",
+                createdAt = 2_000,
+                serverSeq = null,
+                status = MessageStatus.UPLOAD_FAILED,
+                type = MessageType.IMAGE
+            )
+        )
+
+        val page = dao.queryPage("single:u1:u2", beforeTime = null, limit = 20)
+
+        assertEquals(listOf("newer-failed-upload", "older-sent"), page.map { it.messageId })
+    }
+
+    @Test
     fun ackUpdatesMessageStatusAndServerSeq() {
         val dao = InMemoryMessageDao()
         dao.insertOrIgnore(sampleMessage(messageId = "m1", createdAt = 100))

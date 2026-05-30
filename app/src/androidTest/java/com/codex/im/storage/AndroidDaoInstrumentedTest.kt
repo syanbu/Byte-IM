@@ -49,6 +49,31 @@ class AndroidDaoInstrumentedTest {
     }
 
     @Test
+    fun androidMessageDaoOrdersFailedUploadByCreateTimeWhenServerSeqIsMissing() {
+        val dao = AndroidMessageDao(database)
+        dao.insertOrIgnore(
+            message(
+                messageId = "older-sent",
+                createdAt = 1_000L,
+                serverSeq = 8L,
+                status = MessageStatus.SENT
+            )
+        )
+        dao.insertOrIgnore(
+            message(
+                messageId = "newer-failed-upload",
+                createdAt = 2_000L,
+                serverSeq = null,
+                status = MessageStatus.UPLOAD_FAILED
+            )
+        )
+
+        val page = dao.queryPage("single:u1:u2", beforeTime = null, limit = 20)
+
+        assertEquals(listOf("newer-failed-upload", "older-sent"), page.map { it.messageId })
+    }
+
+    @Test
     fun androidConversationDaoClearsUnreadAndUsesStableLatestOrdering() {
         val dao = AndroidConversationDao(database)
 
@@ -104,7 +129,9 @@ class AndroidDaoInstrumentedTest {
         conversationId: String = "single:u1:u2",
         peerId: String = "u2",
         content: String = "hello",
-        createdAt: Long
+        createdAt: Long,
+        serverSeq: Long? = null,
+        status: MessageStatus = MessageStatus.RECEIVED
     ): ChatMessage {
         return ChatMessage(
             messageId = messageId,
@@ -112,9 +139,9 @@ class AndroidDaoInstrumentedTest {
             senderId = peerId,
             receiverId = "u1",
             clientSeq = createdAt,
-            serverSeq = null,
+            serverSeq = serverSeq,
             content = content,
-            status = MessageStatus.RECEIVED,
+            status = status,
             direction = MessageDirection.INCOMING,
             createdAt = createdAt,
             updatedAt = createdAt

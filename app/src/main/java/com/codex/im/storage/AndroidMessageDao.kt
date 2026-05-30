@@ -32,24 +32,16 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             args,
             null,
             null,
-            """
-            CASE
-              WHEN server_seq IS NULL AND status IN ('UPLOADING', 'UPLOAD_FAILED', 'SENDING', 'FAILED') THEN 0
-              WHEN server_seq IS NOT NULL THEN 1
-              ELSE 2
-            END ASC,
-            server_seq DESC,
-            created_at DESC,
-            client_seq DESC,
-            message_id DESC
-            """.trimIndent(),
-            limit.toString()
+            "created_at DESC, server_seq DESC, client_seq DESC, message_id DESC",
+            null
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
                     add(cursor.toChatMessage())
                 }
             }
+                .let { MessageOrderingPolicy.sortNewestFirst(it) }
+                .take(limit)
         }
     }
 
@@ -91,7 +83,7 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             null,
             """
             CASE
-              WHEN server_seq IS NULL AND status IN ('UPLOADING', 'UPLOAD_FAILED', 'SENDING', 'FAILED') THEN 0
+              WHEN server_seq IS NULL AND status IN ('UPLOADING', 'SENDING') THEN 0
               WHEN server_seq IS NOT NULL THEN 1
               ELSE 2
             END ASC,
@@ -100,13 +92,15 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             client_seq DESC,
             message_id DESC
             """.trimIndent(),
-            limit.toString()
+            null
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
                     add(cursor.toChatMessage())
                 }
             }
+                .let { MessageOrderingPolicy.sortNewestFirst(it) }
+                .take(limit)
         }
     }
 

@@ -420,7 +420,7 @@ class ChatViewModel(
         return (current + incoming)
             .associateBy { it.messageId }
             .values
-            .sortedWith(MessageOrderingPolicy.newestFirst)
+            .let { MessageOrderingPolicy.sortNewestFirst(it) }
             .take(MAX_RETAINED_MESSAGES)
     }
 
