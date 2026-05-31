@@ -30,7 +30,7 @@ fun GroupCreateScreen(
     state: GroupCreateUiState,
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
-    onCreated: () -> Unit
+    onCreated: (String) -> Unit
 ) {
     LaunchedEffect(viewModel) {
         viewModel.start()
@@ -41,9 +41,9 @@ fun GroupCreateScreen(
         }
     }
     LaunchedEffect(state.createdConversationId) {
-        if (state.createdConversationId != null) {
+        state.createdConversationId?.let { conversationId ->
             viewModel.consumeCreatedConversation()
-            onCreated()
+            onCreated(conversationId)
         }
     }
     BackHandler(onBack = onBack)
@@ -61,11 +61,18 @@ fun GroupCreateScreen(
         ) {
             Text(text = "发起群聊", style = MaterialTheme.typography.headlineSmall)
             Button(
-                enabled = state.canCreate,
+                enabled = state.canCreate && !state.isCreating,
                 onClick = { viewModel.createGroup() }
             ) {
-                Text(text = "创建")
+                Text(text = if (state.isCreating) "创建中" else "创建")
             }
+        }
+        if (state.errorMessage != null) {
+            Text(
+                text = state.errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(state.contacts, key = { it.userId }) { item ->

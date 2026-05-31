@@ -20,8 +20,18 @@ import com.codex.im.profile.ProfileApi
 import com.codex.im.profile.ProfileBatchResult
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.profile.ProfileResult
+import com.codex.im.group.GroupCreateResult
+import com.codex.im.group.GroupListResult
+import com.codex.im.group.GroupRepository
+import com.codex.im.group.GroupResult
 import com.codex.im.storage.ChatMessage
+import com.codex.im.storage.Conversation
+import com.codex.im.storage.ConversationType
+import com.codex.im.storage.GroupInfo
+import com.codex.im.storage.GroupMember
+import com.codex.im.storage.GroupMemberRole
 import com.codex.im.storage.InMemoryConversationDao
+import com.codex.im.storage.InMemoryGroupDao
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
 import com.codex.im.storage.InMemoryUserProfileDao
@@ -93,6 +103,81 @@ class ChatViewModelTest {
 
         assertEquals("Megumi", fixture.viewModel.state.value.peerName)
         assertEquals("https://example.com/megumi.jpg", fixture.viewModel.state.value.peerAvatarUrl)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startExposesGroupTitleFromConversation() = runTest {
+        val fixture = Fixture(this, initialPeerId = "group:g_1001")
+        fixture.conversationDao.upsertConversation(
+            Conversation(
+                conversationId = "group:g_1001",
+                peerId = "group:g_1001",
+                peerName = "群聊(2)",
+                type = ConversationType.GROUP,
+                title = "群聊(2)",
+                lastMessageId = null,
+                lastMessagePreview = "已创建群聊",
+                lastMessageTime = 1_000L,
+                unreadCount = 0,
+                mentionUnreadCount = 0,
+                updatedAt = 1_000L
+            )
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals("群聊(2)", fixture.viewModel.state.value.peerName)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun repositoryUpdateRefreshesIncomingGroupSenderProfiles() = runTest {
+        val fixture = Fixture(
+            this,
+            initialPeerId = "group:g_1001",
+            profileApi = FakeProfileApi(
+                profiles = listOf(
+                    UserProfile(
+                        userId = "13900113900",
+                        phone = "13900113900",
+                        nickname = "Alice",
+                        avatarUrl = "https://example.com/alice.jpg",
+                        avatarUpdatedAt = 2_000L,
+                        updatedAt = 2_000L
+                    )
+                )
+            )
+        )
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 12,
+                body = """
+                    {
+                      "messageId":"group-remote-profile-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"hello from Alice",
+                      "mentionedUserIds":[],
+                      "timestamp":2000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        runCurrent()
+
+        val senderProfile = fixture.viewModel.state.value.senderProfiles["13900113900"]
+        assertEquals("Alice", senderProfile?.nickname)
+        assertEquals("https://example.com/alice.jpg", senderProfile?.avatarUrl)
     }
 
     @Test
@@ -188,6 +273,175 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(listOf("hi 13800113800"), fixture.viewModel.state.value.messages.map { it.content })
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun groupChatSendsGroupMessageWithoutCreatingSingleConversation() = runTest {
+        val fixture = Fixture(this, initialPeerId = "group:g_1001")
+
+        fixture.viewModel.sendText("hello group", now = 1_000L)
+        runCurrent()
+
+        val stored = fixture.messageDao.queryPage("group:g_1001", null, 20).single()
+        assertEquals(ConversationType.GROUP, stored.conversationType)
+        assertEquals("g_1001", stored.groupId)
+        assertEquals("g_1001", stored.receiverId)
+        assertEquals(listOf("group:g_1001"), fixture.conversationDao.listConversations(limit = 20).map { it.conversationId })
+        val packetBody = fixture.connection.sentPackets.single().body.decodeToString()
+        assertTrue(packetBody.contains(""""conversationType":"GROUP""""))
+        assertTrue(packetBody.contains(""""groupId":"g_1001""""))
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun groupChatSendsImageUnderGroupConversation() = runTest {
+        val fixture = Fixture(this, initialPeerId = "group:g_1001")
+
+        fixture.viewModel.sendImage(
+            SelectedChatImage(
+                originalBytes = byteArrayOf(1, 2, 3),
+                thumbnailBytes = byteArrayOf(4, 5, 6),
+                localOriginalPath = "cache/group-original.jpg",
+                localThumbnailPath = "cache/group-thumb.jpg",
+                width = 1440,
+                height = 960,
+                mimeType = "image/jpeg"
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+
+        val stored = fixture.messageDao.queryPage("group:g_1001", null, 20).single()
+        assertEquals(ConversationType.GROUP, stored.conversationType)
+        assertEquals(MessageType.IMAGE, stored.type)
+        assertEquals("g_1001", stored.groupId)
+        assertEquals(listOf("group:g_1001"), fixture.conversationDao.listConversations(limit = 20).map { it.conversationId })
+        val packetBody = fixture.connection.sentPackets.single().body.decodeToString()
+        assertTrue(packetBody.contains(""""conversationType":"GROUP""""))
+        assertTrue(packetBody.contains(""""groupId":"g_1001""""))
+        assertTrue(packetBody.contains(""""type":"IMAGE""""))
+        assertTrue(packetBody.contains(""""imageUrl":"https://oss.example.com/origin.jpg""""))
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun groupChatLoadsMentionMembersAndSendsMentionMetadata() = runTest {
+        val fixture = Fixture(
+            this,
+            initialPeerId = "group:g_1001",
+            includeGroupRepository = true,
+            profileApi = FakeProfileApi(
+                profiles = listOf(
+                    UserProfile(
+                        userId = "13900113900",
+                        phone = "13900113900",
+                        nickname = "ByteDance2",
+                        avatarUrl = "https://example.com/b.jpg",
+                        avatarUpdatedAt = 1_000L,
+                        updatedAt = 1_000L
+                    )
+                )
+            )
+        )
+        fixture.seedGroupMembers()
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(
+            listOf("13800113800", "ByteDance2", "ZhangSan"),
+            fixture.viewModel.state.value.mentionMembers.map { it.displayName }
+        )
+
+        fixture.viewModel.sendText("hello @ByteDance2", mentionedUserIds = listOf("13900113900"), now = 1_000L)
+        runCurrent()
+
+        val stored = fixture.messageDao.queryPage("group:g_1001", null, 20).single()
+        assertEquals(listOf("13900113900"), stored.mentionedUserIds)
+        val packetBody = fixture.connection.sentPackets.single().body.decodeToString()
+        assertTrue(packetBody.contains(""""mentionedUserIds":["13900113900"]"""))
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun groupChatMentionMembersIncludeCurrentUserForIncomingMentionRendering() = runTest {
+        val fixture = Fixture(
+            this,
+            initialPeerId = "group:g_1001",
+            includeGroupRepository = true,
+            profileApi = FakeProfileApi(
+                profiles = listOf(
+                    UserProfile(
+                        userId = "13800113800",
+                        phone = "13800113800",
+                        nickname = "userB",
+                        avatarUrl = null,
+                        avatarUpdatedAt = 1_000L,
+                        updatedAt = 1_000L
+                    )
+                )
+            )
+        )
+        fixture.seedGroupMembers()
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 12,
+                body = """
+                    {
+                      "messageId":"group-mention-me-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"@13800113800 11",
+                      "mentionedUserIds":["13800113800"],
+                      "timestamp":2000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(
+            listOf("userB"),
+            fixture.viewModel.state.value.mentionMembers
+                .filter { it.userId == "13800113800" }
+                .map { it.displayName }
+        )
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun groupChatStartLoadsMessagesFromGroupConversation() = runTest {
+        val fixture = Fixture(this, initialPeerId = "group:g_1001")
+        fixture.messageDao.insertOrIgnore(
+            ChatMessage(
+                messageId = "group-local-1",
+                conversationId = "group:g_1001",
+                senderId = "13800113800",
+                receiverId = "g_1001",
+                clientSeq = 1,
+                serverSeq = 10,
+                content = "group history",
+                status = MessageStatus.SENT,
+                direction = MessageDirection.OUTGOING,
+                createdAt = 1_000L,
+                updatedAt = 1_000L,
+                conversationType = ConversationType.GROUP,
+                groupId = "g_1001"
+            )
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(listOf("group history"), fixture.viewModel.state.value.messages.map { it.content })
     }
 
     @Test
@@ -713,20 +967,25 @@ class ChatViewModelTest {
     private class Fixture(
         scope: TestScope,
         initialPeerId: String? = "13900113900",
+        profileApi: ProfileApi = FakeProfileApi(),
         val uploadApi: FakeImageUploadApi = FakeImageUploadApi(),
         thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache,
+        includeGroupRepository: Boolean = false,
         val validSessionProvider: suspend () -> AuthSession? = {
             AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L)
         }
     ) {
         val connection = FakeConnection()
         val messageDao = InMemoryMessageDao()
+        val conversationDao = InMemoryConversationDao()
         val pendingDao = InMemoryPendingMessageDao()
         val profileDao = InMemoryUserProfileDao()
-        private val profileRepository = ProfileRepository(profileDao, FakeProfileApi())
+        val groupDao = InMemoryGroupDao()
+        private val profileRepository = ProfileRepository(profileDao, profileApi)
+        private val groupRepository = FakeGroupRepository(groupDao).takeIf { includeGroupRepository }
         val repository = MessageRepository(
             messageDao = messageDao,
-            conversationDao = InMemoryConversationDao(),
+            conversationDao = conversationDao,
             pendingMessageDao = pendingDao,
             connection = connection,
             messageIdGenerator = MessageIdGenerator(startCounter = 1),
@@ -739,6 +998,7 @@ class ChatViewModelTest {
                 repository = repository,
                 connection = connection,
                 profileRepository = profileRepository,
+                groupRepository = groupRepository,
                 imageUploadApi = uploadApi,
                 validSessionProvider = validSessionProvider,
                 scope = scope.backgroundScope,
@@ -750,6 +1010,7 @@ class ChatViewModelTest {
                 repository = repository,
                 connection = connection,
                 profileRepository = profileRepository,
+                groupRepository = groupRepository,
                 initialPeerId = initialPeerId,
                 imageUploadApi = uploadApi,
                 validSessionProvider = validSessionProvider,
@@ -779,6 +1040,40 @@ class ChatViewModelTest {
                 )
             }
         }
+
+        fun seedGroupMembers() {
+            groupDao.upsertGroup(GroupInfo("g_1001", "群聊(3)", null, "13800113800", 1_000L, 1_000L))
+            groupDao.replaceMembers(
+                "g_1001",
+                listOf(
+                    GroupMember("g_1001", "13800113800", "Me", null, GroupMemberRole.OWNER, 1_000L, 1_000L),
+                    GroupMember("g_1001", "13900113900", "ByteDance2", null, GroupMemberRole.MEMBER, 1_000L, 1_000L),
+                    GroupMember("g_1001", "17724734511", "ZhangSan", null, GroupMemberRole.MEMBER, 1_000L, 1_000L)
+                )
+            )
+        }
+    }
+
+    private class FakeGroupRepository(
+        private val groupDao: InMemoryGroupDao
+    ) : GroupRepository {
+        override suspend fun createGroup(
+            accessToken: String,
+            ownerId: String,
+            name: String,
+            memberUserIds: List<String>,
+            now: Long
+        ): GroupCreateResult = GroupCreateResult.Failure("unused")
+
+        override suspend fun renameGroup(accessToken: String, groupId: String, name: String): GroupResult {
+            return GroupResult.Failure("unused")
+        }
+
+        override suspend fun syncGroups(accessToken: String): List<GroupInfo> = emptyList()
+
+        override suspend fun syncMembers(accessToken: String, groupId: String): List<GroupMember> = groupDao.members(groupId)
+
+        override fun localMembers(groupId: String): List<GroupMember> = groupDao.members(groupId)
     }
 
     private class FakeConnection : ImConnection {
@@ -905,13 +1200,17 @@ class ChatViewModelTest {
         )
     }
 
-    private class FakeProfileApi : ProfileApi {
+    private class FakeProfileApi(
+        profiles: List<UserProfile> = emptyList()
+    ) : ProfileApi {
+        private val profilesById = profiles.associateBy { it.userId }
+
         override suspend fun me(accessToken: String): ProfileResult = ProfileResult.Failure("unused")
 
         override suspend fun user(accessToken: String, userId: String): ProfileResult = ProfileResult.Failure("unused")
 
         override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
-            return ProfileBatchResult.Success(emptyList())
+            return ProfileBatchResult.Success(userIds.mapNotNull(profilesById::get))
         }
 
         override suspend fun updateMe(

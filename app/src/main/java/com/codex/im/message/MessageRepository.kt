@@ -2,10 +2,12 @@ package com.codex.im.message
 
 import com.codex.im.MessagesTabUnreadBadgeSource
 import com.codex.im.connection.ImConnection
+import com.codex.im.group.GroupCreateResult
 import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.Conversation
+import com.codex.im.storage.ConversationType
 import com.codex.im.storage.ConversationDao
 import com.codex.im.storage.MessageDao
 import com.codex.im.storage.MessageDirection
@@ -76,6 +78,56 @@ class MessageRepository(
         return message
     }
 
+    fun sendGroupText(
+        senderId: String,
+        groupId: String,
+        content: String,
+        mentionedUserIds: List<String>,
+        now: Long
+    ): ChatMessage {
+        val trimmedGroupId = groupId.trim()
+        require(trimmedGroupId.isNotEmpty()) { "groupId is required" }
+        val conversationId = groupConversationIdFor(trimmedGroupId)
+        val normalizedMentions = mentionedUserIds
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val message = ChatMessage(
+            messageId = messageIdGenerator.next(senderId, now),
+            conversationId = conversationId,
+            senderId = senderId,
+            receiverId = trimmedGroupId,
+            clientSeq = seqGenerator.next(conversationId),
+            serverSeq = null,
+            content = content,
+            status = MessageStatus.SENDING,
+            direction = MessageDirection.OUTGOING,
+            createdAt = now,
+            updatedAt = now,
+            conversationType = ConversationType.GROUP,
+            groupId = trimmedGroupId,
+            mentionedUserIds = normalizedMentions
+        )
+        val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = message.toSendBody().toByteArray())
+        transactionRunner.runInTransaction {
+            messageDao.insertOrIgnore(message)
+            conversationDao.upsertFromMessage(message, incrementUnread = false)
+            pendingMessageDao.upsert(
+                PendingMessage(
+                    messageId = message.messageId,
+                    packetCmd = packet.cmd,
+                    packetBody = packet.body.decodeToString(),
+                    retryCount = 0,
+                    nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
+                    createdAt = now
+                )
+            )
+        }
+        notifyConversationChanged()
+        connection.send(packet)
+        return message
+    }
+
     fun createLocalImageMessage(
         senderId: String,
         receiverId: String,
@@ -105,6 +157,48 @@ class MessageRepository(
             mimeType = mimeType,
             localOriginalPath = localOriginalPath,
             localThumbnailPath = localThumbnailPath
+        )
+        transactionRunner.runInTransaction {
+            messageDao.insertOrIgnore(message)
+            conversationDao.upsertFromMessage(message, incrementUnread = false)
+        }
+        notifyConversationChanged()
+        return message
+    }
+
+    fun createLocalGroupImageMessage(
+        senderId: String,
+        groupId: String,
+        localOriginalPath: String,
+        localThumbnailPath: String,
+        imageWidth: Int,
+        imageHeight: Int,
+        mimeType: String,
+        now: Long
+    ): ChatMessage {
+        val trimmedGroupId = groupId.trim()
+        require(trimmedGroupId.isNotEmpty()) { "groupId is required" }
+        val conversationId = groupConversationIdFor(trimmedGroupId)
+        val message = ChatMessage(
+            messageId = messageIdGenerator.next(senderId, now),
+            conversationId = conversationId,
+            senderId = senderId,
+            receiverId = trimmedGroupId,
+            clientSeq = seqGenerator.next(conversationId),
+            serverSeq = null,
+            content = IMAGE_PLACEHOLDER_CONTENT,
+            status = MessageStatus.UPLOADING,
+            direction = MessageDirection.OUTGOING,
+            createdAt = now,
+            updatedAt = now,
+            type = MessageType.IMAGE,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            mimeType = mimeType,
+            localOriginalPath = localOriginalPath,
+            localThumbnailPath = localThumbnailPath,
+            conversationType = ConversationType.GROUP,
+            groupId = trimmedGroupId
         )
         transactionRunner.runInTransaction {
             messageDao.insertOrIgnore(message)
@@ -230,6 +324,11 @@ class MessageRepository(
             .filter { it.isReadyForChatDisplay() }
     }
 
+    fun historyPageByConversationId(conversationId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
+        return messageDao.queryPage(conversationId, beforeTime, limit)
+            .filter { it.isReadyForChatDisplay() }
+    }
+
     fun missingIncomingImageThumbnails(userId: String, peerId: String, limit: Int): List<ChatMessage> {
         return messageDao.queryIncomingImagesMissingLocalThumbnail(
             conversationId = conversationIdFor(userId, peerId),
@@ -250,6 +349,8 @@ class MessageRepository(
     }
 
     fun conversations(limit: Int = 50) = conversationDao.listConversations(limit)
+
+    fun conversation(conversationId: String): Conversation? = conversationDao.findConversation(conversationId)
 
     fun createLocalGroupConversation(
         creatorUserId: String,
@@ -278,8 +379,36 @@ class MessageRepository(
         return conversation
     }
 
+    fun persistServerGroup(result: GroupCreateResult.Success, now: Long = System.currentTimeMillis()): Conversation {
+        val group = result.group
+        val conversationId = groupConversationIdFor(group.groupId)
+        val conversation = Conversation(
+            conversationId = conversationId,
+            peerId = conversationId,
+            peerName = group.name,
+            type = ConversationType.GROUP,
+            title = group.name,
+            avatarUrl = group.avatarUrl,
+            lastMessageId = null,
+            lastMessagePreview = "已创建群聊",
+            lastMessageTime = now,
+            unreadCount = 0,
+            mentionUnreadCount = 0,
+            updatedAt = now
+        )
+        conversationDao.upsertConversation(conversation)
+        notifyConversationChanged()
+        return conversation
+    }
+
     fun conversationPeerReadCursor(userId: String, peerId: String): Long? {
         val conversationId = conversationIdFor(userId, peerId)
+        return conversationDao.listConversations(limit = 100)
+            .firstOrNull { it.conversationId == conversationId }
+            ?.peerReadUpToServerSeq
+    }
+
+    fun conversationPeerReadCursorByConversationId(conversationId: String): Long? {
         return conversationDao.listConversations(limit = 100)
             .firstOrNull { it.conversationId == conversationId }
             ?.peerReadUpToServerSeq
@@ -346,16 +475,27 @@ class MessageRepository(
 
     fun openConversation(currentUserId: String, peerId: String, now: Long = System.currentTimeMillis()): String {
         val conversationId = conversationIdFor(currentUserId, peerId)
+        return openConversationById(currentUserId, conversationId, peerId, now)
+    }
+
+    fun openConversationById(
+        currentUserId: String,
+        conversationId: String,
+        peerId: String? = null,
+        now: Long = System.currentTimeMillis()
+    ): String {
         activeConversationId = conversationId
         activeUserId = currentUserId
         activePeerId = peerId
         conversationDao.clearUnread(conversationId)
-        sendReadAckIfAdvanced(
-            conversationId = conversationId,
-            readerId = currentUserId,
-            peerId = peerId,
-            readAt = now
-        )
+        if (conversationId.startsWith("single:") && peerId != null) {
+            sendReadAckIfAdvanced(
+                conversationId = conversationId,
+                readerId = currentUserId,
+                peerId = peerId,
+                readAt = now
+            )
+        }
         notifyConversationChanged()
         return conversationId
     }
@@ -392,6 +532,8 @@ class MessageRepository(
         return "single:${participants[0]}:${participants[1]}"
     }
 
+    private fun groupConversationIdFor(groupId: String): String = "group:$groupId"
+
     private fun groupConversationIdFor(creatorUserId: String, memberUserIds: List<String>, now: Long): String {
         val memberHash = memberUserIds.joinToString(",").hashCode().toUInt().toString(16)
         return "group:$creatorUserId:$now:$memberHash"
@@ -413,6 +555,19 @@ class MessageRepository(
         val senderId = body.requiredString("senderId")
         val receiverId = body.requiredString("receiverId")
         val serverSeq = body.optionalLong("serverSeq")
+        val conversationType = body.optionalString("conversationType")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { ConversationType.valueOf(it) }
+            ?: ConversationType.SINGLE
+        val groupId = body.optionalString("groupId")
+        val groupName = body.optionalString("groupName")
+            ?: body.optionalString("groupTitle")
+            ?: body.optionalString("name")
+        val conversationId = when (conversationType) {
+            ConversationType.GROUP -> body.requiredString("conversationId")
+            ConversationType.SINGLE -> conversationIdFor(senderId, receiverId)
+        }
+        val mentionedUserIds = body.optionalStringArray("mentionedUserIds")
         val type = body.optionalString("type")
             ?.takeIf { it.isNotBlank() }
             ?.let { MessageType.valueOf(it) }
@@ -420,7 +575,7 @@ class MessageRepository(
         val imagePayload = body.optionalObject("image")
         val message = ChatMessage(
             messageId = body.requiredString("messageId"),
-            conversationId = conversationIdFor(senderId, receiverId),
+            conversationId = conversationId,
             senderId = senderId,
             receiverId = receiverId,
             clientSeq = body.optionalLong("clientSeq") ?: 0L,
@@ -436,13 +591,19 @@ class MessageRepository(
             imageWidth = imagePayload?.optionalInt("width"),
             imageHeight = imagePayload?.optionalInt("height"),
             mimeType = imagePayload?.optionalString("mimeType"),
-            fileSizeBytes = imagePayload?.optionalLong("sizeBytes")
+            fileSizeBytes = imagePayload?.optionalLong("sizeBytes"),
+            conversationType = conversationType,
+            groupId = groupId,
+            groupName = groupName,
+            mentionedUserIds = mentionedUserIds
         )
         val inserted = messageDao.insertOrIgnore(message)
         if (inserted) {
+            val incrementUnread = message.conversationId != activeConversationId
             conversationDao.upsertFromMessage(
                 message = message,
-                incrementUnread = message.conversationId != activeConversationId
+                incrementUnread = incrementUnread,
+                incrementMentionUnread = incrementUnread && receiverId in mentionedUserIds
             )
             notifyConversationChanged()
         }
@@ -462,7 +623,7 @@ class MessageRepository(
                 )
             )
         }
-        if (message.conversationId == activeConversationId && serverSeq != null) {
+        if (message.conversationType == ConversationType.SINGLE && message.conversationId == activeConversationId && serverSeq != null) {
             val readerId = activeUserId ?: receiverId
             val peerId = activePeerId ?: senderId
             sendReadAckIfAdvanced(message.conversationId, readerId, peerId, timestamp)
@@ -565,6 +726,38 @@ class MessageRepository(
     }
 
     private fun ChatMessage.toSendBody(): String {
+        if (conversationType == ConversationType.GROUP) {
+            val imageJson = if (type == MessageType.IMAGE) {
+                """
+                  "image":{
+                    "imageUrl":"${imageUrl.orEmpty().escapeJson()}",
+                    "thumbnailUrl":"${thumbnailUrl.orEmpty().escapeJson()}",
+                    "width":${imageWidth ?: 0},
+                    "height":${imageHeight ?: 0},
+                    "mimeType":"${mimeType.orEmpty().escapeJson()}",
+                    "sizeBytes":${fileSizeBytes ?: 0}
+                  },
+                """
+            } else {
+                ""
+            }
+            return """
+                {
+                  "messageId":"${messageId.escapeJson()}",
+                  "conversationId":"${conversationId.escapeJson()}",
+                  "conversationType":"GROUP",
+                  "groupId":"${groupId.orEmpty().escapeJson()}",
+                  "senderId":"${senderId.escapeJson()}",
+                  "receiverId":"${receiverId.escapeJson()}",
+                  "clientSeq":$clientSeq,
+                  "type":"${type.name}",
+                  "content":"${content.escapeJson()}",
+                  $imageJson
+                  "mentionedUserIds":${mentionedUserIds.toJsonArray()},
+                  "timestamp":$createdAt
+                }
+            """.trimIndent()
+        }
         if (type == MessageType.IMAGE) {
             return """
                 {
@@ -631,8 +824,25 @@ class MessageRepository(
         return if (value.isJsonObject) value.asJsonObject else null
     }
 
+    private fun JsonObject.optionalStringArray(name: String): List<String> {
+        val value = get(name) ?: return emptyList()
+        if (!value.isJsonArray) {
+            return emptyList()
+        }
+        return value.asJsonArray
+            .mapNotNull { element ->
+                if (element.isJsonPrimitive && element.asJsonPrimitive.isString) element.asString else null
+            }
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
     private fun String.escapeJson(): String {
         return replace("\\", "\\\\").replace("\"", "\\\"")
+    }
+
+    private fun List<String>.toJsonArray(): String {
+        return joinToString(prefix = "[", postfix = "]") { value -> "\"${value.escapeJson()}\"" }
     }
 
     private companion object {

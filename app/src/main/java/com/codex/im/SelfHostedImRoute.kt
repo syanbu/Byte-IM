@@ -9,17 +9,28 @@ sealed class SelfHostedImRoute(val route: String) {
 
     data object Me : SelfHostedImRoute("me")
 
-    data object Chat : SelfHostedImRoute("chat/{peerUserId}") {
-        const val PEER_USER_ID_ARG = "peerUserId"
+    data object Chat : SelfHostedImRoute("chat/{conversationId}") {
+        const val CONVERSATION_ID_ARG = "conversationId"
+        const val PEER_USER_ID_ARG = CONVERSATION_ID_ARG
 
         val pattern: String = route
 
-        fun createRoute(peerUserId: String): String? {
-            val trimmedPeerUserId = peerUserId.trim()
-            if (trimmedPeerUserId.isEmpty()) {
+        fun createRoute(conversationId: String): String? {
+            val trimmedConversationId = conversationId.trim()
+            if (trimmedConversationId.isEmpty()) {
                 return null
             }
-            return "chat/$trimmedPeerUserId"
+            return "chat/$trimmedConversationId"
+        }
+
+        fun createSingleRoute(currentUserId: String, peerUserId: String): String? {
+            val current = currentUserId.trim()
+            val peer = peerUserId.trim()
+            if (current.isEmpty() || peer.isEmpty()) {
+                return null
+            }
+            val participants = listOf(current, peer).sorted()
+            return createRoute("single:${participants[0]}:${participants[1]}")
         }
     }
 }

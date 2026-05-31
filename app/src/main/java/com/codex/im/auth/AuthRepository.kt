@@ -3,12 +3,15 @@ package com.codex.im.auth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class AuthRepository(
     private val authApi: AuthApi,
     private val tokenStore: TokenStore,
     private val nowMillis: () -> Long = { System.currentTimeMillis() }
 ) {
+    private val sessionRefreshMutex = Mutex()
     private val mutableSessionState = MutableStateFlow<AuthSession?>(null)
     val sessionState: StateFlow<AuthSession?> = mutableSessionState.asStateFlow()
 
@@ -39,32 +42,34 @@ class AuthRepository(
     }
 
     suspend fun ensureValidSession(): AuthSession? {
-        val session = readLocalSession() ?: return null
-        if (session.accessExpiresAtMillis > nowMillis()) {
-            mutableSessionState.value = session
-            return session
-        }
-        return when (val result = authApi.refresh(session.refreshToken)) {
-            is AuthResult.Success -> {
-                if (!result.session.isRestorable(nowMillis())) {
+        return sessionRefreshMutex.withLock {
+            val session = readLocalSession() ?: return@withLock null
+            if (session.accessExpiresAtMillis > nowMillis()) {
+                mutableSessionState.value = session
+                return@withLock session
+            }
+            when (val result = authApi.refresh(session.refreshToken)) {
+                is AuthResult.Success -> {
+                    if (!result.session.isRestorable(nowMillis())) {
+                        clearStoredSession()
+                        null
+                    } else {
+                        saveSession(result.session)
+                        result.session
+                    }
+                }
+                is AuthResult.Failure -> {
+                    if (result.shouldClearStoredSession()) {
+                        clearStoredSession()
+                    } else {
+                        mutableSessionState.value = session
+                    }
+                    null
+                }
+                AuthResult.LoggedOut -> {
                     clearStoredSession()
                     null
-                } else {
-                    saveSession(result.session)
-                    result.session
                 }
-            }
-            is AuthResult.Failure -> {
-                if (result.shouldClearStoredSession()) {
-                    clearStoredSession()
-                } else {
-                    mutableSessionState.value = session
-                }
-                null
-            }
-            AuthResult.LoggedOut -> {
-                clearStoredSession()
-                null
             }
         }
     }

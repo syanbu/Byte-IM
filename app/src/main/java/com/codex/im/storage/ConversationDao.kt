@@ -1,11 +1,13 @@
 package com.codex.im.storage
 
 interface ConversationDao {
-    fun upsertFromMessage(message: ChatMessage, incrementUnread: Boolean)
+    fun upsertFromMessage(message: ChatMessage, incrementUnread: Boolean, incrementMentionUnread: Boolean = false)
 
     fun upsertConversation(conversation: Conversation)
 
     fun listConversations(limit: Int): List<Conversation>
+
+    fun findConversation(conversationId: String): Conversation?
 
     fun clearUnread(conversationId: String)
 
@@ -19,27 +21,48 @@ interface ConversationDao {
 class InMemoryConversationDao : ConversationDao {
     private val conversations = linkedMapOf<String, Conversation>()
 
-    override fun upsertFromMessage(message: ChatMessage, incrementUnread: Boolean) {
+    override fun upsertFromMessage(message: ChatMessage, incrementUnread: Boolean, incrementMentionUnread: Boolean) {
         val current = conversations[message.conversationId]
-        val peerId = if (message.direction == MessageDirection.INCOMING) message.senderId else message.receiverId
+        val isGroup = message.conversationType == ConversationType.GROUP
+        val peerId = if (isGroup) {
+            message.conversationId
+        } else if (message.direction == MessageDirection.INCOMING) {
+            message.senderId
+        } else {
+            message.receiverId
+        }
+        val displayName = if (isGroup) {
+            message.groupName?.takeIf { it.isNotBlank() } ?: message.conversationId
+        } else {
+            peerId
+        }
         val shouldReplacePreview = current == null || message.createdAt >= current.lastMessageTime
         val unreadCount = (current?.unreadCount ?: 0) + if (incrementUnread) 1 else 0
+        val mentionUnreadCount = (current?.mentionUnreadCount ?: 0) + if (incrementMentionUnread) 1 else 0
         val preview = if (message.type == MessageType.IMAGE) "[图片]" else message.content
         val next = if (shouldReplacePreview) {
             Conversation(
                 conversationId = message.conversationId,
                 peerId = current?.peerId ?: peerId,
-                peerName = current?.peerName ?: peerId,
+                peerName = current?.peerName ?: displayName,
+                type = current?.type ?: message.conversationType,
+                title = current?.title ?: displayName,
+                avatarUrl = current?.avatarUrl,
                 lastMessageId = message.messageId,
                 lastMessagePreview = preview,
                 lastMessageTime = message.createdAt,
                 unreadCount = unreadCount,
+                mentionUnreadCount = mentionUnreadCount,
                 updatedAt = message.updatedAt,
                 peerReadUpToServerSeq = current?.peerReadUpToServerSeq,
                 peerReadAt = current?.peerReadAt
             )
         } else {
-            current.copy(unreadCount = unreadCount, updatedAt = message.updatedAt)
+            current.copy(
+                unreadCount = unreadCount,
+                mentionUnreadCount = mentionUnreadCount,
+                updatedAt = message.updatedAt
+            )
         }
         conversations[message.conversationId] = next
     }
@@ -54,9 +77,11 @@ class InMemoryConversationDao : ConversationDao {
             .take(limit)
     }
 
+    override fun findConversation(conversationId: String): Conversation? = conversations[conversationId]
+
     override fun clearUnread(conversationId: String) {
         val current = conversations[conversationId] ?: return
-        conversations[conversationId] = current.copy(unreadCount = 0)
+        conversations[conversationId] = current.copy(unreadCount = 0, mentionUnreadCount = 0)
     }
 
     override fun totalUnreadCount(): Int = conversations.values.sumOf { it.unreadCount }

@@ -14,18 +14,50 @@ The feature must reuse the current self-hosted IM stack: custom binary WebSocket
 
 ## Current Status
 
-Design ready. Full B10 protocol and storage work is not implemented yet.
+Group chat is implemented for the current B10 pass. @ mention first-pass support is now implemented; richer mention editing can be refined later.
 
 The Messages top-bar work already added the first local entry point for group creation:
 
 - `ConversationListScreen` has a plus menu with `发起群聊`.
 - `SelfHostedImRoute.GroupCreate` opens the local group-create contact picker.
 - `GroupCreateViewModel` and `GroupCreateScreen` let the user select Contacts.
-- `MessageRepository.createLocalGroupConversation(...)` creates a local `group:` conversation row.
+- The initial `MessageRepository.createLocalGroupConversation(...)` local-only path has been replaced for the UI flow by server-backed group creation.
 - `ConversationListViewModel` marks `conversationId.startsWith("group:")` rows as groups.
-- Group rows are intentionally not opened as real chat targets yet.
 
-This B10 design starts from that local foundation and turns it into real group chat.
+Implemented in this B10 slice:
+
+- Android storage models now include `ConversationType`, group id metadata, and `mentionedUserIds`.
+- Android conversations now include group-aware fields and `mentionUnreadCount`.
+- Android SQLite schema now stores conversation type, group id, and mentions JSON for messages.
+- Android repository can send group text and image packets through `SEND_MESSAGE`.
+- Android repository can receive group `RECEIVE_MESSAGE` packets using packet `conversationId` instead of recomputing a single-chat id.
+- Incoming group messages increment `mention_unread_count` only when the current receiver is mentioned and the group is not active.
+- Opening a group conversation clears normal unread and mention unread counts.
+- Conversation list navigation can target `chat/{conversationId}` for both `single:` and `group:` conversations.
+- Mock-server `MessageRouter` can fan out group messages to online group members, queue offline members, reject non-members, and keep duplicate group `messageId` sends idempotent.
+- Mock-server now exposes authenticated group HTTP endpoints backed by SQLite metadata: `POST /groups`, `GET /groups`, `GET /groups/{groupId}`, `PATCH /groups/{groupId}`, and `GET /groups/{groupId}/members`.
+- Mock-server persists group metadata and group members in `data/mock-im-groups.sqlite`.
+- Android now has `GroupApi`, `OkHttpGroupApi`, `GroupJsonParser`, `GroupRepository`, `GroupDao`, and `AndroidGroupDao`.
+- Android SQLite schema now includes `groups` and `group_members`.
+- `GroupCreateViewModel` now obtains a fresh valid token, calls `POST /groups`, persists returned group metadata/members, and inserts a real `GROUP` conversation row with `conversationId = group:<groupId>`.
+- Group chat message rows now render incoming bubble identity from the actual `senderId` profile instead of the group title/avatar.
+- Group chat top bar can rename a group through `PATCH /groups/{groupId}`; other members pick up the latest group name when the conversation list refreshes through `GET /groups`.
+- Fixed the group image send bug: group images now persist under `conversationId = group:<groupId>`, keep `conversationType = GROUP` and `groupId`, and send the image payload through the server group fanout path. The previous behavior incorrectly created a `single:<sender>:group:<groupId>` conversation and sent the image as a single-chat packet to a nonexistent `group:<groupId>` user.
+- Group creation now navigates directly into the new group chat.
+- Group conversation fallback avatars now show `群` instead of the first character of the group name.
+- Group chat loads local/remote group members for the mention picker through `GET /groups/{groupId}/members`.
+- Group chat composer shows a first-pass @ picker when a group draft ends with `@`.
+- Selecting a member inserts `@displayName ` and sends authoritative `mentionedUserIds`.
+- Chat text bubbles highlight mentioned spans using persisted mention user ids plus group member display names.
+- Conversation rows with unread mentions render a red `[有人@我]` prefix, and use the same structured mention display policy as chat bubbles.
+- If token refresh or server group creation fails, the create screen stays put and does not create a local-only group row.
+
+Still pending after this slice:
+
+- Group list/member sync for groups created while another member is offline or on another device.
+- Full group member display.
+- Rich @ editing: search, arbitrary cursor insertion, deleting mention chips as a unit, and better long-list member picker UI.
+- Group read/unread read-receipt semantics are intentionally deferred and should not be implemented in this B10 pass.
 
 ## Agreed Scope
 
@@ -35,7 +67,7 @@ Implement B10 in a focused first pass:
 - Local persistence of group metadata and group members.
 - Conversation list support for real group conversations.
 - Opening a group chat page from the conversation list.
-- Sending and receiving group text messages through the existing `SEND_MESSAGE` command.
+- Sending and receiving group text and image messages through the existing `SEND_MESSAGE` command.
 - Persisting group messages in the same `messages` table.
 - Sender-side retry and `MESSAGE_ACK` behavior for group text messages.
 - Receiver-side `DELIVERY_ACK` per group recipient.
@@ -47,9 +79,9 @@ Implement B10 in a focused first pass:
 ## Explicitly Deferred
 
 - Server-backed group history query.
-- Group image messages.
 - Group recall notification fanout.
 - Group read receipts and read-member list.
+- Group read/unread state beyond local unread counters.
 - Group ownership transfer, admin roles, mute, quit group, remove member.
 - User search or real friend adding.
 - Production-safe database migrations for existing local demo data.
@@ -315,6 +347,7 @@ Add authenticated endpoints:
 - `POST /groups`
 - `GET /groups`
 - `GET /groups/{groupId}`
+- `PATCH /groups/{groupId}`
 - `GET /groups/{groupId}/members`
 
 `POST /groups` request:
@@ -345,19 +378,16 @@ Response:
 
 ### Server Storage
 
-Extend mock-server SQLite storage with:
+Mock-server SQLite storage currently persists group metadata in `data/mock-im-groups.sqlite`:
 
-- `groups`
-- `group_members`
-- accepted group messages
-- group delivery state per recipient
+- `groups(group_id, name, owner_id, created_at, updated_at)`
+- `group_members(group_id, user_id, role, joined_at, updated_at)`
 
-The existing `accepted_messages` table stores one `receiver_id`; group delivery requires one of these options:
+`GroupService` allocates the next `g_...` id from the current maximum persisted group id, so restart does not reuse an existing group id.
 
-1. Add a separate `accepted_message_deliveries(message_id, receiver_id, delivered)`.
-2. Keep `accepted_messages` as message-level metadata and move receiver delivery state entirely into the new table.
+Accepted message and delivery state are persisted in the existing `accepted_messages` table. For group fanout it writes one row per concrete recipient using `PRIMARY KEY(message_id, receiver_id)`, so `DELIVERY_ACK` is tracked per group member and survives mock-server restart.
 
-The second option is cleaner for B10 and still preserves single-chat behavior by writing one delivery row for the single receiver.
+If the server storage is later normalized, accepted message metadata can be split from delivery rows with `accepted_message_deliveries(message_id, receiver_id, delivered)`. The current implementation deliberately keeps per-recipient rows in `accepted_messages` to preserve the existing replay path.
 
 ### Router Behavior
 
@@ -428,9 +458,15 @@ First-pass behavior:
 5. ViewModel records the selected member id in `mentionedUserIds`.
 6. Sending the message persists and transmits both `content` and `mentionedUserIds`.
 
+Current implementation uses a deliberately small first pass: the picker opens when the group draft ends with `@`; selecting a member appends `@displayName ` at the end of the draft. It does not yet support member search, arbitrary cursor insertion, or chip-style deletion.
+
 The picker should only appear in group chats. Single chat keeps the current composer.
 
 Mention metadata is authoritative by user id, not by parsing display text. The display text may change if a member updates their profile; the sent content remains what the sender typed.
+
+`@` messages remain normal `MessageType.TEXT` messages. B10 does not add a separate `MENTION` message type. A mention message is represented as plain text plus `mentionedUserIds`.
+
+The composer normalizes selected mentions by inserting `@displayName ` with a trailing space and moving the cursor after that space. This lets the user continue typing the body text after the mention token.
 
 ## @ Highlight Rendering
 
@@ -441,6 +477,17 @@ Use a small display policy/helper to build an `AnnotatedString` for text bubbles
 - Keep copied text as the original plain `content`.
 
 If the local member display name cannot be resolved, fall back to highlighting any exact `@<userId>` token or leave the text unhighlighted while preserving the stored mention metadata.
+
+Current implementation builds highlight ranges from `mentionedUserIds` and the local group member list. If the display name is unavailable, it falls back to the user id token.
+
+Structured mention display rule:
+
+- If a text message starts with a valid mentioned token, render it as `@displayName bodyText`.
+- Valid tokens are resolved from `mentionedUserIds` and local member/profile names; plain text parsing alone is not authoritative.
+- The stored `content` is not rewritten. For example, persisted content may remain `@13900113900 What`, while UI renders `@ByteDance2 What`.
+- If older/local content contains `@displayName: bodyText` or `@displayName：bodyText`, receivers normalize the display separator to a single space.
+- If the mention token is not at the start, keep the original sentence shape and only replace/highlight the token.
+- If the token has no boundary, such as `@13900113900aaaaaa`, do not treat the suffix as body text and do not merge it into a false mention reminder.
 
 ## @ Me Unread Semantics
 
@@ -465,7 +512,8 @@ Opening the group conversation clears both counts.
 
 Conversation row display:
 
-- If `mentionUnreadCount > 0`, show an `@我` indicator before the preview.
+- If `mentionUnreadCount > 0`, show `[有人@我]` before the preview and render only that label in red.
+- For the preview body, use the last message's persisted `mentionedUserIds` to resolve local/remote profile nicknames and run the same structured mention display policy as chat bubbles. For example, stored `@13900113900 What` displays as `@ByteDance2 What`.
 - Normal unread badge still uses `unreadCount`.
 - Bottom Messages tab total unread remains based on `unread_count`, not `mention_unread_count`, because mentions are a subset of unread messages.
 
@@ -486,10 +534,16 @@ This avoids mixing B10 delivery semantics with a larger group read-cursor design
 For this B10 pass:
 
 - Group text messages are in scope.
-- Group image messages are deferred.
+- Group image messages are now in scope.
 - Existing single-chat image send and receive must keep using the current image payload path.
 
-The protocol shape leaves room for group image messages later by combining `conversationType = GROUP` with `type = IMAGE`.
+Group image messages use the same uploaded `image` payload as single chat, plus `conversationType = GROUP` and `groupId`. They must be persisted locally under `conversationId = group:<groupId>`, not under a derived single-chat conversation id.
+
+Bug note:
+
+- Broken behavior: `ChatViewModel.sendImage()` called the single-chat `createLocalImageMessage(...)` path while `peerId` was `group:g_1001`, producing `single:<sender>:group:g_1001`.
+- Effect: the image row appeared as a separate fake single-chat conversation in Messages and the outgoing packet targeted receiver `group:g_1001` as if it were a user id.
+- Fix: group chat image creation uses `createLocalGroupImageMessage(...)`; upload completion keeps the message as `GROUP` and serializes both group metadata and the `image` payload.
 
 ## Implementation Plan
 
@@ -533,7 +587,9 @@ The protocol shape leaves room for group image messages later by combining `conv
 ### Task 6: Add Android Group Send/Receive
 
 - Add `sendGroupText(...)`.
+- Add `createLocalGroupImageMessage(...)`.
 - Build group message JSON with `mentionedUserIds`.
+- Include `image` payload when `conversationType = GROUP` and `type = IMAGE`.
 - Parse incoming `conversationId`, `conversationType`, `groupId`, and mentions.
 - Persist group messages without recomputing `conversationId` from sender/receiver.
 - Send `DELIVERY_ACK` per received group packet.
@@ -615,6 +671,7 @@ Android unit tests:
 - Group creation persists `groups`, `group_members`, and a `GROUP` conversation row.
 - Group create ViewModel calls the server-backed repository path and does not create a local-only row on failure.
 - `sendGroupText` stores a pending outgoing group message and packet body with mentions.
+- Group image send stores an uploading image under `group:<groupId>` and sends a `GROUP` packet with an `image` payload after upload.
 - Incoming group message uses packet `conversationId` and does not recompute single-chat id.
 - Incoming `@ me` increments both unread and mention unread when inactive.
 - Incoming mention for another user increments only unread.
@@ -664,4 +721,3 @@ Use three accounts on emulator/device sessions:
 - Mention display should not rely on parsing plain text alone; it must persist mentioned user ids.
 - Group creation should stop producing local-only rows once server-backed creation is implemented, otherwise local and server groups can diverge.
 - Existing single-chat flows are mature; B10 should preserve wrappers and tests while gradually introducing target-aware APIs.
-

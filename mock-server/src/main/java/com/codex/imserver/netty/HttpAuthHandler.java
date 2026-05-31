@@ -2,6 +2,7 @@ package com.codex.imserver.netty;
 
 import com.codex.imserver.auth.AuthService;
 import com.codex.imserver.ImServerLogger;
+import com.codex.imserver.group.GroupService;
 import com.codex.imserver.oss.OssUploadService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -27,15 +28,21 @@ import java.util.Optional;
 public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
     private final AuthService authService;
     private final OssUploadService ossUploadService;
+    private final GroupService groupService;
 
     public HttpAuthHandler(AuthService authService) {
         this(authService, new OssUploadService());
     }
 
     public HttpAuthHandler(AuthService authService, OssUploadService ossUploadService) {
+        this(authService, ossUploadService, new GroupService());
+    }
+
+    public HttpAuthHandler(AuthService authService, OssUploadService ossUploadService, GroupService groupService) {
         super(false);
         this.authService = authService;
         this.ossUploadService = ossUploadService;
+        this.groupService = groupService;
     }
 
     @Override
@@ -163,6 +170,63 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
                 if (request.method() == HttpMethod.GET && path.startsWith("/users/")) {
                     String userId = path.substring("/users/".length());
                     writeJson(context, request, HttpResponseStatus.OK, authService.profile(userId));
+                    return;
+                }
+            }
+
+            if (path.startsWith("/groups")) {
+                Optional<String> authenticatedPhone = authenticatedPhone(request);
+                if (authenticatedPhone.isEmpty()) {
+                    writeJson(context, request, HttpResponseStatus.UNAUTHORIZED, authService.failure(401, "Unauthorized"));
+                    return;
+                }
+
+                if (request.method() == HttpMethod.POST && "/groups".equals(path)) {
+                    String body = request.content().toString(CharsetUtil.UTF_8);
+                    JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
+                    JsonArray ids = json.has("memberUserIds") && json.get("memberUserIds").isJsonArray()
+                            ? json.getAsJsonArray("memberUserIds")
+                            : new JsonArray();
+                    List<String> memberUserIds = new ArrayList<>();
+                    ids.forEach(id -> {
+                        if (id.isJsonPrimitive() && id.getAsJsonPrimitive().isString()) {
+                            memberUserIds.add(id.getAsString());
+                        }
+                    });
+                    writeJson(
+                            context,
+                            request,
+                            HttpResponseStatus.OK,
+                            groupService.createGroupJson(
+                                    authenticatedPhone.get(),
+                                    readString(json, "name", ""),
+                                    memberUserIds
+                            )
+                    );
+                    return;
+                }
+
+                if (request.method() == HttpMethod.GET && "/groups".equals(path)) {
+                    writeJson(context, request, HttpResponseStatus.OK, groupService.groupsJson(authenticatedPhone.get()));
+                    return;
+                }
+
+                if (request.method() == HttpMethod.PATCH && path.startsWith("/groups/")) {
+                    String groupId = path.substring("/groups/".length());
+                    String body = request.content().toString(CharsetUtil.UTF_8);
+                    JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
+                    writeJson(context, request, HttpResponseStatus.OK, groupService.renameGroupJson(groupId, authenticatedPhone.get(), readString(json, "name", "")));
+                    return;
+                }
+
+                if (request.method() == HttpMethod.GET && path.startsWith("/groups/")) {
+                    String suffix = path.substring("/groups/".length());
+                    if (suffix.endsWith("/members")) {
+                        String groupId = suffix.substring(0, suffix.length() - "/members".length());
+                        writeJson(context, request, HttpResponseStatus.OK, groupService.membersJson(groupId, authenticatedPhone.get()));
+                        return;
+                    }
+                    writeJson(context, request, HttpResponseStatus.OK, groupService.groupJson(suffix, authenticatedPhone.get()));
                     return;
                 }
             }

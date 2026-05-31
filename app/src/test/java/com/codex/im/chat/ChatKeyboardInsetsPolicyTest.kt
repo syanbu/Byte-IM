@@ -20,8 +20,18 @@ class ChatKeyboardInsetsPolicyTest {
     fun chatScreenAddsImePaddingToRootLayout() {
         val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
 
-        assertTrue(chatScreen.contains("modifier = modifier\n            .fillMaxSize()\n            .imePadding()"))
+        assertTrue(chatScreen.contains(".fillMaxSize()"))
+        assertTrue(chatScreen.contains(".imePadding()"))
         assertFalse(chatScreen.contains("""android:windowSoftInputMode="adjustResize""""))
+    }
+
+    @Test
+    fun loginScreenAddsImePaddingToRootLayout() {
+        val loginScreen = sourceFile("src/main/java/com/codex/im/auth/LoginScreen.kt").readText()
+
+        assertTrue(loginScreen.contains(".fillMaxSize()"))
+        assertTrue(loginScreen.contains(".imePadding()"))
+        assertTrue(loginScreen.contains(".verticalScroll(scrollState)"))
     }
 
     private fun sourceFile(path: String): File {

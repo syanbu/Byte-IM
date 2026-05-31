@@ -5,6 +5,7 @@ import com.codex.im.connection.ImConnection
 import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.ChatMessage
+import com.codex.im.storage.ConversationType
 import com.codex.im.storage.InMemoryConversationDao
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
@@ -393,6 +394,165 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun sendGroupTextStoresPendingGroupMessageAndMentionPayload() {
+        val fixture = Fixture()
+
+        val message = fixture.repository.sendGroupText(
+            senderId = "u1",
+            groupId = "g_1001",
+            content = "@u2 hello",
+            mentionedUserIds = listOf("u2"),
+            now = 1_000L
+        )
+
+        val stored = fixture.messageDao.findByMessageId(message.messageId)
+        assertEquals("group:g_1001", stored?.conversationId)
+        assertEquals(ConversationType.GROUP, stored?.conversationType)
+        assertEquals("g_1001", stored?.groupId)
+        assertEquals(listOf("u2"), stored?.mentionedUserIds)
+        assertEquals(message.messageId, fixture.pendingDao.dueMessages(now = 6_000L, limit = 10).single().messageId)
+        val body = fixture.connection.sentPackets.single().body.decodeToString()
+        assertTrue(body.contains(""""conversationType":"GROUP""""))
+        assertTrue(body.contains(""""groupId":"g_1001""""))
+        assertTrue(body.contains(""""content":"@u2 hello""""))
+        assertTrue(body.contains(""""mentionedUserIds":["u2"]"""))
+    }
+
+    @Test
+    fun incomingGroupMessageUsesPacketConversationIdAndMentionUnread() {
+        val fixture = Fixture()
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"group-remote-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "senderId":"u2",
+                      "receiverId":"u1",
+                      "clientSeq":7,
+                      "serverSeq":90,
+                      "type":"TEXT",
+                      "content":"@u1 hi",
+                      "mentionedUserIds":["u1"],
+                      "timestamp":1500
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        val stored = fixture.messageDao.queryPage("group:g_1001", beforeTime = null, limit = 20).single()
+        val conversation = fixture.conversationDao.listConversations(limit = 20).single()
+        assertEquals(ConversationType.GROUP, stored.conversationType)
+        assertEquals("g_1001", stored.groupId)
+        assertEquals(listOf("u1"), stored.mentionedUserIds)
+        assertEquals("group:g_1001", conversation.conversationId)
+        assertEquals(1, conversation.unreadCount)
+        assertEquals(1, conversation.mentionUnreadCount)
+        assertEquals(
+            """{"messageId":"group-remote-1","conversationId":"group:g_1001","serverSeq":90,"receiverId":"u1"}""",
+            fixture.connection.sentPackets.single().body.decodeToString()
+        )
+    }
+
+    @Test
+    fun incomingGroupMessageCreatesConversationWithGroupTitleFromPacket() {
+        val fixture = Fixture()
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"group-title-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "groupName":"群聊(2)",
+                      "senderId":"13800113800",
+                      "receiverId":"13900113900",
+                      "clientSeq":1,
+                      "serverSeq":93,
+                      "content":"grouptest1111",
+                      "mentionedUserIds":[],
+                      "timestamp":1800
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        val conversation = fixture.conversationDao.findConversation("group:g_1001")
+        assertEquals("group:g_1001", conversation?.conversationId)
+        assertEquals("group:g_1001", conversation?.peerId)
+        assertEquals("群聊(2)", conversation?.peerName)
+        assertEquals("群聊(2)", conversation?.title)
+    }
+
+    @Test
+    fun incomingGroupMentionForOtherUserDoesNotIncrementMentionUnread() {
+        val fixture = Fixture()
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"group-remote-2",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "senderId":"u2",
+                      "receiverId":"u1",
+                      "clientSeq":8,
+                      "serverSeq":91,
+                      "content":"@u3 hi",
+                      "mentionedUserIds":["u3"],
+                      "timestamp":1600
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        val conversation = fixture.conversationDao.listConversations(limit = 20).single()
+        assertEquals(1, conversation.unreadCount)
+        assertEquals(0, conversation.mentionUnreadCount)
+    }
+
+    @Test
+    fun incomingGroupMessageForOpenConversationDoesNotIncrementUnread() {
+        val fixture = Fixture()
+        fixture.repository.openConversationById(currentUserId = "u1", conversationId = "group:g_1001")
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECEIVE_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"group-open-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "senderId":"u2",
+                      "receiverId":"u1",
+                      "clientSeq":9,
+                      "serverSeq":92,
+                      "content":"@u1 while open",
+                      "mentionedUserIds":["u1"],
+                      "timestamp":1700
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        val conversation = fixture.conversationDao.listConversations(limit = 20).single()
+        assertEquals(0, conversation.unreadCount)
+        assertEquals(0, conversation.mentionUnreadCount)
+    }
+
+    @Test
     fun createLocalImageMessageStoresUploadingMessageWithoutPendingRow() {
         val fixture = Fixture()
 
@@ -739,6 +899,64 @@ class MessageRepositoryTest {
         assertTrue(body.contains(""""type":"IMAGE""""))
         assertTrue(body.contains(""""imageUrl":"https://oss.example.com/origin.jpg""""))
         assertTrue(body.contains(""""thumbnailUrl":"https://oss.example.com/thumb.jpg""""))
+    }
+
+    @Test
+    fun createLocalGroupImageMessageStoresUnderGroupConversation() {
+        val fixture = Fixture()
+
+        val message = fixture.repository.createLocalGroupImageMessage(
+            senderId = "u1",
+            groupId = "g_1001",
+            localOriginalPath = "cache/group-original.jpg",
+            localThumbnailPath = "cache/group-thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
+            mimeType = "image/jpeg",
+            now = 1_000L
+        )
+
+        val stored = fixture.messageDao.findByMessageId(message.messageId)
+        assertEquals("group:g_1001", stored?.conversationId)
+        assertEquals(ConversationType.GROUP, stored?.conversationType)
+        assertEquals("g_1001", stored?.groupId)
+        assertEquals("g_1001", stored?.receiverId)
+        assertEquals(listOf("group:g_1001"), fixture.conversationDao.listConversations(limit = 20).map { it.conversationId })
+    }
+
+    @Test
+    fun completeGroupImageUploadAndQueueSendBuildsGroupImagePayloadJson() {
+        val fixture = Fixture()
+        val message = fixture.repository.createLocalGroupImageMessage(
+            senderId = "u1",
+            groupId = "g_1001",
+            localOriginalPath = "cache/group-original.jpg",
+            localThumbnailPath = "cache/group-thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
+            mimeType = "image/jpeg",
+            now = 1_000L
+        )
+
+        fixture.repository.completeImageUploadAndQueueSend(
+            messageId = message.messageId,
+            imageUrl = "https://oss.example.com/group-origin.jpg",
+            thumbnailUrl = "https://oss.example.com/group-thumb.jpg",
+            imageWidth = 1440,
+            imageHeight = 960,
+            mimeType = "image/jpeg",
+            fileSizeBytes = 345_678L,
+            now = 2_000L
+        )
+
+        val body = fixture.connection.sentPackets.single().body.decodeToString()
+        assertTrue(body.contains(""""conversationId":"group:g_1001""""))
+        assertTrue(body.contains(""""conversationType":"GROUP""""))
+        assertTrue(body.contains(""""groupId":"g_1001""""))
+        assertTrue(body.contains(""""receiverId":"g_1001""""))
+        assertTrue(body.contains(""""type":"IMAGE""""))
+        assertTrue(body.contains(""""imageUrl":"https://oss.example.com/group-origin.jpg""""))
+        assertTrue(body.contains(""""thumbnailUrl":"https://oss.example.com/group-thumb.jpg""""))
     }
 
     @Test

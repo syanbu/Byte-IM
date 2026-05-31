@@ -1,6 +1,9 @@
 package com.codex.im.auth
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -238,6 +241,60 @@ class AuthRepositoryTest {
         assertNull(repository.ensureValidSession())
         assertEquals(storedSession, tokenStore.currentSession())
         assertEquals(storedSession, repository.sessionState.value)
+    }
+
+    @Test
+    fun concurrentEnsureValidSessionRefreshesOnlyOnceWhenRefreshTokenRotates() = runTest {
+        val expiredSession = AuthSession(
+            accessToken = "expired-access",
+            refreshToken = "refresh-a",
+            userId = "13800138000",
+            username = "13800138000",
+            accessExpiresAtMillis = 999L,
+            refreshExpiresAtMillis = 3_000L
+        )
+        val refreshedSession = AuthSession(
+            accessToken = "fresh-access",
+            refreshToken = "refresh-b",
+            userId = "13800138000",
+            username = "13800138000",
+            accessExpiresAtMillis = 2_000L,
+            refreshExpiresAtMillis = 3_000L
+        )
+        val tokenStore = InMemoryTokenStore().apply { save(expiredSession) }
+        val refreshStarted = CompletableDeferred<Unit>()
+        val allowRefresh = CompletableDeferred<Unit>()
+        val api = object : AuthApi {
+            var refreshCallCount = 0
+
+            override suspend fun login(phone: String, password: String): AuthResult = AuthResult.Failure("unused")
+
+            override suspend fun register(phone: String, password: String): AuthResult = AuthResult.Failure("unused")
+
+            override suspend fun refresh(refreshToken: String): AuthResult {
+                refreshCallCount += 1
+                refreshStarted.complete(Unit)
+                allowRefresh.await()
+                return if (refreshCallCount == 1) {
+                    AuthResult.Success(refreshedSession)
+                } else {
+                    AuthResult.Failure("Refresh token expired or revoked")
+                }
+            }
+
+            override suspend fun logout(refreshToken: String): AuthResult = AuthResult.LoggedOut
+        }
+        val repository = AuthRepository(api, tokenStore, nowMillis = { 1_000L })
+
+        val first = async { repository.ensureValidSession() }
+        refreshStarted.await()
+        val second = async { repository.ensureValidSession() }
+        allowRefresh.complete(Unit)
+
+        assertEquals(listOf(refreshedSession, refreshedSession), awaitAll(first, second))
+        assertEquals(1, api.refreshCallCount)
+        assertEquals(refreshedSession, tokenStore.currentSession())
+        assertEquals(refreshedSession, repository.sessionState.value)
     }
 
     @Test

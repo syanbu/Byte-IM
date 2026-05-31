@@ -210,11 +210,14 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
         return ContentValues().apply {
             put("message_id", messageId)
             put("conversation_id", conversationId)
+            put("conversation_type", conversationType.name)
+            if (groupId == null) putNull("group_id") else put("group_id", groupId)
             put("sender_id", senderId)
             put("receiver_id", receiverId)
             put("client_seq", clientSeq)
             if (serverSeq == null) putNull("server_seq") else put("server_seq", serverSeq)
             put("content", content)
+            put("mentions_json", mentionedUserIds.toJsonArrayString())
             put("message_type", type.name)
             if (imageUrl == null) putNull("image_url") else put("image_url", imageUrl)
             if (thumbnailUrl == null) putNull("thumbnail_url") else put("thumbnail_url", thumbnailUrl)
@@ -236,6 +239,7 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
 
     private fun Cursor.toChatMessage(): ChatMessage {
         val serverSeqIndex = getColumnIndexOrThrow("server_seq")
+        val groupIdIndex = getColumnIndexOrThrow("group_id")
         val imageUrlIndex = getColumnIndexOrThrow("image_url")
         val thumbnailUrlIndex = getColumnIndexOrThrow("thumbnail_url")
         val imageWidthIndex = getColumnIndexOrThrow("image_width")
@@ -269,7 +273,28 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             localThumbnailPath = if (isNull(localThumbnailPathIndex)) null else getString(localThumbnailPathIndex),
             isRecalled = getInt(getColumnIndexOrThrow("is_recalled")) == 1,
             recalledAt = if (isNull(recalledAtIndex)) null else getLong(recalledAtIndex),
-            recalledBy = if (isNull(recalledByIndex)) null else getString(recalledByIndex)
+            recalledBy = if (isNull(recalledByIndex)) null else getString(recalledByIndex),
+            conversationType = ConversationType.valueOf(getString(getColumnIndexOrThrow("conversation_type"))),
+            groupId = if (isNull(groupIdIndex)) null else getString(groupIdIndex),
+            mentionedUserIds = getString(getColumnIndexOrThrow("mentions_json")).fromJsonArrayString()
         )
+    }
+
+    private fun List<String>.toJsonArrayString(): String {
+        return joinToString(prefix = "[", postfix = "]") { value ->
+            "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        }
+    }
+
+    private fun String?.fromJsonArrayString(): List<String> {
+        if (isNullOrBlank() || this == "[]") {
+            return emptyList()
+        }
+        return trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+            .split(",")
+            .map { it.trim().removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\") }
+            .filter { it.isNotEmpty() }
     }
 }

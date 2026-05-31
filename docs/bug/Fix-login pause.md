@@ -24,6 +24,84 @@
 断网 / refresh 失败 -> 保留本地登录态 -> 进入主界面并显示离线
 ```
 
+## 增量修复（2026-05-31）：并发 refresh 轮换误清登录态
+
+### 现象
+
+在 access token 过期后，客户端理论上会通过 `ensureValidSession()` 自动使用 refresh token 刷新。但实际仍可能出现进入 App 后被拉回登录界面的问题。
+
+### 根因
+
+当前 mock-server 的 refresh token 已改为轮换机制：
+
+```text
+refresh 成功 -> 服务端签发新的 accessToken + refreshToken -> 旧 refreshToken 立即作废
+```
+
+App 进入主界面后，多个模块可能几乎同时请求有效 session：
+
+```text
+WebSocket tokenProvider
+ConversationListViewModel.refresh()
+Profile / Group 同步
+其它需要 accessToken 的页面请求
+```
+
+如果这些协程同时调用 `AuthRepository.ensureValidSession()`，就可能发生：
+
+```text
+协程 A 读取旧 refreshToken -> refresh 成功 -> 保存新 refreshToken
+协程 B 也已读取旧 refreshToken -> refresh 失败：expired or revoked
+旧逻辑把协程 B 的失败当成会话失效 -> clearStoredSession()
+LoginViewModel 收到 sessionState = null -> 回到登录页
+```
+
+这不是用户真的登录过期，而是并发 refresh 与 refresh token 轮换之间的竞态。
+
+### 修复
+
+`AuthRepository.ensureValidSession()` 现在使用 `Mutex` 串行化本地读取、refresh、写回流程：
+
+```text
+第一个调用发现 accessToken 过期 -> 使用 refreshToken 刷新并保存新 session
+第二个调用进入锁后重新读取本地 session -> 发现 accessToken 已更新且未过期 -> 直接返回
+```
+
+这样同一轮过期恢复只会触发一次 refresh，不会再用已经被轮换作废的旧 refresh token 发起第二次刷新，也不会误清本地登录态。
+
+### 回归测试
+
+新增测试：
+
+```text
+AuthRepositoryTest.concurrentEnsureValidSessionRefreshesOnlyOnceWhenRefreshTokenRotates
+```
+
+该测试先复现两个并发 `ensureValidSession()` 同时遇到过期 access token 的场景，并验证：
+
+```text
+refresh API 只调用一次
+两个调用都返回刷新后的 session
+本地 tokenStore 保留刷新后的 session
+repository.sessionState 保留刷新后的 session
+```
+
+验证命令：
+
+```text
+.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.auth.AuthRepositoryTest --tests com.codex.im.auth.LoginViewModelTest --tests com.codex.im.auth.OkHttpAuthApiTest --console=plain
+```
+
+验证结果：
+
+```text
+AuthRepositoryTest
+LoginViewModelTest
+OkHttpAuthApiTest
+```
+
+认证相关测试已通过。
+
 ## 一、问题背景
 
 当前安卓 IM App 在启动时存在一个问题：

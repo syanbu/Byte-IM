@@ -16,17 +16,30 @@ class SelfHostedImRouteTest {
     }
 
     @Test
-    fun chatPatternCarriesPeerUserIdArgument() {
-        assertEquals("chat/{peerUserId}", SelfHostedImRoute.Chat.pattern)
+    fun chatPatternCarriesConversationIdArgument() {
+        assertEquals("chat/{conversationId}", SelfHostedImRoute.Chat.pattern)
     }
 
     @Test
-    fun chatRouteUsesTrimmedPeerUserId() {
-        assertEquals("chat/13900113900", SelfHostedImRoute.Chat.createRoute(" 13900113900 "))
+    fun chatRouteUsesTrimmedSingleConversationId() {
+        assertEquals("chat/single:13800113800:13900113900", SelfHostedImRoute.Chat.createRoute(" single:13800113800:13900113900 "))
     }
 
     @Test
-    fun chatRouteIgnoresBlankPeerUserId() {
+    fun chatRouteAcceptsGroupConversationId() {
+        assertEquals("chat/group:g_1001", SelfHostedImRoute.Chat.createRoute(" group:g_1001 "))
+    }
+
+    @Test
+    fun chatRouteIgnoresBlankConversationId() {
         assertNull(SelfHostedImRoute.Chat.createRoute(" "))
+    }
+
+    @Test
+    fun singleChatRouteBuildsCanonicalSingleConversationId() {
+        assertEquals(
+            "chat/single:13800113800:13900113900",
+            SelfHostedImRoute.Chat.createSingleRoute(currentUserId = "13900113900", peerUserId = "13800113800")
+        )
     }
 }

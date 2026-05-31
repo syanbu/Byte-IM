@@ -5,26 +5,47 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 
 class AndroidConversationDao(private val database: SQLiteDatabase) : ConversationDao {
-    override fun upsertFromMessage(message: ChatMessage, incrementUnread: Boolean) {
+    override fun upsertFromMessage(message: ChatMessage, incrementUnread: Boolean, incrementMentionUnread: Boolean) {
         val current = find(message.conversationId)
-        val peerId = if (message.direction == MessageDirection.INCOMING) message.senderId else message.receiverId
+        val isGroup = message.conversationType == ConversationType.GROUP
+        val peerId = if (isGroup) {
+            message.conversationId
+        } else if (message.direction == MessageDirection.INCOMING) {
+            message.senderId
+        } else {
+            message.receiverId
+        }
+        val displayName = if (isGroup) {
+            message.groupName?.takeIf { it.isNotBlank() } ?: message.conversationId
+        } else {
+            peerId
+        }
         val unreadCount = (current?.unreadCount ?: 0) + if (incrementUnread) 1 else 0
+        val mentionUnreadCount = (current?.mentionUnreadCount ?: 0) + if (incrementMentionUnread) 1 else 0
         val preview = if (message.type == MessageType.IMAGE) "[图片]" else message.content
         val next = if (current == null || message.createdAt >= current.lastMessageTime) {
             Conversation(
                 conversationId = message.conversationId,
                 peerId = current?.peerId ?: peerId,
-                peerName = current?.peerName ?: peerId,
+                peerName = current?.peerName ?: displayName,
+                type = current?.type ?: message.conversationType,
+                title = current?.title ?: displayName,
+                avatarUrl = current?.avatarUrl,
                 lastMessageId = message.messageId,
                 lastMessagePreview = preview,
                 lastMessageTime = message.createdAt,
                 unreadCount = unreadCount,
+                mentionUnreadCount = mentionUnreadCount,
                 updatedAt = message.updatedAt,
                 peerReadUpToServerSeq = current?.peerReadUpToServerSeq,
                 peerReadAt = current?.peerReadAt
             )
         } else {
-            current.copy(unreadCount = unreadCount, updatedAt = message.updatedAt)
+            current.copy(
+                unreadCount = unreadCount,
+                mentionUnreadCount = mentionUnreadCount,
+                updatedAt = message.updatedAt
+            )
         }
         database.insertWithOnConflict("conversations", null, next.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -52,8 +73,13 @@ class AndroidConversationDao(private val database: SQLiteDatabase) : Conversatio
         }
     }
 
+    override fun findConversation(conversationId: String): Conversation? = find(conversationId)
+
     override fun clearUnread(conversationId: String) {
-        val values = ContentValues().apply { put("unread_count", 0) }
+        val values = ContentValues().apply {
+            put("unread_count", 0)
+            put("mention_unread_count", 0)
+        }
         database.update("conversations", values, "conversation_id = ?", arrayOf(conversationId))
     }
 
@@ -116,10 +142,14 @@ class AndroidConversationDao(private val database: SQLiteDatabase) : Conversatio
             put("conversation_id", conversationId)
             put("peer_id", peerId)
             put("peer_name", peerName)
+            put("conversation_type", type.name)
+            put("title", title)
+            if (avatarUrl == null) putNull("avatar_url") else put("avatar_url", avatarUrl)
             if (lastMessageId == null) putNull("last_message_id") else put("last_message_id", lastMessageId)
             put("last_message_preview", lastMessagePreview)
             put("last_message_time", lastMessageTime)
             put("unread_count", unreadCount)
+            put("mention_unread_count", mentionUnreadCount)
             put("updated_at", updatedAt)
             if (peerReadUpToServerSeq == null) putNull("peer_read_up_to_server_seq") else put("peer_read_up_to_server_seq", peerReadUpToServerSeq)
             if (peerReadAt == null) putNull("peer_read_at") else put("peer_read_at", peerReadAt)
@@ -130,14 +160,19 @@ class AndroidConversationDao(private val database: SQLiteDatabase) : Conversatio
         val lastMessageIdIndex = getColumnIndexOrThrow("last_message_id")
         val peerReadUpToServerSeqIndex = getColumnIndexOrThrow("peer_read_up_to_server_seq")
         val peerReadAtIndex = getColumnIndexOrThrow("peer_read_at")
+        val avatarUrlIndex = getColumnIndexOrThrow("avatar_url")
         return Conversation(
             conversationId = getString(getColumnIndexOrThrow("conversation_id")),
             peerId = getString(getColumnIndexOrThrow("peer_id")),
             peerName = getString(getColumnIndexOrThrow("peer_name")),
+            type = ConversationType.valueOf(getString(getColumnIndexOrThrow("conversation_type"))),
+            title = getString(getColumnIndexOrThrow("title")) ?: getString(getColumnIndexOrThrow("peer_name")),
+            avatarUrl = if (isNull(avatarUrlIndex)) null else getString(avatarUrlIndex),
             lastMessageId = if (isNull(lastMessageIdIndex)) null else getString(lastMessageIdIndex),
             lastMessagePreview = getString(getColumnIndexOrThrow("last_message_preview")),
             lastMessageTime = getLong(getColumnIndexOrThrow("last_message_time")),
             unreadCount = getInt(getColumnIndexOrThrow("unread_count")),
+            mentionUnreadCount = getInt(getColumnIndexOrThrow("mention_unread_count")),
             updatedAt = getLong(getColumnIndexOrThrow("updated_at")),
             peerReadUpToServerSeq = if (isNull(peerReadUpToServerSeqIndex)) null else getLong(peerReadUpToServerSeqIndex),
             peerReadAt = if (isNull(peerReadAtIndex)) null else getLong(peerReadAtIndex)

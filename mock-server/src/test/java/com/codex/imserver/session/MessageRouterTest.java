@@ -3,6 +3,7 @@ package com.codex.imserver.session;
 import com.codex.imserver.protocol.ImCommand;
 import com.codex.imserver.protocol.ImPacket;
 import com.codex.imserver.auth.TokenService;
+import com.codex.imserver.group.GroupService;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.Test;
@@ -910,6 +911,303 @@ public class MessageRouterTest {
         String log = output.toString(StandardCharsets.UTF_8);
         assertTrue(log.matches("(?s).*\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[IM] HEARTBEAT received userId=13800113800.*"));
         assertTrue(log.matches("(?s).*\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[IM] HEARTBEAT_ACK sent userId=13800113800.*"));
+    }
+
+    @Test
+    public void groupMessageFansOutToOnlineMembersExceptSender() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient memberB = new CapturingClient();
+        CapturingClient memberC = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", memberB);
+        registry.register("13700113700", memberC);
+        GroupService groupService = new GroupService(() -> 1_000L);
+        groupService.createGroup("13800113800", "群聊(3)", List.of("13900113900", "13700113700"));
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), groupService, () -> 2_000L);
+
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"group-m1",
+              "conversationId":"group:g_1001",
+              "conversationType":"GROUP",
+              "groupId":"g_1001",
+              "senderId":"13800113800",
+              "receiverId":"g_1001",
+              "clientSeq":1,
+              "type":"TEXT",
+              "content":"@B hello",
+              "mentionedUserIds":["13900113900"],
+              "timestamp":1000
+            }
+            """));
+
+        assertEquals(ImCommand.MESSAGE_ACK.value(), sender.sentPackets.get(0).cmd());
+        assertEquals(1, sender.sentPackets.size());
+        assertEquals(ImCommand.RECEIVE_MESSAGE.value(), memberB.sentPackets.get(0).cmd());
+        assertEquals(ImCommand.RECEIVE_MESSAGE.value(), memberC.sentPackets.get(0).cmd());
+        assertEquals("13900113900", body(memberB.sentPackets.get(0)).get("receiverId").getAsString());
+        assertEquals("13700113700", body(memberC.sentPackets.get(0)).get("receiverId").getAsString());
+        assertEquals("GROUP", body(memberB.sentPackets.get(0)).get("conversationType").getAsString());
+        assertEquals(1001L, body(memberB.sentPackets.get(0)).get("serverSeq").getAsLong());
+        assertEquals(1001L, body(memberC.sentPackets.get(0)).get("serverSeq").getAsLong());
+    }
+
+    @Test
+    public void groupImageMessageFansOutWithImagePayload() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient memberB = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", memberB);
+        GroupService groupService = new GroupService(() -> 1_000L);
+        groupService.createGroup("13800113800", "群聊(2)", List.of("13900113900"));
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), groupService, () -> 2_000L);
+
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"group-image-1",
+              "conversationId":"group:g_1001",
+              "conversationType":"GROUP",
+              "groupId":"g_1001",
+              "senderId":"13800113800",
+              "receiverId":"g_1001",
+              "clientSeq":1,
+              "type":"IMAGE",
+              "content":"[图片]",
+              "image":{
+                "imageUrl":"https://oss.example.com/group-origin.jpg",
+                "thumbnailUrl":"https://oss.example.com/group-thumb.jpg",
+                "width":1440,
+                "height":960,
+                "mimeType":"image/jpeg",
+                "sizeBytes":345678
+              },
+              "mentionedUserIds":[],
+              "timestamp":1000
+            }
+            """));
+
+        JsonObject forwarded = body(memberB.sentPackets.get(0));
+        assertEquals("IMAGE", forwarded.get("type").getAsString());
+        assertEquals("13900113900", forwarded.get("receiverId").getAsString());
+        assertEquals("https://oss.example.com/group-origin.jpg", forwarded.getAsJsonObject("image").get("imageUrl").getAsString());
+        assertEquals("https://oss.example.com/group-thumb.jpg", forwarded.getAsJsonObject("image").get("thumbnailUrl").getAsString());
+    }
+
+    @Test
+    public void groupSendLogsGroupFields() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient memberB = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", memberB);
+        GroupService groupService = new GroupService(() -> 1_000L);
+        groupService.createGroup("13800113800", "群聊(2)", List.of("13900113900"));
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), groupService, () -> 2_000L);
+        PrintStream originalOut = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        try {
+            System.setOut(new PrintStream(output));
+            router.handleSendMessage("13800113800", packet("""
+                {
+                  "messageId":"group-log-1",
+                  "conversationId":"group:g_1001",
+                  "conversationType":"GROUP",
+                  "groupId":"g_1001",
+                  "senderId":"13800113800",
+                  "receiverId":"g_1001",
+                  "clientSeq":1,
+                  "content":"hello group",
+                  "timestamp":1000
+                }
+                """));
+        } finally {
+            System.setOut(originalOut);
+        }
+
+        String log = output.toString(StandardCharsets.UTF_8);
+        assertTrue(log.contains("[IM] GROUP_SEND sender=13800113800 groupId=g_1001 conversationId=group:g_1001 messageId=group-log-1 clientSeq=1 serverSeq=1001 recipients=1 content=hello group"));
+    }
+
+    @Test
+    public void groupMessageQueuesOfflineMemberUntilAuth() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        CapturingClient sender = new CapturingClient();
+        CapturingClient onlineMember = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", onlineMember);
+        GroupService groupService = new GroupService(() -> 1_000L);
+        groupService.createGroup("13800113800", "群聊(3)", List.of("13900113900", "13700113700"));
+        MessageRouter router = new MessageRouter(registry, tokenService, new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), groupService, () -> 2_000L);
+
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"group-offline-1",
+              "conversationId":"group:g_1001",
+              "conversationType":"GROUP",
+              "groupId":"g_1001",
+              "senderId":"13800113800",
+              "receiverId":"g_1001",
+              "clientSeq":1,
+              "content":"queued",
+              "timestamp":1000
+            }
+            """));
+        CapturingClient offlineMember = new CapturingClient();
+        router.handleAuth(tokenService.issue("13700113700").token(), offlineMember);
+
+        assertEquals(List.of(ImCommand.AUTH_ACK.value(), ImCommand.RECEIVE_MESSAGE.value()), offlineMember.sentPackets.stream().map(ImPacket::cmd).toList());
+        assertEquals("group-offline-1", body(offlineMember.sentPackets.get(1)).get("messageId").getAsString());
+        assertEquals("13700113700", body(offlineMember.sentPackets.get(1)).get("receiverId").getAsString());
+    }
+
+    @Test
+    public void groupDeliveryAckClearsOnlyThatMemberPendingDelivery() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient memberB = new CapturingClient();
+        CapturingClient memberC = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", memberB);
+        registry.register("13700113700", memberC);
+        GroupService groupService = new GroupService(() -> 1_000L);
+        groupService.createGroup("13800113800", "群聊(3)", List.of("13900113900", "13700113700"));
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), groupService, () -> 2_000L);
+
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"group-delivery-ack-1",
+              "conversationId":"group:g_1001",
+              "conversationType":"GROUP",
+              "groupId":"g_1001",
+              "senderId":"13800113800",
+              "receiverId":"g_1001",
+              "clientSeq":1,
+              "content":"ack me",
+              "timestamp":1000
+            }
+            """));
+        router.handleDeliveryAck("13900113900", deliveryAck("""
+            {
+              "messageId":"group-delivery-ack-1",
+              "conversationId":"group:g_1001",
+              "serverSeq":1001,
+              "receiverId":"13900113900"
+            }
+            """));
+
+        assertTrue(router.undeliveredMessageIdsForReceiver("13900113900").isEmpty());
+        assertEquals(List.of("group-delivery-ack-1"), router.undeliveredMessageIdsForReceiver("13700113700"));
+    }
+
+    @Test
+    public void groupReceiveAndDeliveryAckLogsIncludeGroupAndReceiver() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient memberB = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", memberB);
+        GroupService groupService = new GroupService(() -> 1_000L);
+        groupService.createGroup("13800113800", "群聊(2)", List.of("13900113900"));
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), groupService, () -> 2_000L);
+        PrintStream originalOut = System.out;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        try {
+            System.setOut(new PrintStream(output));
+            router.handleSendMessage("13800113800", packet("""
+                {
+                  "messageId":"group-receive-log-1",
+                  "conversationId":"group:g_1001",
+                  "conversationType":"GROUP",
+                  "groupId":"g_1001",
+                  "senderId":"13800113800",
+                  "receiverId":"g_1001",
+                  "clientSeq":1,
+                  "content":"log me",
+                  "timestamp":1000
+                }
+                """));
+            router.handleDeliveryAck("13900113900", deliveryAck("""
+                {
+                  "messageId":"group-receive-log-1",
+                  "conversationId":"group:g_1001",
+                  "serverSeq":1001,
+                  "receiverId":"13900113900"
+                }
+                """));
+        } finally {
+            System.setOut(originalOut);
+        }
+
+        String log = output.toString(StandardCharsets.UTF_8);
+        assertTrue(log.contains("[IM] GROUP_RECEIVE forwarded groupId=g_1001 receiver=13900113900 messageId=group-receive-log-1 serverSeq=1001"));
+        assertTrue(log.contains("[IM] GROUP_DELIVERY_ACK received groupId=g_1001 receiver=13900113900 messageId=group-receive-log-1 serverSeq=1001"));
+    }
+
+    @Test
+    public void groupDuplicateMessageIdReturnsOriginalAckWithoutDuplicateFanout() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient memberB = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", memberB);
+        GroupService groupService = new GroupService(() -> 1_000L);
+        groupService.createGroup("13800113800", "群聊(2)", List.of("13900113900"));
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), groupService, () -> 2_000L);
+        ImPacket packet = packet("""
+            {
+              "messageId":"group-dup-1",
+              "conversationId":"group:g_1001",
+              "conversationType":"GROUP",
+              "groupId":"g_1001",
+              "senderId":"13800113800",
+              "receiverId":"g_1001",
+              "clientSeq":1,
+              "content":"once",
+              "timestamp":1000
+            }
+            """);
+
+        router.handleSendMessage("13800113800", packet);
+        router.handleSendMessage("13800113800", packet);
+
+        assertEquals(2, sender.sentPackets.size());
+        assertEquals(1, memberB.sentPackets.size());
+        assertEquals(1001L, body(sender.sentPackets.get(0)).get("serverSeq").getAsLong());
+        assertEquals(1001L, body(sender.sentPackets.get(1)).get("serverSeq").getAsLong());
+    }
+
+    @Test
+    public void nonMemberCannotSendGroupMessage() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient intruder = new CapturingClient();
+        CapturingClient member = new CapturingClient();
+        registry.register("13600113600", intruder);
+        registry.register("13900113900", member);
+        GroupService groupService = new GroupService(() -> 1_000L);
+        groupService.createGroup("13800113800", "群聊(2)", List.of("13900113900"));
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), groupService, () -> 2_000L);
+
+        router.handleSendMessage("13600113600", packet("""
+            {
+              "messageId":"group-denied-1",
+              "conversationId":"group:g_1001",
+              "conversationType":"GROUP",
+              "groupId":"g_1001",
+              "senderId":"13600113600",
+              "receiverId":"g_1001",
+              "clientSeq":1,
+              "content":"nope",
+              "timestamp":1000
+            }
+            """));
+
+        assertTrue(intruder.sentPackets.isEmpty());
+        assertTrue(member.sentPackets.isEmpty());
     }
 
     private static ImPacket packet(String json) {

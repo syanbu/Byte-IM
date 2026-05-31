@@ -16,6 +16,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,13 +28,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.Image
 import com.codex.im.MessagesTabUnreadBadgePolicy
-import com.codex.im.R
 import com.codex.im.ui.AvatarImage
 import java.text.DateFormat
 import java.util.Date
@@ -66,9 +66,9 @@ fun ConversationListScreen(
             viewModel.stop()
         }
     }
-    LaunchedEffect(state.navigationTargetPeerId) {
-        state.navigationTargetPeerId?.let { peerId ->
-            onOpenConversation(peerId)
+    LaunchedEffect(state.navigationTargetConversationId) {
+        state.navigationTargetConversationId?.let { conversationId ->
+            onOpenConversation(conversationId)
             viewModel.consumeNavigationTarget()
         }
     }
@@ -95,8 +95,8 @@ fun ConversationListScreen(
             items(state.items, key = { it.conversationId }) { item ->
                 ConversationRow(
                     item = item,
-                    onClick = if (item.isGroup) null else {
-                        { viewModel.openConversation(item.peerId) }
+                    onClick = {
+                        viewModel.openConversation(if (item.isGroup) item.conversationId else item.peerId)
                     }
                 )
                 HorizontalDivider()
@@ -126,9 +126,10 @@ private fun MessagesTopBar(
                 onClick = { menuExpanded = !menuExpanded },
                 modifier = Modifier.size(40.dp)
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_add_circle),
+                Icon(
+                    painter = painterResource(id = MessageTopBarActionPolicy.addIconResId),
                     contentDescription = "More actions",
+                    tint = Color.Unspecified,
                     modifier = Modifier.size(28.dp)
                 )
             }
@@ -168,6 +169,7 @@ private fun ConversationRow(
         AvatarImage(
             avatarUrl = item.peerAvatarUrl,
             displayName = item.peerName,
+            isGroup = item.isGroup,
             modifier = Modifier.size(48.dp)
         )
         Column(modifier = Modifier.weight(1f)) {
@@ -179,7 +181,10 @@ private fun ConversationRow(
                 Text(text = item.lastMessageTime.displayTime(), style = MaterialTheme.typography.bodySmall)
             }
             Text(
-                text = item.lastMessagePreview.ifBlank { "Start a conversation" },
+                text = ConversationListPreviewPolicy.previewAnnotatedText(
+                    item = item,
+                    mentionColor = MaterialTheme.colorScheme.error
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

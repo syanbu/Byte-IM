@@ -4,6 +4,7 @@ import com.codex.imserver.ImServerLogger;
 import com.codex.imserver.auth.TokenService;
 import com.codex.imserver.auth.TokenService.AuthFailureReason;
 import com.codex.imserver.auth.TokenService.VerificationResult;
+import com.codex.imserver.group.GroupService;
 import com.codex.imserver.protocol.ImCommand;
 import com.codex.imserver.protocol.ImPacket;
 import com.google.gson.JsonObject;
@@ -33,6 +34,7 @@ public final class MessageRouter {
     private final TokenService tokenService;
     private final ServerSeqStore serverSeqStore;
     private final AcceptedMessageStore acceptedMessageStore;
+    private final GroupService groupService;
     private final LongSupplier clock;
     private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ConcurrentMap<String, AcceptedMessage>> undeliveredMessagesByReceiver = new ConcurrentHashMap<>();
@@ -65,10 +67,22 @@ public final class MessageRouter {
             AcceptedMessageStore acceptedMessageStore,
             LongSupplier clock
     ) {
+        this(registry, tokenService, serverSeqStore, acceptedMessageStore, new GroupService(clock), clock);
+    }
+
+    public MessageRouter(
+            ClientSessionRegistry registry,
+            TokenService tokenService,
+            ServerSeqStore serverSeqStore,
+            AcceptedMessageStore acceptedMessageStore,
+            GroupService groupService,
+            LongSupplier clock
+    ) {
         this.registry = registry;
         this.tokenService = tokenService;
         this.serverSeqStore = serverSeqStore;
         this.acceptedMessageStore = acceptedMessageStore;
+        this.groupService = groupService;
         this.clock = clock;
         restoreAcceptedMessages();
     }
@@ -78,15 +92,21 @@ public final class MessageRouter {
                 .parseString(new String(packet.body(), StandardCharsets.UTF_8))
                 .getAsJsonObject();
         String messageId = message.get("messageId").getAsString();
+        String conversationType = optionalString(message, "conversationType", "SINGLE");
         AcceptedMessage accepted = acceptedMessagesById.get(messageId);
         if (accepted != null) {
             sendAck(senderUserId, accepted.ack());
             ImServerLogger.log(
-                    "[IM] SEND_MESSAGE duplicate sender=%s messageId=%s serverSeq=%d ackOnly=true",
+                    "[IM] %s duplicate sender=%s messageId=%s serverSeq=%d ackOnly=true",
+                    "GROUP".equals(conversationType) ? "GROUP_SEND" : "SEND_MESSAGE",
                     senderUserId,
                     messageId,
                     accepted.serverSeq()
             );
+            return;
+        }
+        if ("GROUP".equals(conversationType)) {
+            handleGroupSendMessage(senderUserId, messageId, message);
             return;
         }
         String receiverId = message.get("receiverId").getAsString();
@@ -148,24 +168,123 @@ public final class MessageRouter {
         deliverOrKeepPending(receiverId, messageId, message, nextServerSeq);
     }
 
+    private void handleGroupSendMessage(String senderUserId, String messageId, JsonObject message) {
+        String groupId = message.get("groupId").getAsString();
+        String conversationId = message.get("conversationId").getAsString();
+        long clientSeq = message.get("clientSeq").getAsLong();
+        if (!groupService.isMember(groupId, senderUserId)) {
+            ImServerLogger.log("[IM] GROUP_SEND rejected non-member sender=%s groupId=%s messageId=%s", senderUserId, groupId, messageId);
+            return;
+        }
+        List<String> recipients = groupService.recipientsForSend(groupId, senderUserId);
+        long nextServerSeq = nextServerSeq(conversationId);
+        long serverTime = clock.getAsLong();
+
+        ImServerLogger.log(
+                "[IM] GROUP_SEND sender=%s groupId=%s conversationId=%s messageId=%s clientSeq=%d serverSeq=%d recipients=%d content=%s",
+                senderUserId,
+                groupId,
+                conversationId,
+                messageId,
+                clientSeq,
+                nextServerSeq,
+                recipients.size(),
+                message.get("content").getAsString()
+        );
+
+        JsonObject ack = new JsonObject();
+        ack.addProperty("messageId", messageId);
+        ack.addProperty("conversationId", conversationId);
+        ack.addProperty("clientSeq", clientSeq);
+        ack.addProperty("serverSeq", nextServerSeq);
+        ack.addProperty("serverTime", serverTime);
+
+        message.addProperty("serverSeq", nextServerSeq);
+        message.addProperty("serverTime", serverTime);
+        message.addProperty("groupName", groupService.groupName(groupId));
+
+        JsonObject firstRecipientMessage = message.deepCopy();
+        if (!recipients.isEmpty()) {
+            firstRecipientMessage.addProperty("receiverId", recipients.get(0));
+        }
+        AcceptedMessage senderAccepted = new AcceptedMessage(
+                ack.deepCopy(),
+                firstRecipientMessage.deepCopy(),
+                recipients.isEmpty() ? groupId : recipients.get(0),
+                nextServerSeq,
+                recipients.isEmpty()
+        );
+        Optional<AcceptedMessage> existing = acceptedMessageStore.saveIfAbsent(messageId, senderAccepted);
+        if (existing.isPresent()) {
+            AcceptedMessage restored = existing.get();
+            acceptedMessagesById.putIfAbsent(messageId, restored);
+            sendAck(senderUserId, restored.ack());
+            ImServerLogger.log(
+                    "[IM] GROUP_SEND duplicate sender=%s groupId=%s messageId=%s serverSeq=%d ackOnly=true",
+                    senderUserId,
+                    groupId,
+                    messageId,
+                    restored.serverSeq()
+            );
+            return;
+        }
+        acceptedMessagesById.put(messageId, senderAccepted);
+        sendAck(senderUserId, ack);
+        for (int index = 0; index < recipients.size(); index++) {
+            String receiverId = recipients.get(index);
+            JsonObject recipientMessage = message.deepCopy();
+            recipientMessage.addProperty("receiverId", receiverId);
+            AcceptedMessage receiverAccepted = new AcceptedMessage(
+                    ack.deepCopy(),
+                    recipientMessage.deepCopy(),
+                    receiverId,
+                    nextServerSeq,
+                    false
+            );
+            if (index > 0) {
+                acceptedMessageStore.saveDelivery(messageId, receiverAccepted);
+            }
+            undeliveredMessagesByReceiver
+                    .computeIfAbsent(receiverId, ignored -> new ConcurrentHashMap<>())
+                    .put(messageId, receiverAccepted);
+            deliverOrKeepPending(receiverId, messageId, recipientMessage, nextServerSeq);
+        }
+    }
+
     public synchronized void handleDeliveryAck(String receiverUserId, ImPacket packet) {
         JsonObject ack = JsonParser
                 .parseString(new String(packet.body(), StandardCharsets.UTF_8))
                 .getAsJsonObject();
         String messageId = ack.get("messageId").getAsString();
         long serverSeq = ack.get("serverSeq").getAsLong();
+        acceptedMessageStore.markDelivered(messageId, receiverUserId);
+        AcceptedMessage receiverAccepted = undeliveredMessagesByReceiver
+                .getOrDefault(receiverUserId, new ConcurrentHashMap<>())
+                .get(messageId);
+        if (receiverAccepted != null) {
+            JsonObject message = receiverAccepted.message();
+            if ("GROUP".equals(optionalString(message, "conversationType", "SINGLE"))) {
+                ImServerLogger.log(
+                        "[IM] GROUP_DELIVERY_ACK received groupId=%s receiver=%s messageId=%s serverSeq=%d",
+                        optionalString(message, "groupId", ""),
+                        receiverUserId,
+                        messageId,
+                        serverSeq
+                );
+            } else {
+                ImServerLogger.log(
+                        "[IM] DELIVERY_ACK received receiver=%s messageId=%s serverSeq=%d",
+                        receiverUserId,
+                        messageId,
+                        serverSeq
+                );
+            }
+            removeUndelivered(receiverUserId, messageId);
+        }
         acceptedMessagesById.computeIfPresent(messageId, (ignored, accepted) -> {
             if (!accepted.receiverUserId().equals(receiverUserId)) {
                 return accepted;
             }
-            ImServerLogger.log(
-                    "[IM] DELIVERY_ACK received receiver=%s messageId=%s serverSeq=%d",
-                    receiverUserId,
-                    messageId,
-                    serverSeq
-            );
-            acceptedMessageStore.markDelivered(messageId, receiverUserId);
-            removeUndelivered(receiverUserId, messageId);
             return accepted.markDelivered();
         });
     }
@@ -313,22 +432,45 @@ public final class MessageRouter {
     }
 
     private void deliverOrKeepPending(String receiverId, String messageId, JsonObject message, long serverSeq) {
+        boolean isGroup = "GROUP".equals(optionalString(message, "conversationType", "SINGLE"));
         registry.find(receiverId).ifPresentOrElse(
                 client -> {
                     client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
-                    ImServerLogger.log(
-                            "[IM] RECEIVE_MESSAGE forwarded receiver=%s messageId=%s serverSeq=%d",
-                            receiverId,
-                            messageId,
-                            serverSeq
-                    );
+                    if (isGroup) {
+                        ImServerLogger.log(
+                                "[IM] GROUP_RECEIVE forwarded groupId=%s receiver=%s messageId=%s serverSeq=%d",
+                                optionalString(message, "groupId", ""),
+                                receiverId,
+                                messageId,
+                                serverSeq
+                        );
+                    } else {
+                        ImServerLogger.log(
+                                "[IM] RECEIVE_MESSAGE forwarded receiver=%s messageId=%s serverSeq=%d",
+                                receiverId,
+                                messageId,
+                                serverSeq
+                        );
+                    }
                 },
-                () -> ImServerLogger.log(
-                        "[IM] RECEIVE_MESSAGE queued receiver offline receiver=%s messageId=%s serverSeq=%d",
-                        receiverId,
-                        messageId,
-                        serverSeq
-                )
+                () -> {
+                    if (isGroup) {
+                        ImServerLogger.log(
+                                "[IM] GROUP_RECEIVE queued groupId=%s receiver=%s messageId=%s serverSeq=%d",
+                                optionalString(message, "groupId", ""),
+                                receiverId,
+                                messageId,
+                                serverSeq
+                        );
+                    } else {
+                        ImServerLogger.log(
+                                "[IM] RECEIVE_MESSAGE queued receiver offline receiver=%s messageId=%s serverSeq=%d",
+                                receiverId,
+                                messageId,
+                                serverSeq
+                        );
+                    }
+                }
         );
     }
 
@@ -373,13 +515,17 @@ public final class MessageRouter {
 
     private void restoreAcceptedMessages() {
         for (StoredAcceptedMessage stored : acceptedMessageStore.loadAll()) {
-            acceptedMessagesById.put(stored.messageId(), stored.accepted());
+            acceptedMessagesById.putIfAbsent(stored.messageId(), stored.accepted());
             if (!stored.accepted().delivered()) {
                 undeliveredMessagesByReceiver
                         .computeIfAbsent(stored.accepted().receiverUserId(), ignored -> new ConcurrentHashMap<>())
                         .put(stored.messageId(), stored.accepted());
             }
         }
+    }
+
+    private static String optionalString(JsonObject body, String name, String fallback) {
+        return body.has(name) && !body.get(name).isJsonNull() ? body.get(name).getAsString() : fallback;
     }
 
     static record AcceptedMessage(
@@ -411,6 +557,8 @@ public final class MessageRouter {
     public interface AcceptedMessageStore {
         Optional<AcceptedMessage> saveIfAbsent(String messageId, AcceptedMessage accepted);
 
+        void saveDelivery(String messageId, AcceptedMessage accepted);
+
         void markDelivered(String messageId, String receiverUserId);
 
         void markRecalled(String messageId, String recalledBy, long recalledAt);
@@ -427,13 +575,16 @@ public final class MessageRouter {
         }
 
         @Override
+        public void saveDelivery(String messageId, AcceptedMessage accepted) {
+            acceptedMessagesById.putIfAbsent(storeKey(messageId, accepted.receiverUserId()), accepted);
+        }
+
+        @Override
         public void markDelivered(String messageId, String receiverUserId) {
-            acceptedMessagesById.computeIfPresent(messageId, (ignored, accepted) -> {
-                if (!accepted.receiverUserId().equals(receiverUserId)) {
-                    return accepted;
-                }
-                return accepted.markDelivered();
-            });
+            acceptedMessagesById.computeIfPresent(messageId, (ignored, accepted) ->
+                    accepted.receiverUserId().equals(receiverUserId) ? accepted.markDelivered() : accepted
+            );
+            acceptedMessagesById.computeIfPresent(storeKey(messageId, receiverUserId), (ignored, accepted) -> accepted.markDelivered());
         }
 
         @Override
@@ -446,6 +597,10 @@ public final class MessageRouter {
             return acceptedMessagesById.entrySet().stream()
                     .map(entry -> new StoredAcceptedMessage(entry.getKey(), entry.getValue()))
                     .toList();
+        }
+
+        private String storeKey(String messageId, String receiverUserId) {
+            return messageId + "\u0000" + receiverUserId;
         }
     }
 
@@ -550,38 +705,16 @@ public final class MessageRouter {
 
         @Override
         public synchronized Optional<AcceptedMessage> saveIfAbsent(String messageId, AcceptedMessage accepted) {
-            Optional<AcceptedMessage> existing = find(messageId);
+            Optional<AcceptedMessage> existing = find(messageId, null);
             if (existing.isPresent()) {
                 return existing;
             }
-            try (Connection connection = DriverManager.getConnection(jdbcUrl);
-                 PreparedStatement statement = connection.prepareStatement(
-                         """
-                         INSERT OR IGNORE INTO accepted_messages(
-                           message_id, conversation_id, sender_id, receiver_id, client_seq, server_seq,
-                           content, timestamp, server_time, delivered, ack_json, message_json
-                         ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                         """
-                 )) {
-                JsonObject message = accepted.message();
-                JsonObject ack = accepted.ack();
-                statement.setString(1, messageId);
-                statement.setString(2, stringField(message, "conversationId"));
-                statement.setString(3, stringField(message, "senderId"));
-                statement.setString(4, accepted.receiverUserId());
-                statement.setLong(5, longField(message, "clientSeq"));
-                statement.setLong(6, accepted.serverSeq());
-                statement.setString(7, stringField(message, "content"));
-                statement.setLong(8, longField(message, "timestamp"));
-                statement.setLong(9, longField(ack, "serverTime"));
-                statement.setInt(10, accepted.delivered() ? 1 : 0);
-                statement.setString(11, ack.toString());
-                statement.setString(12, message.toString());
-                int inserted = statement.executeUpdate();
-                return inserted == 1 ? Optional.empty() : find(messageId);
-            } catch (SQLException error) {
-                throw new IllegalStateException("Unable to persist accepted message", error);
-            }
+            return insertDelivery(messageId, accepted) ? Optional.empty() : find(messageId, null);
+        }
+
+        @Override
+        public synchronized void saveDelivery(String messageId, AcceptedMessage accepted) {
+            insertDelivery(messageId, accepted);
         }
 
         @Override
@@ -656,16 +789,57 @@ public final class MessageRouter {
             }
         }
 
-        private Optional<AcceptedMessage> find(String messageId) {
+        private boolean insertDelivery(String messageId, AcceptedMessage accepted) {
             try (Connection connection = DriverManager.getConnection(jdbcUrl);
                  PreparedStatement statement = connection.prepareStatement(
                          """
-                         SELECT receiver_id, server_seq, delivered, recalled, recalled_by, recalled_at, ack_json, message_json
-                         FROM accepted_messages
-                         WHERE message_id = ?
+                         INSERT OR IGNORE INTO accepted_messages(
+                           message_id, conversation_id, sender_id, receiver_id, client_seq, server_seq,
+                           content, timestamp, server_time, delivered, ack_json, message_json
+                         ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                          """
                  )) {
+                JsonObject message = accepted.message();
+                JsonObject ack = accepted.ack();
                 statement.setString(1, messageId);
+                statement.setString(2, stringField(message, "conversationId"));
+                statement.setString(3, stringField(message, "senderId"));
+                statement.setString(4, accepted.receiverUserId());
+                statement.setLong(5, longField(message, "clientSeq"));
+                statement.setLong(6, accepted.serverSeq());
+                statement.setString(7, stringField(message, "content"));
+                statement.setLong(8, longField(message, "timestamp"));
+                statement.setLong(9, longField(ack, "serverTime"));
+                statement.setInt(10, accepted.delivered() ? 1 : 0);
+                statement.setString(11, ack.toString());
+                statement.setString(12, message.toString());
+                return statement.executeUpdate() == 1;
+            } catch (SQLException error) {
+                throw new IllegalStateException("Unable to persist accepted message", error);
+            }
+        }
+
+        private Optional<AcceptedMessage> find(String messageId, String receiverUserId) {
+            try (Connection connection = DriverManager.getConnection(jdbcUrl);
+                 PreparedStatement statement = connection.prepareStatement(
+                         receiverUserId == null
+                                 ? """
+                                   SELECT receiver_id, server_seq, delivered, recalled, recalled_by, recalled_at, ack_json, message_json
+                                   FROM accepted_messages
+                                   WHERE message_id = ?
+                                   ORDER BY receiver_id ASC
+                                   LIMIT 1
+                                   """
+                                 : """
+                                   SELECT receiver_id, server_seq, delivered, recalled, recalled_by, recalled_at, ack_json, message_json
+                                   FROM accepted_messages
+                                   WHERE message_id = ? AND receiver_id = ?
+                                   """
+                 )) {
+                statement.setString(1, messageId);
+                if (receiverUserId != null) {
+                    statement.setString(2, receiverUserId);
+                }
                 try (ResultSet resultSet = statement.executeQuery()) {
                     if (!resultSet.next()) {
                         return Optional.empty();
@@ -692,7 +866,7 @@ public final class MessageRouter {
                 statement.executeUpdate(
                         """
                         CREATE TABLE IF NOT EXISTS accepted_messages (
-                          message_id TEXT PRIMARY KEY,
+                          message_id TEXT NOT NULL,
                           conversation_id TEXT NOT NULL,
                           sender_id TEXT NOT NULL,
                           receiver_id TEXT NOT NULL,
@@ -707,16 +881,89 @@ public final class MessageRouter {
                           recalled_at INTEGER NOT NULL DEFAULT 0,
                           ack_json TEXT NOT NULL,
                           message_json TEXT NOT NULL,
-                          UNIQUE(conversation_id, server_seq)
+                          PRIMARY KEY(message_id, receiver_id),
+                          UNIQUE(conversation_id, server_seq, receiver_id)
                         )
                         """
                 );
+                migrateAcceptedMessagesForPerReceiverDeliveryIfNeeded(connection, statement);
                 addColumnIfMissing(connection, statement, "recalled", "INTEGER NOT NULL DEFAULT 0");
                 addColumnIfMissing(connection, statement, "recalled_by", "TEXT");
                 addColumnIfMissing(connection, statement, "recalled_at", "INTEGER NOT NULL DEFAULT 0");
             } catch (SQLException error) {
                 throw new IllegalStateException("Unable to initialize accepted message database", error);
             }
+        }
+
+        private void migrateAcceptedMessagesForPerReceiverDeliveryIfNeeded(Connection connection, Statement statement) throws SQLException {
+            addColumnIfMissing(connection, statement, "recalled", "INTEGER NOT NULL DEFAULT 0");
+            addColumnIfMissing(connection, statement, "recalled_by", "TEXT");
+            addColumnIfMissing(connection, statement, "recalled_at", "INTEGER NOT NULL DEFAULT 0");
+            boolean hasOldUnique = false;
+            boolean hasCompositePrimaryKey = false;
+            try (ResultSet indexes = connection.createStatement().executeQuery("PRAGMA index_list(accepted_messages)")) {
+                while (indexes.next()) {
+                    if (indexes.getInt("unique") != 1) {
+                        continue;
+                    }
+                    List<String> columns = indexColumns(connection, indexes.getString("name"));
+                    if (columns.equals(List.of("conversation_id", "server_seq"))) {
+                        hasOldUnique = true;
+                    }
+                    if (columns.equals(List.of("message_id", "receiver_id"))) {
+                        hasCompositePrimaryKey = true;
+                    }
+                }
+            }
+            if (!hasOldUnique && hasCompositePrimaryKey) {
+                return;
+            }
+            statement.executeUpdate("ALTER TABLE accepted_messages RENAME TO accepted_messages_legacy");
+            statement.executeUpdate(
+                    """
+                    CREATE TABLE accepted_messages (
+                      message_id TEXT NOT NULL,
+                      conversation_id TEXT NOT NULL,
+                      sender_id TEXT NOT NULL,
+                      receiver_id TEXT NOT NULL,
+                      client_seq INTEGER NOT NULL,
+                      server_seq INTEGER NOT NULL,
+                      content TEXT NOT NULL,
+                      timestamp INTEGER NOT NULL,
+                      server_time INTEGER NOT NULL,
+                      delivered INTEGER NOT NULL DEFAULT 0,
+                      recalled INTEGER NOT NULL DEFAULT 0,
+                      recalled_by TEXT,
+                      recalled_at INTEGER NOT NULL DEFAULT 0,
+                      ack_json TEXT NOT NULL,
+                      message_json TEXT NOT NULL,
+                      PRIMARY KEY(message_id, receiver_id),
+                      UNIQUE(conversation_id, server_seq, receiver_id)
+                    )
+                    """
+            );
+            statement.executeUpdate(
+                    """
+                    INSERT OR IGNORE INTO accepted_messages(
+                      message_id, conversation_id, sender_id, receiver_id, client_seq, server_seq,
+                      content, timestamp, server_time, delivered, recalled, recalled_by, recalled_at, ack_json, message_json
+                    )
+                    SELECT message_id, conversation_id, sender_id, receiver_id, client_seq, server_seq,
+                      content, timestamp, server_time, delivered, recalled, recalled_by, recalled_at, ack_json, message_json
+                    FROM accepted_messages_legacy
+                    """
+            );
+            statement.executeUpdate("DROP TABLE accepted_messages_legacy");
+        }
+
+        private List<String> indexColumns(Connection connection, String indexName) throws SQLException {
+            List<String> columns = new ArrayList<>();
+            try (ResultSet info = connection.createStatement().executeQuery("PRAGMA index_info(" + indexName + ")")) {
+                while (info.next()) {
+                    columns.add(info.getString("name"));
+                }
+            }
+            return columns;
         }
 
         private void addColumnIfMissing(

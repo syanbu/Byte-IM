@@ -26,7 +26,7 @@ Feature note: [`docs/messages-conversation-summary-and-unread.md`](messages-conv
 | B9 | Reliability: ACK, retry, deduplication | Done for sender-side first pass | [B9-message-reliability.md](status/B9-message-reliability.md) |
 | B9.5 | Receiver delivery ACK | Done | [B9.5-delivery-ack.md](status/B9.5-delivery-ack.md) |
 | Mock server | Local Netty server for auth and WebSocket tests | Done for current B1/B2 path | [mock-server.md](status/mock-server.md) |
-| B10 | Group chat and @ mention | Deferred | Later optional scope |
+| B10 | Group chat and @ mention | Partial | [B10-group-chat-and-mention.md](status/B10-group-chat-and-mention.md) |
 | B11 | Image messages | Implemented for first-pass single-image gallery-send scope | [B11-image-message-design-status.md](status/B11-image-message-design-status.md) |
 | B12 | Recall/read receipts | Implemented for first-pass single-chat scope | [B12-message-recall-and-read-receipts.md](status/B12-message-recall-and-read-receipts.md) |
 | B13 | Push | Deferred | Later optional scope |
@@ -88,6 +88,18 @@ B4 local history pagination is implemented for the current SQLite-backed chat pa
 
 ## In Progress
 
+- B10 first foundation slice is implemented:
+  - Android models and SQLite schema now carry conversation type, group id, and mention metadata.
+  - Android SQLite now has `groups` and `group_members`, with DAO coverage for local group metadata.
+  - Android repository can send group text packets and receive group packets under `group:<groupId>`.
+  - `@ me` unread count is tracked separately through `mention_unread_count`.
+  - Conversation list navigation can target `chat/{conversationId}` for both single and group rows.
+  - Mock-server can fan out group messages to online members, queue offline members, reject non-members, and keep duplicate group `messageId` sends idempotent.
+  - Mock-server persists accepted group message delivery per concrete receiver in SQLite, so group `DELIVERY_ACK` and offline replay are per member.
+  - Mock-server persists group metadata and members in `data/mock-im-groups.sqlite`.
+  - Mock-server now exposes authenticated group HTTP endpoints, and the Android `发起群聊` flow calls `POST /groups` through `GroupApi`/`GroupRepository` instead of creating a local-only row.
+  - Android can rename a group through `PATCH /groups/{groupId}` and refresh changed group names in the conversation list through `GET /groups`.
+  - Member sync for other devices, full group member UI, and @ composer/highlight UI remain pending.
 - B4 server-backed history is not wired yet. The protocol commands `HISTORY_QUERY` and `HISTORY_RESULT` remain the intended integration path if remote history fetch is added.
 - Manual emulator verification remains for the latest self-design profile/chat UI slice.
 

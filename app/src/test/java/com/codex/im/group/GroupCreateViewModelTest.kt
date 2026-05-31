@@ -13,6 +13,9 @@ import com.codex.im.profile.ProfileRepository
 import com.codex.im.profile.ProfileResult
 import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.InMemoryConversationDao
+import com.codex.im.storage.GroupInfo
+import com.codex.im.storage.GroupMember
+import com.codex.im.storage.GroupMemberRole
 import com.codex.im.storage.InMemoryMessageDao
 import com.codex.im.storage.InMemoryPendingMessageDao
 import com.codex.im.storage.InMemoryUserProfileDao
@@ -62,7 +65,7 @@ class GroupCreateViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun createGroupCreatesLocalConversationAndExposesCompletion() = runTest {
+    fun createGroupCreatesServerBackedConversationAndExposesCompletion() = runTest {
         val fixture = Fixture(this)
         fixture.viewModel.start()
         runCurrent()
@@ -72,14 +75,36 @@ class GroupCreateViewModelTest {
         fixture.viewModel.createGroup(now = 1_000L)
         runCurrent()
 
-        val conversation = fixture.repository.conversations(limit = 20).single()
+        val conversation = fixture.messageRepository.conversations(limit = 20).single()
+        assertEquals(listOf("13900113900", "17724734511"), fixture.groupRepository.createdMemberUserIds)
         assertEquals("群聊(3)", conversation.peerName)
+        assertEquals("group:g_1001", conversation.conversationId)
         assertEquals(conversation.conversationId, fixture.viewModel.state.value.createdConversationId)
     }
 
-    private class Fixture(scope: TestScope) {
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun createGroupWithoutValidSessionDoesNotCreateLocalConversation() = runTest {
+        val fixture = Fixture(this, validSessionProvider = { null })
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.toggleContact("13900113900")
+
+        fixture.viewModel.createGroup(now = 1_000L)
+        runCurrent()
+
+        assertTrue(fixture.messageRepository.conversations(limit = 20).isEmpty())
+        assertEquals(null, fixture.viewModel.state.value.createdConversationId)
+    }
+
+    private class Fixture(
+        scope: TestScope,
+        validSessionProvider: suspend () -> AuthSession? = {
+            AuthSession("fresh-token", "13800113800", "13800113800", expiresAtMillis = 3_000L)
+        }
+    ) {
         private val profileRepository = ProfileRepository(InMemoryUserProfileDao(), FakeProfileApi())
-        val repository = MessageRepository(
+        val messageRepository = MessageRepository(
             messageDao = InMemoryMessageDao(),
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
@@ -87,14 +112,65 @@ class GroupCreateViewModelTest {
             messageIdGenerator = MessageIdGenerator(startCounter = 1),
             seqGenerator = SeqGenerator()
         )
+        val groupRepository = FakeGroupRepository(messageRepository)
         val viewModel = GroupCreateViewModel(
             session = AuthSession("mock-token", "13800113800", "13800113800", expiresAtMillis = 2_000L),
             profileRepository = profileRepository,
-            messageRepository = repository,
+            groupRepository = groupRepository,
             contactResolver = DemoContactResolver::contactsFor,
+            validSessionProvider = validSessionProvider,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )
+
+    }
+
+    private class FakeGroupRepository(
+        private val messageRepository: MessageRepository
+    ) : GroupRepository {
+        var createdMemberUserIds: List<String> = emptyList()
+
+        override suspend fun createGroup(
+            accessToken: String,
+            ownerId: String,
+            name: String,
+            memberUserIds: List<String>,
+            now: Long
+        ): GroupCreateResult {
+            createdMemberUserIds = memberUserIds
+            val group = GroupInfo(
+                groupId = "g_1001",
+                name = name,
+                avatarUrl = null,
+                ownerId = ownerId,
+                createdAt = now,
+                updatedAt = now
+            )
+            val members = listOf(
+                GroupMember("g_1001", ownerId, ownerId, null, GroupMemberRole.OWNER, now, now)
+            ) + memberUserIds.map {
+                GroupMember("g_1001", it, it, null, GroupMemberRole.MEMBER, now, now)
+            }
+            val result = GroupCreateResult.Success(group, members)
+            messageRepository.persistServerGroup(result, now)
+            return result
+        }
+
+        override suspend fun renameGroup(accessToken: String, groupId: String, name: String): GroupResult {
+            return GroupResult.Failure("not supported")
+        }
+
+        override suspend fun syncGroups(accessToken: String): List<GroupInfo> {
+            return emptyList()
+        }
+
+        override suspend fun syncMembers(accessToken: String, groupId: String): List<GroupMember> {
+            return emptyList()
+        }
+
+        override fun localMembers(groupId: String): List<GroupMember> {
+            return emptyList()
+        }
     }
 
     private class FakeConnection : ImConnection {

@@ -30,6 +30,7 @@ import java.util.LinkedHashMap
 fun AvatarImage(
     avatarUrl: String?,
     displayName: String,
+    isGroup: Boolean = false,
     modifier: Modifier = Modifier.size(48.dp)
 ) {
     val context = LocalContext.current
@@ -78,7 +79,7 @@ fun AvatarImage(
             )
         } else {
             Text(
-                text = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                text = AvatarPlaceholderPolicy.text(displayName, isGroup = isGroup),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer
             )

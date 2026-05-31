@@ -23,17 +23,25 @@ data class ChatMessage(
     val localThumbnailPath: String? = null,
     val isRecalled: Boolean = false,
     val recalledAt: Long? = null,
-    val recalledBy: String? = null
+    val recalledBy: String? = null,
+    val conversationType: ConversationType = ConversationType.SINGLE,
+    val groupId: String? = null,
+    val groupName: String? = null,
+    val mentionedUserIds: List<String> = emptyList()
 )
 
 data class Conversation(
     val conversationId: String,
     val peerId: String,
     val peerName: String,
+    val type: ConversationType = ConversationType.SINGLE,
+    val title: String = peerName,
+    val avatarUrl: String? = null,
     val lastMessageId: String?,
     val lastMessagePreview: String,
     val lastMessageTime: Long,
     val unreadCount: Int,
+    val mentionUnreadCount: Int = 0,
     val updatedAt: Long,
     val peerReadUpToServerSeq: Long? = null,
     val peerReadAt: Long? = null
@@ -57,6 +65,25 @@ data class UserProfile(
     val updatedAt: Long
 )
 
+data class GroupInfo(
+    val groupId: String,
+    val name: String,
+    val avatarUrl: String?,
+    val ownerId: String,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+data class GroupMember(
+    val groupId: String,
+    val userId: String,
+    val displayName: String,
+    val avatarUrl: String?,
+    val role: GroupMemberRole,
+    val joinedAt: Long,
+    val updatedAt: Long
+)
+
 enum class MessageStatus {
     UPLOADING,
     UPLOAD_FAILED,
@@ -69,6 +96,16 @@ enum class MessageStatus {
 enum class MessageDirection {
     OUTGOING,
     INCOMING
+}
+
+enum class ConversationType {
+    SINGLE,
+    GROUP
+}
+
+enum class GroupMemberRole {
+    OWNER,
+    MEMBER
 }
 
 enum class MessageType {

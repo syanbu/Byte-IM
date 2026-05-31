@@ -1,9 +1,11 @@
 package com.codex.im.chat
 
 import com.codex.im.storage.ChatMessage
+import com.codex.im.storage.ConversationType
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
 import com.codex.im.storage.MessageType
+import com.codex.im.storage.UserProfile
 
 object ChatDisplayPolicy {
     val backButtonLabel: String? = null
@@ -25,6 +27,27 @@ object ChatDisplayPolicy {
     fun messageLine(message: ChatMessage): String {
         val prefix = if (message.direction == MessageDirection.OUTGOING) "Me" else message.senderId
         return "$prefix: ${message.content}"
+    }
+
+    fun bubbleAvatar(
+        message: ChatMessage,
+        groupTitle: String,
+        peerName: String,
+        peerAvatarUrl: String?,
+        currentUserAvatarUrl: String?,
+        currentUserId: String,
+        senderProfile: UserProfile?
+    ): BubbleAvatar {
+        if (message.direction == MessageDirection.OUTGOING) {
+            return BubbleAvatar(displayName = "Me", avatarUrl = currentUserAvatarUrl)
+        }
+        if (message.conversationType == ConversationType.GROUP) {
+            return BubbleAvatar(
+                displayName = senderProfile?.nickname ?: message.senderId,
+                avatarUrl = senderProfile?.avatarUrl
+            )
+        }
+        return BubbleAvatar(displayName = peerName, avatarUrl = peerAvatarUrl)
     }
 
     fun canCopy(message: ChatMessage): Boolean {
@@ -84,6 +107,11 @@ enum class ChatComposerAction {
     PICK_IMAGE,
     SEND_TEXT
 }
+
+data class BubbleAvatar(
+    val displayName: String,
+    val avatarUrl: String?
+)
 
 enum class ChatMessageAction {
     COPY,

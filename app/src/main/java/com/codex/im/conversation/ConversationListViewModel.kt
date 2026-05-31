@@ -8,7 +8,9 @@ import com.codex.im.message.ChatThumbnailPreloader
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.NoopChatThumbnailPreloader
 import com.codex.im.profile.ProfileRepository
+import com.codex.im.group.GroupRepository
 import com.codex.im.storage.Conversation
+import com.codex.im.storage.ConversationType
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,13 +30,16 @@ data class ConversationListItem(
     val lastMessagePreview: String,
     val lastMessageTime: Long,
     val unreadCount: Int,
-    val isGroup: Boolean = false
+    val mentionUnreadCount: Int = 0,
+    val isGroup: Boolean = false,
+    val mentionDisplayNamesById: Map<String, String> = emptyMap()
 )
 
 data class ConversationListUiState(
     val items: List<ConversationListItem> = emptyList(),
     val connectionStatus: String = "Disconnected",
-    val navigationTargetPeerId: String? = null
+    val navigationTargetPeerId: String? = null,
+    val navigationTargetConversationId: String? = null
 )
 
 class ConversationListViewModel(
@@ -42,6 +47,7 @@ class ConversationListViewModel(
     private val repository: MessageRepository,
     private val connection: ImConnection,
     private val profileRepository: ProfileRepository,
+    private val groupRepository: GroupRepository? = null,
     private val validSessionProvider: ValidSessionProvider = { session },
     private val thumbnailPreloader: ChatThumbnailPreloader = NoopChatThumbnailPreloader,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
@@ -86,28 +92,40 @@ class ConversationListViewModel(
     }
 
     fun openConversation(peerId: String) {
-        val trimmedPeerId = peerId.trim()
-        if (trimmedPeerId.isEmpty()) {
+        val trimmedTarget = peerId.trim()
+        if (trimmedTarget.isEmpty()) {
             return
         }
         scope.launch(dispatcher) {
-            repository.openConversation(session.userId, trimmedPeerId)
+            val conversationId = if (trimmedTarget.startsWith("group:")) {
+                repository.openConversationById(session.userId, trimmedTarget)
+            } else {
+                repository.openConversation(session.userId, trimmedTarget)
+            }
             refresh()
-            mutableState.value = mutableState.value.copy(navigationTargetPeerId = trimmedPeerId)
-            launch {
-                thumbnailPreloader.preload(
-                    repository.recentLocalThumbnailPaths(
-                        userId = session.userId,
-                        peerId = trimmedPeerId,
-                        limit = RECENT_THUMBNAIL_PRELOAD_LIMIT
+            mutableState.value = mutableState.value.copy(
+                navigationTargetPeerId = if (trimmedTarget.startsWith("group:")) null else trimmedTarget,
+                navigationTargetConversationId = conversationId
+            )
+            if (!trimmedTarget.startsWith("group:")) {
+                launch {
+                    thumbnailPreloader.preload(
+                        repository.recentLocalThumbnailPaths(
+                            userId = session.userId,
+                            peerId = trimmedTarget,
+                            limit = RECENT_THUMBNAIL_PRELOAD_LIMIT
+                        )
                     )
-                )
+                }
             }
         }
     }
 
     fun consumeNavigationTarget() {
-        mutableState.value = mutableState.value.copy(navigationTargetPeerId = null)
+        mutableState.value = mutableState.value.copy(
+            navigationTargetPeerId = null,
+            navigationTargetConversationId = null
+        )
     }
 
     private suspend fun refresh() {
@@ -118,14 +136,23 @@ class ConversationListViewModel(
         if (validSession != null) {
             profileRepository.refreshProfiles(
                 accessToken = validSession.accessToken,
-                userIds = conversations.map { it.peerIdForCurrentSession() }
+                userIds = conversations
+                    .filterNot { it.type == ConversationType.GROUP || it.conversationId.startsWith("group:") }
+                    .map { it.peerIdForCurrentSession() }
+                    .plus(mentionedUserIdsFor(conversations))
             )
+            groupRepository?.syncGroups(validSession.accessToken)
         }
-        updateItems(conversations)
+        updateItems(repository.conversations(limit = 50))
     }
 
     private fun updateItems(conversations: List<Conversation>) {
-        val items = conversations.map { it.toItem() }
+        val mentionDisplayNamesByConversationId = mentionDisplayNamesByConversationId(conversations)
+        val items = conversations.map { conversation ->
+            conversation.toItem(
+                mentionDisplayNamesById = mentionDisplayNamesByConversationId[conversation.conversationId].orEmpty()
+            )
+        }
             .distinctBy { it.conversationId }
         mutableState.value = mutableState.value.copy(items = items)
     }
@@ -141,8 +168,22 @@ class ConversationListViewModel(
         }
     }
 
-    private fun Conversation.toItem(): ConversationListItem {
+    private fun Conversation.toItem(mentionDisplayNamesById: Map<String, String>): ConversationListItem {
         val resolvedPeerId = peerIdForCurrentSession()
+        if (type == ConversationType.GROUP || conversationId.startsWith("group:")) {
+            return ConversationListItem(
+                conversationId = conversationId,
+                peerId = resolvedPeerId,
+                peerName = title.ifBlank { peerName },
+                peerAvatarUrl = avatarUrl,
+                lastMessagePreview = lastMessagePreview,
+                lastMessageTime = lastMessageTime,
+                unreadCount = unreadCount,
+                mentionUnreadCount = mentionUnreadCount,
+                isGroup = true,
+                mentionDisplayNamesById = mentionDisplayNamesById
+            )
+        }
         val profile = profileRepository.localProfile(resolvedPeerId)
         return ConversationListItem(
             conversationId = conversationId,
@@ -152,8 +193,36 @@ class ConversationListViewModel(
             lastMessagePreview = lastMessagePreview,
             lastMessageTime = lastMessageTime,
             unreadCount = unreadCount,
-            isGroup = conversationId.startsWith("group:")
+            mentionUnreadCount = mentionUnreadCount,
+            isGroup = false,
+            mentionDisplayNamesById = mentionDisplayNamesById
         )
+    }
+
+    private fun mentionedUserIdsFor(conversations: List<Conversation>): List<String> {
+        return conversations
+            .mapNotNull { it.lastMessageId }
+            .mapNotNull(repository::findMessageById)
+            .flatMap { it.mentionedUserIds }
+            .distinct()
+    }
+
+    private fun mentionDisplayNamesByConversationId(conversations: List<Conversation>): Map<String, Map<String, String>> {
+        return conversations.associate { conversation ->
+            val mentionDisplayNamesById = conversation.lastMessageId
+                ?.let(repository::findMessageById)
+                ?.mentionedUserIds
+                .orEmpty()
+                .distinct()
+                .mapNotNull { userId ->
+                    val nickname = profileRepository.localProfile(userId)
+                        ?.nickname
+                        ?.takeIf { it.isNotBlank() }
+                    nickname?.let { userId to it }
+                }
+                .toMap()
+            conversation.conversationId to mentionDisplayNamesById
+        }
     }
 
     private fun ConnectionState.toStatusText(): String {

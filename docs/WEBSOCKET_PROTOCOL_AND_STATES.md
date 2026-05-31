@@ -249,6 +249,109 @@ Successful `RECALL_ACK` and `RECALL_NOTIFY` include:
 
 `RECALL_ACK` also carries `success: true` on success or `success: false` with a `reason` such as `NOT_FOUND`, `NOT_SENDER`, `CONVERSATION_MISMATCH`, or `EXPIRED`. The mock server validates sender ownership, conversation match, and the 2-minute server-time recall window. Repeated successful recall is idempotent.
 
+## Group Text Messages
+
+B10 group text and image messages reuse the existing message commands:
+
+- `SEND_MESSAGE`
+- `MESSAGE_ACK`
+- `RECEIVE_MESSAGE`
+- `DELIVERY_ACK`
+
+No new command id is needed for the first group message slice. The message body carries `conversationType = "GROUP"` and `groupId`.
+
+Group send body:
+
+```json
+{
+  "messageId": "m_...",
+  "conversationId": "group:g_1001",
+  "conversationType": "GROUP",
+  "groupId": "g_1001",
+  "senderId": "13800113800",
+  "receiverId": "g_1001",
+  "clientSeq": 12,
+  "type": "TEXT",
+  "content": "@张三 看一下",
+  "mentionedUserIds": ["13900113900"],
+  "timestamp": 1717000000000
+}
+```
+
+Server ACK keeps the same shape as single chat:
+
+```json
+{
+  "messageId": "m_...",
+  "conversationId": "group:g_1001",
+  "clientSeq": 12,
+  "serverSeq": 1008,
+  "serverTime": 1717000000100
+}
+```
+
+Forwarded group receive packets keep the group `conversationId`, but set `receiverId` to the concrete recipient user id so `DELIVERY_ACK` remains per receiver:
+
+```json
+{
+  "messageId": "m_...",
+  "conversationId": "group:g_1001",
+  "conversationType": "GROUP",
+  "groupId": "g_1001",
+  "senderId": "13800113800",
+  "receiverId": "13900113900",
+  "clientSeq": 12,
+  "serverSeq": 1008,
+  "serverTime": 1717000000100,
+  "type": "TEXT",
+  "content": "@张三 看一下",
+  "mentionedUserIds": ["13900113900"],
+  "timestamp": 1717000000000
+}
+```
+
+Group image messages use the same `image` payload as single chat, while keeping the group envelope:
+
+```json
+{
+  "messageId": "m_...",
+  "conversationId": "group:g_1001",
+  "conversationType": "GROUP",
+  "groupId": "g_1001",
+  "senderId": "13800113800",
+  "receiverId": "g_1001",
+  "clientSeq": 13,
+  "type": "IMAGE",
+  "content": "[图片]",
+  "image": {
+    "imageUrl": "https://oss.example.com/origin.jpg",
+    "thumbnailUrl": "https://oss.example.com/thumb.jpg",
+    "width": 1440,
+    "height": 960,
+    "mimeType": "image/jpeg",
+    "sizeBytes": 345678
+  },
+  "mentionedUserIds": [],
+  "timestamp": 1717000000000
+}
+```
+
+Android stores group messages under the packet `conversationId`. For single chat, Android still canonicalizes `single:<a>:<b>` locally from sender and receiver ids for backward compatibility.
+
+The mock-server group slice persists group metadata in `data/mock-im-groups.sqlite` and fans out accepted group messages to online members except the sender. Offline members are queued in the existing receiver undelivered index. Accepted group message delivery is persisted per concrete recipient in `accepted_messages` with `(message_id, receiver_id)`, so `DELIVERY_ACK` clears only that receiver and undelivered replay survives restart.
+
+Group creation currently uses authenticated HTTP endpoints rather than a WebSocket command:
+
+- `POST /groups`
+- `GET /groups`
+- `GET /groups/{groupId}`
+- `PATCH /groups/{groupId}`
+- `GET /groups/{groupId}/members`
+
+`POST /groups` accepts `name` and `memberUserIds`, adds the authenticated requester as owner/member, and returns a stable `groupId` such as `g_1001`. Android persists that response into local `groups`, `group_members`, and a `GROUP` conversation row before showing it in Messages.
+
+`PATCH /groups/{groupId}` accepts `{"name":"..."}` from any current group member and returns the updated group metadata. Android persists the response locally, and conversation list refresh uses `GET /groups` to pick up names changed by other members.
+
 ## Current Mock Server Logs
 
 Successful WebSocket auth:

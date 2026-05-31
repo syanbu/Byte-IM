@@ -4,6 +4,7 @@ import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
 import com.codex.im.storage.MessageType
+import com.codex.im.storage.UserProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -167,6 +168,34 @@ class ChatDisplayPolicyTest {
     fun recalledMessagesUseCenteredNoticeInsteadOfBubbleRow() {
         assertEquals(ChatMessageRowKind.CENTERED_NOTICE, ChatDisplayPolicy.rowKind(message().copy(isRecalled = true)))
         assertEquals(ChatMessageRowKind.BUBBLE, ChatDisplayPolicy.rowKind(message().copy(isRecalled = false)))
+    }
+
+    @Test
+    fun incomingGroupBubbleAvatarUsesMessageSenderProfileInsteadOfGroupTitle() {
+        val senderProfile = UserProfile(
+            userId = "13800113800",
+            phone = "13800113800",
+            nickname = "Alice",
+            avatarUrl = "https://example.com/a.jpg",
+            avatarUpdatedAt = 1_000L,
+            updatedAt = 1_000L
+        )
+
+        val avatar = ChatDisplayPolicy.bubbleAvatar(
+            message = message(
+                senderId = "13800113800",
+                direction = MessageDirection.INCOMING
+            ).copy(conversationId = "group:g_1001", conversationType = com.codex.im.storage.ConversationType.GROUP),
+            groupTitle = "群聊(2)",
+            peerName = "Bob",
+            peerAvatarUrl = "https://example.com/group.jpg",
+            currentUserAvatarUrl = null,
+            currentUserId = "13900113900",
+            senderProfile = senderProfile
+        )
+
+        assertEquals("Alice", avatar.displayName)
+        assertEquals("https://example.com/a.jpg", avatar.avatarUrl)
     }
 
     private fun message(

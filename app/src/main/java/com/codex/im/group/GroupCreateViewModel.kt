@@ -2,7 +2,6 @@ package com.codex.im.group
 
 import com.codex.im.auth.AuthSession
 import com.codex.im.auth.ValidSessionProvider
-import com.codex.im.message.MessageRepository
 import com.codex.im.profile.ProfileRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -24,13 +23,15 @@ data class GroupCreateContactItem(
 data class GroupCreateUiState(
     val contacts: List<GroupCreateContactItem> = emptyList(),
     val canCreate: Boolean = false,
-    val createdConversationId: String? = null
+    val createdConversationId: String? = null,
+    val isCreating: Boolean = false,
+    val errorMessage: String? = null
 )
 
 class GroupCreateViewModel(
     private val session: AuthSession,
     private val profileRepository: ProfileRepository,
-    private val messageRepository: MessageRepository,
+    private val groupRepository: GroupRepository,
     private val contactResolver: (String) -> List<String>,
     private val validSessionProvider: ValidSessionProvider = { session },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
@@ -82,12 +83,36 @@ class GroupCreateViewModel(
             return
         }
         scope.launch(dispatcher) {
-            val conversation = messageRepository.createLocalGroupConversation(
-                creatorUserId = session.userId,
+            mutableState.value = mutableState.value.copy(isCreating = true, errorMessage = null)
+            val validSession = validSessionProvider()
+            if (validSession == null) {
+                mutableState.value = mutableState.value.copy(
+                    isCreating = false,
+                    errorMessage = "登录状态已失效，请重新登录"
+                )
+                return@launch
+            }
+            val groupName = "群聊(${selectedUserIds.size + 1})"
+            when (val result = groupRepository.createGroup(
+                accessToken = validSession.accessToken,
+                ownerId = session.userId,
+                name = groupName,
                 memberUserIds = selectedUserIds,
                 now = now
-            )
-            mutableState.value = mutableState.value.copy(createdConversationId = conversation.conversationId)
+            )) {
+                is GroupCreateResult.Success -> {
+                    mutableState.value = mutableState.value.copy(
+                        isCreating = false,
+                        createdConversationId = "group:${result.group.groupId}"
+                    )
+                }
+                is GroupCreateResult.Failure -> {
+                    mutableState.value = mutableState.value.copy(
+                        isCreating = false,
+                        errorMessage = result.message
+                    )
+                }
+            }
         }
     }
 

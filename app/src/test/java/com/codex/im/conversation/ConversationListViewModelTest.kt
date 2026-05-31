@@ -22,6 +22,10 @@ import com.codex.im.profile.ProfileApi
 import com.codex.im.profile.ProfileBatchResult
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.profile.ProfileResult
+import com.codex.im.group.GroupRepository
+import com.codex.im.group.GroupCreateResult
+import com.codex.im.group.GroupResult
+import com.codex.im.storage.GroupInfo
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -32,6 +36,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -104,6 +109,7 @@ class ConversationListViewModelTest {
         val item = fixture.viewModel.state.value.items.single()
         assertEquals("群聊(3)", item.peerName)
         assertEquals(true, item.isGroup)
+        assertEquals(0, item.mentionUnreadCount)
     }
 
     @Test
@@ -223,6 +229,182 @@ class ConversationListViewModelTest {
         val item = fixture.viewModel.state.value.items.single()
         assertEquals(0, item.unreadCount)
         assertEquals("13900113900", fixture.viewModel.state.value.navigationTargetPeerId)
+        assertEquals("single:13800113800:13900113900", fixture.viewModel.state.value.navigationTargetConversationId)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun openGroupConversationClearsUnreadAndExposesConversationNavigationTarget() = runTest {
+        val fixture = Fixture(this)
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 12,
+                body = """
+                    {
+                      "messageId":"group-remote-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"@me hello",
+                      "mentionedUserIds":["13800113800"],
+                      "timestamp":2000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.openConversation("group:g_1001")
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals(0, item.unreadCount)
+        assertEquals(0, item.mentionUnreadCount)
+        assertEquals(null, fixture.viewModel.state.value.navigationTargetPeerId)
+        assertEquals("group:g_1001", fixture.viewModel.state.value.navigationTargetConversationId)
+    }
+
+    @Test
+    fun mentionPreviewUsesMentionNicknameAndReminderLabel() {
+        val item = ConversationListItem(
+            conversationId = "group:g_1001",
+            peerId = "group:g_1001",
+            peerName = "群聊",
+            peerAvatarUrl = null,
+            lastMessagePreview = "@13800113800 what",
+            lastMessageTime = 1_000L,
+            unreadCount = 1,
+            mentionUnreadCount = 1,
+            isGroup = true,
+            mentionDisplayNamesById = mapOf("13800113800" to "Syan")
+        )
+
+        assertEquals("[有人@我] @Syan what", ConversationListPreviewPolicy.previewText(item))
+    }
+
+    @Test
+    fun mentionPreviewHighlightsOnlyReminderLabel() {
+        val item = ConversationListItem(
+            conversationId = "group:g_1001",
+            peerId = "group:g_1001",
+            peerName = "群聊",
+            peerAvatarUrl = null,
+            lastMessagePreview = "@13800113800 what",
+            lastMessageTime = 1_000L,
+            unreadCount = 1,
+            mentionUnreadCount = 1,
+            isGroup = true,
+            mentionDisplayNamesById = mapOf("13800113800" to "Syan")
+        )
+
+        val annotated = ConversationListPreviewPolicy.previewAnnotatedText(item, mentionColor = Color.Red)
+
+        assertEquals("[有人@我] @Syan what", annotated.text)
+        assertEquals(1, annotated.spanStyles.size)
+        val span = annotated.spanStyles.single()
+        assertEquals(0, span.start)
+        assertEquals("[有人@我]".length, span.end)
+        assertEquals(Color.Red, span.item.color)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startUsesProfileNicknameForMentionPreview() = runTest {
+        val fixture = Fixture(
+            this,
+            profileApi = FakeProfileApi(
+                profiles = listOf(
+                    UserProfile(
+                        userId = "13800113800",
+                        phone = "13800113800",
+                        nickname = "Syan",
+                        avatarUrl = null,
+                        avatarUpdatedAt = 0L,
+                        updatedAt = 2_000L
+                    )
+                )
+            )
+        )
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 12,
+                body = """
+                    {
+                      "messageId":"group-mention-preview-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"@13800113800 what",
+                      "mentionedUserIds":["13800113800"],
+                      "timestamp":2000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals(mapOf("13800113800" to "Syan"), item.mentionDisplayNamesById)
+        assertEquals("[有人@我] @Syan what", ConversationListPreviewPolicy.previewText(item))
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startSyncsRemoteGroupNameForGroupConversationRows() = runTest {
+        val fixture = Fixture(
+            this,
+            groupRepository = FakeGroupRepository(
+                groups = listOf(
+                    GroupInfo(
+                        groupId = "g_1001",
+                        name = "新群名",
+                        avatarUrl = "https://example.com/group.jpg",
+                        ownerId = "13800113800",
+                        createdAt = 1_000L,
+                        updatedAt = 3_000L
+                    )
+                ),
+                conversationDao = null
+            )
+        )
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 12,
+                body = """
+                    {
+                      "messageId":"group-title-sync-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "groupName":"旧群名",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"hello",
+                      "mentionedUserIds":[],
+                      "timestamp":2000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        fixture.viewModel.start()
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals("新群名", item.peerName)
+        assertEquals("https://example.com/group.jpg", item.peerAvatarUrl)
     }
 
     @Test
@@ -269,6 +451,7 @@ class ConversationListViewModelTest {
         fixture.viewModel.consumeNavigationTarget()
 
         assertEquals(null, fixture.viewModel.state.value.navigationTargetPeerId)
+        assertEquals(null, fixture.viewModel.state.value.navigationTargetConversationId)
     }
 
     @Test
@@ -303,6 +486,7 @@ class ConversationListViewModelTest {
     private class Fixture(
         scope: TestScope,
         profileApi: ProfileApi = FakeProfileApi(),
+        val groupRepository: FakeGroupRepository? = null,
         thumbnailPreloader: ChatThumbnailPreloader = NoopChatThumbnailPreloader
     ) {
         val connection = FakeConnection()
@@ -310,6 +494,9 @@ class ConversationListViewModelTest {
         private val conversationDao = InMemoryConversationDao()
         val profileDao = InMemoryUserProfileDao()
         private val profileRepository = ProfileRepository(profileDao, profileApi)
+        init {
+            groupRepository?.conversationDao = conversationDao
+        }
         val repository = MessageRepository(
             messageDao = messageDao,
             conversationDao = conversationDao,
@@ -323,6 +510,7 @@ class ConversationListViewModelTest {
             repository = repository,
             connection = connection,
             profileRepository = profileRepository,
+            groupRepository = groupRepository,
             thumbnailPreloader = thumbnailPreloader,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
@@ -380,13 +568,15 @@ class ConversationListViewModelTest {
         )
     }
 
-    private class FakeProfileApi : ProfileApi {
+    private class FakeProfileApi(
+        private val profiles: List<UserProfile> = emptyList()
+    ) : ProfileApi {
         override suspend fun me(accessToken: String): ProfileResult = ProfileResult.Failure("unused")
 
         override suspend fun user(accessToken: String, userId: String): ProfileResult = ProfileResult.Failure("unused")
 
         override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
-            return ProfileBatchResult.Success(emptyList())
+            return ProfileBatchResult.Success(profiles.filter { it.userId in userIds })
         }
 
         override suspend fun updateMe(
@@ -414,5 +604,49 @@ class ConversationListViewModelTest {
             avatarUrl: String?,
             avatarObjectKey: String?
         ): ProfileResult = ProfileResult.Failure("unused")
+    }
+
+    private class FakeGroupRepository(
+        private val groups: List<GroupInfo>,
+        var conversationDao: InMemoryConversationDao?
+    ) : GroupRepository {
+        override suspend fun createGroup(
+            accessToken: String,
+            ownerId: String,
+            name: String,
+            memberUserIds: List<String>,
+            now: Long
+        ): GroupCreateResult = GroupCreateResult.Failure("unused")
+
+        override suspend fun renameGroup(accessToken: String, groupId: String, name: String): GroupResult {
+            return GroupResult.Failure("unused")
+        }
+
+        override suspend fun syncGroups(accessToken: String): List<GroupInfo> {
+            val dao = conversationDao
+            groups.forEach { group ->
+                val conversationId = "group:${group.groupId}"
+                val current = dao?.findConversation(conversationId)
+                if (current != null) {
+                    dao.upsertConversation(
+                        current.copy(
+                            peerName = group.name,
+                            title = group.name,
+                            avatarUrl = group.avatarUrl,
+                            updatedAt = group.updatedAt
+                        )
+                    )
+                }
+            }
+            return groups
+        }
+
+        override suspend fun syncMembers(accessToken: String, groupId: String): List<com.codex.im.storage.GroupMember> {
+            return emptyList()
+        }
+
+        override fun localMembers(groupId: String): List<com.codex.im.storage.GroupMember> {
+            return emptyList()
+        }
     }
 }

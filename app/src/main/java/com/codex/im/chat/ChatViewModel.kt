@@ -12,10 +12,14 @@ import com.codex.im.message.SelectedChatImageResolver
 import com.codex.im.message.SelectedChatImage
 import com.codex.im.message.ChatImageCompressor
 import com.codex.im.profile.ProfileRepository
+import com.codex.im.group.GroupRepository
+import com.codex.im.group.GroupResult
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageOrderingPolicy
 import com.codex.im.profile.AvatarPutResult
 import com.codex.im.storage.MessageStatus
+import com.codex.im.storage.UserProfile
+import com.codex.im.storage.GroupMember
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +42,9 @@ data class ChatUiState(
     val hasMoreLocal: Boolean = true,
     val isHistoryMemoryLimitReached: Boolean = false,
     val errorMessage: String? = null,
-    val peerReadUpToServerSeq: Long? = null
+    val peerReadUpToServerSeq: Long? = null,
+    val senderProfiles: Map<String, UserProfile> = emptyMap(),
+    val mentionMembers: List<GroupMember> = emptyList()
 )
 
 class ChatViewModel(
@@ -46,6 +52,7 @@ class ChatViewModel(
     private val repository: MessageRepository,
     private val connection: ImConnection,
     private val profileRepository: ProfileRepository,
+    private val groupRepository: GroupRepository? = null,
     initialPeerId: String = "",
     private val imageUploadApi: ImageUploadApi = DisabledImageUploadApi,
     private val imageResolver: SelectedChatImageResolver = ChatImageCompressor,
@@ -67,18 +74,19 @@ class ChatViewModel(
         }
         started = true
         if (mutableState.value.peerId.isNotBlank()) {
-            repository.openConversation(session.userId, mutableState.value.peerId)
+            openCurrentConversation()
         }
         connectIfNeeded()
         jobs += scope.launch(dispatcher) {
             repository.conversationUpdates.collect {
                 refreshKeepingHistory()
+                refreshProfiles()
                 scheduleMissingThumbnailRetries(immediate = false)
             }
         }
         jobs += scope.launch(dispatcher) {
-            refreshProfiles()
             refreshInitialPage()
+            refreshProfiles()
             scheduleMissingThumbnailRetries(immediate = true)
         }
     }
@@ -111,7 +119,7 @@ class ChatViewModel(
         )
         scope.launch(dispatcher) {
             if (trimmedPeerId.isNotEmpty()) {
-                repository.openConversation(session.userId, trimmedPeerId)
+                openCurrentConversation()
             }
             refreshProfiles()
             refreshInitialPage()
@@ -119,19 +127,66 @@ class ChatViewModel(
         }
     }
 
-    suspend fun sendText(content: String, now: Long = System.currentTimeMillis()) {
+    suspend fun sendText(
+        content: String,
+        mentionedUserIds: List<String> = emptyList(),
+        now: Long = System.currentTimeMillis()
+    ) {
         val trimmed = content.trim()
         if (trimmed.isEmpty()) {
             return
         }
         withContext(dispatcher) {
-            repository.sendText(
-                senderId = session.userId,
-                receiverId = mutableState.value.peerId,
-                content = trimmed,
-                now = now
-            )
+            val targetId = mutableState.value.peerId
+            if (targetId.isGroupConversationId()) {
+                repository.sendGroupText(
+                    senderId = session.userId,
+                    groupId = targetId.removePrefix("group:"),
+                    content = trimmed,
+                    mentionedUserIds = mentionedUserIds,
+                    now = now
+                )
+            } else {
+                repository.sendText(
+                    senderId = session.userId,
+                    receiverId = targetId,
+                    content = trimmed,
+                    now = now
+                )
+            }
             refreshKeepingHistory()
+        }
+    }
+
+    suspend fun renameGroup(name: String) {
+        val targetId = mutableState.value.peerId
+        if (!targetId.isGroupConversationId()) {
+            return
+        }
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) {
+            mutableState.value = mutableState.value.copy(errorMessage = "群名称不能为空")
+            return
+        }
+        val validSession = validSessionProvider()
+        val repository = groupRepository
+        if (validSession == null || repository == null) {
+            mutableState.value = mutableState.value.copy(errorMessage = "无法更新群名称")
+            return
+        }
+        withContext(dispatcher) {
+            when (val result = repository.renameGroup(validSession.accessToken, targetId.removePrefix("group:"), trimmedName)) {
+                is GroupResult.Success -> {
+                    mutableState.value = mutableState.value.copy(
+                        peerName = result.group.name,
+                        peerAvatarUrl = result.group.avatarUrl,
+                        errorMessage = null
+                    )
+                }
+                is GroupResult.Failure -> {
+                    mutableState.value = mutableState.value.copy(errorMessage = result.message)
+                }
+            }
         }
     }
 
@@ -140,16 +195,30 @@ class ChatViewModel(
             return
         }
         withContext(dispatcher) {
-            val localMessage = repository.createLocalImageMessage(
-                senderId = session.userId,
-                receiverId = mutableState.value.peerId,
-                localOriginalPath = selectedImage.localOriginalPath,
-                localThumbnailPath = selectedImage.localThumbnailPath,
-                imageWidth = selectedImage.width,
-                imageHeight = selectedImage.height,
-                mimeType = selectedImage.mimeType,
-                now = now
-            )
+            val targetId = mutableState.value.peerId
+            val localMessage = if (targetId.isGroupConversationId()) {
+                repository.createLocalGroupImageMessage(
+                    senderId = session.userId,
+                    groupId = targetId.removePrefix("group:"),
+                    localOriginalPath = selectedImage.localOriginalPath,
+                    localThumbnailPath = selectedImage.localThumbnailPath,
+                    imageWidth = selectedImage.width,
+                    imageHeight = selectedImage.height,
+                    mimeType = selectedImage.mimeType,
+                    now = now
+                )
+            } else {
+                repository.createLocalImageMessage(
+                    senderId = session.userId,
+                    receiverId = targetId,
+                    localOriginalPath = selectedImage.localOriginalPath,
+                    localThumbnailPath = selectedImage.localThumbnailPath,
+                    imageWidth = selectedImage.width,
+                    imageHeight = selectedImage.height,
+                    mimeType = selectedImage.mimeType,
+                    now = now
+                )
+            }
             refreshKeepingHistory()
 
             uploadImageAndQueueSend(localMessage.messageId, selectedImage)
@@ -291,12 +360,7 @@ class ChatViewModel(
             val peerId = mutableState.value.peerId
             val beforeTime = mutableState.value.messages.minOf { it.createdAt }
             try {
-                val page = repository.historyPage(
-                    userId = session.userId,
-                    peerId = peerId,
-                    beforeTime = beforeTime,
-                    limit = HISTORY_PAGE_SIZE
-                )
+                val page = historyPage(peerId, beforeTime = beforeTime, limit = HISTORY_PAGE_SIZE)
                 val mergedMessages = mergeMessages(mutableState.value.messages, page)
                 mutableState.value = mutableState.value.copy(
                     messages = mergedMessages,
@@ -320,18 +384,13 @@ class ChatViewModel(
             mutableState.value = mutableState.value.copy(messages = emptyList(), hasMoreLocal = false)
             return
         }
-        val messages = repository.historyPage(
-            userId = session.userId,
-            peerId = peerId,
-            beforeTime = null,
-            limit = HISTORY_PAGE_SIZE
-        )
+        val messages = historyPage(peerId, beforeTime = null, limit = HISTORY_PAGE_SIZE)
         mutableState.value = mutableState.value.copy(
             messages = messages,
             hasMoreLocal = messages.size == HISTORY_PAGE_SIZE,
             isHistoryMemoryLimitReached = false,
             errorMessage = null,
-            peerReadUpToServerSeq = repository.conversationPeerReadCursor(session.userId, peerId)
+            peerReadUpToServerSeq = peerReadCursor(peerId)
         )
     }
 
@@ -339,6 +398,47 @@ class ChatViewModel(
         val currentSession = validSessionProvider() ?: session
         profileRepository.bootstrapSession(currentSession)
         val peerId = mutableState.value.peerId
+        if (peerId.isGroupConversationId()) {
+            val conversation = repository.conversation(peerId)
+            val groupId = peerId.removePrefix("group:")
+            val groupRepo = groupRepository
+            val rawMentionMembers = if (groupRepo != null && currentSession.accessToken.isNotBlank()) {
+                groupRepo.syncMembers(currentSession.accessToken, groupId)
+            } else {
+                groupRepo?.localMembers(groupId).orEmpty()
+            }
+            val senderIds = mutableState.value.messages
+                .map { it.senderId }
+                .filter { it.isNotBlank() }
+                .distinct()
+            val memberIds = rawMentionMembers.map { it.userId }
+            val remoteProfiles = if (currentSession.accessToken.isNotBlank()) {
+                profileRepository.refreshProfiles(currentSession.accessToken, senderIds + memberIds + currentSession.userId)
+            } else {
+                emptyList()
+            }
+            val profilesById = (remoteProfiles + memberIds.mapNotNull(profileRepository::localProfile))
+                .distinctBy { it.userId }
+                .associateBy { it.userId }
+            val mentionMembers = rawMentionMembers.map { member ->
+                val profile = profilesById[member.userId]
+                member.copy(
+                    displayName = profile?.nickname?.takeIf { it.isNotBlank() } ?: member.displayName,
+                    avatarUrl = profile?.avatarUrl ?: member.avatarUrl
+                )
+            }
+            val senderProfiles = (remoteProfiles + senderIds.mapNotNull(profileRepository::localProfile))
+                .distinctBy { it.userId }
+                .associateBy { it.userId }
+            mutableState.value = mutableState.value.copy(
+                peerName = conversation?.title ?: conversation?.peerName ?: peerId,
+                peerAvatarUrl = conversation?.avatarUrl,
+                currentUserAvatarUrl = profileRepository.localProfile(currentSession.userId)?.avatarUrl,
+                senderProfiles = senderProfiles,
+                mentionMembers = mentionMembers
+            )
+            return
+        }
         if (peerId.isNotBlank()) {
             profileRepository.refreshProfiles(currentSession.accessToken, listOf(currentSession.userId, peerId))
         }
@@ -347,7 +447,8 @@ class ChatViewModel(
         mutableState.value = mutableState.value.copy(
             peerName = peerProfile?.nickname ?: peerId,
             peerAvatarUrl = peerProfile?.avatarUrl,
-            currentUserAvatarUrl = currentUserProfile?.avatarUrl
+            currentUserAvatarUrl = currentUserProfile?.avatarUrl,
+            mentionMembers = emptyList()
         )
     }
 
@@ -358,16 +459,11 @@ class ChatViewModel(
         }
         val currentMessages = mutableState.value.messages
         val limit = maxOf(HISTORY_PAGE_SIZE, currentMessages.size)
-        val latestMessages = repository.historyPage(
-            userId = session.userId,
-            peerId = peerId,
-            beforeTime = null,
-            limit = limit
-        )
+        val latestMessages = historyPage(peerId, beforeTime = null, limit = limit)
         mutableState.value = mutableState.value.copy(
             messages = mergeMessages(currentMessages, latestMessages),
             errorMessage = null,
-            peerReadUpToServerSeq = repository.conversationPeerReadCursor(session.userId, peerId)
+            peerReadUpToServerSeq = peerReadCursor(peerId)
         )
     }
 
@@ -378,15 +474,10 @@ class ChatViewModel(
         }
         val current = mutableState.value
         val limit = maxOf(HISTORY_PAGE_SIZE, current.messages.size)
-        val latestMessages = repository.historyPage(
-            userId = session.userId,
-            peerId = peerId,
-            beforeTime = null,
-            limit = limit
-        )
+        val latestMessages = historyPage(peerId, beforeTime = null, limit = limit)
         mutableState.value = current.copy(
             messages = mergeMessages(current.messages, latestMessages),
-            peerReadUpToServerSeq = repository.conversationPeerReadCursor(session.userId, peerId)
+            peerReadUpToServerSeq = peerReadCursor(peerId)
         )
     }
 
@@ -438,6 +529,33 @@ class ChatViewModel(
             .let { MessageOrderingPolicy.sortNewestFirst(it) }
             .take(MAX_RETAINED_MESSAGES)
     }
+
+    private fun openCurrentConversation() {
+        val targetId = mutableState.value.peerId
+        if (targetId.isGroupConversationId()) {
+            repository.openConversationById(session.userId, targetId)
+        } else {
+            repository.openConversation(session.userId, targetId)
+        }
+    }
+
+    private fun historyPage(peerId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
+        return if (peerId.isGroupConversationId()) {
+            repository.historyPageByConversationId(peerId, beforeTime, limit)
+        } else {
+            repository.historyPage(session.userId, peerId, beforeTime, limit)
+        }
+    }
+
+    private fun peerReadCursor(peerId: String): Long? {
+        return if (peerId.isGroupConversationId()) {
+            repository.conversationPeerReadCursorByConversationId(peerId)
+        } else {
+            repository.conversationPeerReadCursor(session.userId, peerId)
+        }
+    }
+
+    private fun String.isGroupConversationId(): Boolean = startsWith("group:")
 
     private fun connectIfNeeded() {
         when (connection.states.value) {

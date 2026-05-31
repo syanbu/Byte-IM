@@ -33,6 +33,81 @@ class ConversationDaoContractTest {
     }
 
     @Test
+    fun clearUnreadAlsoResetsMentionUnreadForTargetConversation() {
+        val dao = InMemoryConversationDao()
+        dao.upsertConversation(
+            Conversation(
+                conversationId = "group:g_1001",
+                peerId = "group:g_1001",
+                peerName = "群聊(3)",
+                type = ConversationType.GROUP,
+                title = "群聊(3)",
+                lastMessageId = null,
+                lastMessagePreview = "已创建群聊",
+                lastMessageTime = 100,
+                unreadCount = 3,
+                mentionUnreadCount = 2,
+                updatedAt = 100
+            )
+        )
+
+        dao.clearUnread("group:g_1001")
+
+        val conversation = dao.listConversations(limit = 20).single()
+        assertEquals(0, conversation.unreadCount)
+        assertEquals(0, conversation.mentionUnreadCount)
+    }
+
+    @Test
+    fun upsertConversationPersistsGroupConversationFields() {
+        val dao = InMemoryConversationDao()
+        val conversation = Conversation(
+            conversationId = "group:g_1001",
+            peerId = "group:g_1001",
+            peerName = "群聊(3)",
+            type = ConversationType.GROUP,
+            title = "产品群",
+            avatarUrl = "https://example.com/group.png",
+            lastMessageId = null,
+            lastMessagePreview = "已创建群聊",
+            lastMessageTime = 100,
+            unreadCount = 0,
+            mentionUnreadCount = 0,
+            updatedAt = 100
+        )
+
+        dao.upsertConversation(conversation)
+
+        assertEquals(conversation, dao.listConversations(limit = 20).single())
+    }
+
+    @Test
+    fun upsertFromMentionedGroupMessageIncrementsMentionUnread() {
+        val dao = InMemoryConversationDao()
+
+        dao.upsertFromMessage(
+            message(
+                conversationId = "group:g_1001",
+                peerId = "u2",
+                content = "@me hello",
+                createdAt = 100
+            ).copy(
+                conversationType = ConversationType.GROUP,
+                groupId = "g_1001",
+                receiverId = "me",
+                mentionedUserIds = listOf("me")
+            ),
+            incrementUnread = true,
+            incrementMentionUnread = true
+        )
+
+        val conversation = dao.listConversations(limit = 20).single()
+        assertEquals(ConversationType.GROUP, conversation.type)
+        assertEquals(1, conversation.unreadCount)
+        assertEquals(1, conversation.mentionUnreadCount)
+    }
+
+    @Test
     fun totalUnreadCountSumsAllConversations() {
         val dao = InMemoryConversationDao()
         dao.upsertFromMessage(message("c1", "u2", "one", createdAt = 100), incrementUnread = true)

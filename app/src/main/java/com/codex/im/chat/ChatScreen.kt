@@ -46,9 +46,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.codex.im.message.ChatImageCompressor
 import com.codex.im.storage.ChatMessage
+import com.codex.im.storage.GroupMember
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
 import com.codex.im.storage.MessageType
@@ -62,9 +68,12 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null
 ) {
-    var draft by remember { mutableStateOf("") }
+    var draft by remember { mutableStateOf(TextFieldValue("")) }
     var previewMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var activeActionMessageId by remember { mutableStateOf<String?>(null) }
+    var showGroupRename by remember { mutableStateOf(false) }
+    var groupNameDraft by remember { mutableStateOf(state.peerName) }
+    var selectedMentions by remember { mutableStateOf(emptyList<ChatMention>()) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
@@ -117,6 +126,12 @@ fun ChatScreen(
         previousLatestMessageId = latestMessageId
     }
 
+    LaunchedEffect(state.peerName) {
+        if (!showGroupRename) {
+            groupNameDraft = state.peerName
+        }
+    }
+
     LaunchedEffect(shouldLoadEarlierHistory) {
         if (shouldLoadEarlierHistory) {
             viewModel.loadMoreHistory()
@@ -149,7 +164,20 @@ fun ChatScreen(
                     )
                 }
             }
-            Text(text = state.peerName, style = MaterialTheme.typography.titleLarge)
+            Text(
+                text = state.peerName,
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f)
+            )
+            if (state.peerId.startsWith("group:")) {
+                IconButton(onClick = { showGroupRename = true }) {
+                    Text(
+                        text = "...",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
         }
         LazyColumn(
             state = listState,
@@ -170,7 +198,9 @@ fun ChatScreen(
                         peerAvatarUrl = state.peerAvatarUrl,
                         currentUserAvatarUrl = state.currentUserAvatarUrl,
                         currentUserId = viewModel.currentUserId,
+                        senderProfile = state.senderProfiles[message.senderId],
                         peerReadUpToServerSeq = state.peerReadUpToServerSeq,
+                        mentionMembers = state.mentionMembers,
                         showActions = activeActionMessageId == message.messageId,
                         onOpenImagePreview = { previewMessage = it },
                         onOpenActions = { activeActionMessageId = message.messageId },
@@ -213,16 +243,31 @@ fun ChatScreen(
         }
         ChatComposerBar(
             draft = draft,
-            onDraftChange = { draft = it },
-            canSend = ChatDisplayPolicy.shouldShowSendButton(draft) && state.peerId.isNotBlank(),
+            onDraftChange = {
+                draft = it
+                selectedMentions = ChatMentionPolicy.activeMentions(it.text, selectedMentions)
+            },
+            isGroup = state.peerId.startsWith("group:"),
+            mentionMembers = state.mentionMembers.filter { it.userId != viewModel.currentUserId },
+            onMentionSelected = { member ->
+                val result = ChatMentionPolicy.insertMention(draft.text, selectedMentions, member)
+                draft = TextFieldValue(
+                    text = result.draft,
+                    selection = TextRange(result.cursorPosition)
+                )
+                selectedMentions = result.selectedMentions
+            },
+            canSend = ChatDisplayPolicy.shouldShowSendButton(draft.text) && state.peerId.isNotBlank(),
             onPickImage = {
                 imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
             onSend = {
-                val content = draft
-                draft = ""
+                val content = draft.text
+                val mentionIds = ChatMentionPolicy.activeMentionIds(content, selectedMentions)
+                draft = TextFieldValue("")
+                selectedMentions = emptyList()
                 scope.launch {
-                    viewModel.sendText(content)
+                    viewModel.sendText(content, mentionedUserIds = mentionIds)
                 }
             }
         )
@@ -231,6 +276,37 @@ fun ChatScreen(
         ChatImagePreviewScreen(
             message = message,
             onDismiss = { previewMessage = null }
+        )
+    }
+    if (showGroupRename) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showGroupRename = false },
+            title = { Text("修改群名称") },
+            text = {
+                TextField(
+                    value = groupNameDraft,
+                    onValueChange = { groupNameDraft = it },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val nextName = groupNameDraft
+                        showGroupRename = false
+                        scope.launch {
+                            viewModel.renameGroup(nextName)
+                        }
+                    }
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showGroupRename = false }) {
+                    Text("取消")
+                }
+            }
         )
     }
 }
@@ -254,21 +330,61 @@ private fun RecalledMessageNotice(text: String) {
 
 @Composable
 private fun ChatComposerBar(
-    draft: String,
-    onDraftChange: (String) -> Unit,
+    draft: TextFieldValue,
+    onDraftChange: (TextFieldValue) -> Unit,
+    isGroup: Boolean,
+    mentionMembers: List<GroupMember>,
+    onMentionSelected: (GroupMember) -> Unit,
     canSend: Boolean,
     onPickImage: () -> Unit,
     onSend: () -> Unit
 ) {
     val barColor = MaterialTheme.colorScheme.surfaceContainer
     val inputShape = RoundedCornerShape(18.dp)
-    val action = ChatDisplayPolicy.composerAction(draft)
+    val action = ChatDisplayPolicy.composerAction(draft.text)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(barColor)
     ) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        if (ChatMentionPolicy.shouldShowPicker(draft.text, isGroup) && mentionMembers.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                mentionMembers.forEach { member ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                            .clickable { onMentionSelected(member) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AvatarImage(
+                            avatarUrl = member.avatarUrl,
+                            displayName = member.displayName,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = member.displayName,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "ID: ${member.userId}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -330,7 +446,9 @@ private fun ChatMessageRow(
     peerAvatarUrl: String?,
     currentUserAvatarUrl: String?,
     currentUserId: String,
+    senderProfile: com.codex.im.storage.UserProfile?,
     peerReadUpToServerSeq: Long?,
+    mentionMembers: List<GroupMember>,
     showActions: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onOpenActions: () -> Unit,
@@ -340,6 +458,15 @@ private fun ChatMessageRow(
     onRecall: (ChatMessage) -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
+    val avatar = ChatDisplayPolicy.bubbleAvatar(
+        message = message,
+        groupTitle = peerName,
+        peerName = peerName,
+        peerAvatarUrl = peerAvatarUrl,
+        currentUserAvatarUrl = currentUserAvatarUrl,
+        currentUserId = currentUserId,
+        senderProfile = senderProfile
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -349,8 +476,8 @@ private fun ChatMessageRow(
     ) {
         if (!outgoing) {
             AvatarImage(
-                avatarUrl = peerAvatarUrl,
-                displayName = peerName,
+                avatarUrl = avatar.avatarUrl,
+                displayName = avatar.displayName,
                 modifier = Modifier.size(36.dp)
             )
         }
@@ -359,6 +486,7 @@ private fun ChatMessageRow(
             currentUserId = currentUserId,
             outgoing = outgoing,
             peerReadUpToServerSeq = peerReadUpToServerSeq,
+            mentionMembers = mentionMembers,
             showActions = showActions,
             onOpenImagePreview = onOpenImagePreview,
             onOpenActions = onOpenActions,
@@ -369,8 +497,8 @@ private fun ChatMessageRow(
         )
         if (outgoing) {
             AvatarImage(
-                avatarUrl = currentUserAvatarUrl,
-                displayName = "Me",
+                avatarUrl = avatar.avatarUrl,
+                displayName = avatar.displayName,
                 modifier = Modifier.size(36.dp)
             )
         }
@@ -384,6 +512,7 @@ private fun ChatMessageContent(
     currentUserId: String,
     outgoing: Boolean,
     peerReadUpToServerSeq: Long?,
+    mentionMembers: List<GroupMember>,
     showActions: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onOpenActions: () -> Unit,
@@ -416,6 +545,7 @@ private fun ChatMessageContent(
             message = message,
             outgoing = outgoing,
             peerReadUpToServerSeq = peerReadUpToServerSeq,
+            mentionMembers = mentionMembers,
             onOpenImagePreview = onOpenImagePreview,
             onRetryImage = onRetryImage,
             onLongPressImage = onOpenActions,
@@ -429,6 +559,7 @@ private fun ChatBubbleLine(
     message: ChatMessage,
     outgoing: Boolean,
     peerReadUpToServerSeq: Long?,
+    mentionMembers: List<GroupMember>,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onRetryImage: (ChatMessage) -> Unit,
     onLongPressImage: () -> Unit,
@@ -461,6 +592,7 @@ private fun ChatBubbleLine(
             ChatTextBubble(
                 message = message,
                 outgoing = outgoing,
+                mentionMembers = mentionMembers,
                 onLongPress = onLongPressText,
                 modifier = Modifier.padding(horizontal = 10.dp)
             )
@@ -473,6 +605,7 @@ private fun ChatBubbleLine(
 private fun ChatTextBubble(
     message: ChatMessage,
     outgoing: Boolean,
+    mentionMembers: List<GroupMember>,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -483,7 +616,7 @@ private fun ChatTextBubble(
     }
     Box(modifier = modifier) {
         Text(
-            text = message.content,
+            text = message.mentionText(mentionMembers),
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier
                 .background(bubbleColor, RoundedCornerShape(8.dp))
@@ -493,6 +626,35 @@ private fun ChatTextBubble(
                 )
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         )
+    }
+}
+
+@Composable
+private fun ChatMessage.mentionText(mentionMembers: List<GroupMember>): AnnotatedString {
+    if (mentionedUserIds.isEmpty()) {
+        return AnnotatedString(content)
+    }
+    val mentions = ChatMentionPolicy.mentionsForMessage(mentionedUserIds, mentionMembers)
+    val displayText = ChatMentionPolicy.displayText(content, mentions)
+    val ranges = displayText.highlightRanges
+    if (ranges.isEmpty()) {
+        return AnnotatedString(displayText.text)
+    }
+    val highlightColor = MaterialTheme.colorScheme.primary
+    return buildAnnotatedString {
+        var cursor = 0
+        ranges.forEach { range ->
+            if (range.first > cursor) {
+                append(displayText.text.substring(cursor, range.first))
+            }
+            withStyle(SpanStyle(color = highlightColor)) {
+                append(displayText.text.substring(range.first, range.last + 1))
+            }
+            cursor = range.last + 1
+        }
+        if (cursor < displayText.text.length) {
+            append(displayText.text.substring(cursor))
+        }
     }
 }
 

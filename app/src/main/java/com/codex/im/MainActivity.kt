@@ -65,7 +65,10 @@ import com.codex.im.contacts.DemoContactResolver
 import com.codex.im.conversation.ConversationListScreen
 import com.codex.im.conversation.ConversationListViewModel
 import com.codex.im.group.GroupCreateScreen
+import com.codex.im.group.GroupCreateNavigationPolicy
 import com.codex.im.group.GroupCreateViewModel
+import com.codex.im.group.DefaultGroupRepository
+import com.codex.im.group.OkHttpGroupApi
 import com.codex.im.message.AndroidChatThumbnailCache
 import com.codex.im.message.CoilChatThumbnailPreloader
 import com.codex.im.message.MessageIdGenerator
@@ -82,6 +85,7 @@ import com.codex.im.profile.OkHttpProfileApi
 import com.codex.im.profile.AvatarUploadApi
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.storage.AndroidConversationDao
+import com.codex.im.storage.AndroidGroupDao
 import com.codex.im.storage.AndroidMessageDao
 import com.codex.im.storage.AndroidPendingMessageDao
 import com.codex.im.storage.AndroidTransactionRunner
@@ -123,6 +127,11 @@ class MainActivity : ComponentActivity() {
             userProfileDao = AndroidUserProfileDao(database),
             profileApi = OkHttpProfileApi(baseUrl = mockServerConfig.httpBaseUrl)
         )
+        val groupRepository = DefaultGroupRepository(
+            groupApi = OkHttpGroupApi(baseUrl = mockServerConfig.httpBaseUrl),
+            groupDao = AndroidGroupDao(database),
+            conversationDao = AndroidConversationDao(database)
+        )
         setContent {
             val loginViewModel = remember { LoginViewModel(repository) }
             SelfHostedImApp(
@@ -131,6 +140,7 @@ class MainActivity : ComponentActivity() {
                 messageRepository = messageRepository,
                 connection = connection,
                 profileRepository = profileRepository,
+                groupRepository = groupRepository,
                 avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = mockServerConfig.httpBaseUrl),
                 imageUploadApi = OkHttpImageUploadApi(baseUrl = mockServerConfig.httpBaseUrl)
             )
@@ -189,6 +199,7 @@ fun SelfHostedImApp(
     messageRepository: MessageRepository? = null,
     connection: ImConnection? = null,
     profileRepository: ProfileRepository? = null,
+    groupRepository: com.codex.im.group.GroupRepository? = null,
     avatarUploadApi: AvatarUploadApi? = null,
     imageUploadApi: ImageUploadApi? = null
 ) {
@@ -214,13 +225,14 @@ fun SelfHostedImApp(
                 loginViewModel.restoreSession()
             }
             val session = state.session
-            if (state.isAuthenticated && session != null && validSessionProvider != null && messageRepository != null && connection != null && profileRepository != null && avatarUploadApi != null && imageUploadApi != null) {
+            if (state.isAuthenticated && session != null && validSessionProvider != null && messageRepository != null && connection != null && profileRepository != null && groupRepository != null && avatarUploadApi != null && imageUploadApi != null) {
                 AuthenticatedImNavHost(
                     session = session,
                     validSessionProvider = validSessionProvider,
                     messageRepository = messageRepository,
                     connection = connection,
                     profileRepository = profileRepository,
+                    groupRepository = groupRepository,
                     avatarUploadApi = avatarUploadApi,
                     imageUploadApi = imageUploadApi,
                     onLogout = {
@@ -248,6 +260,7 @@ private fun AuthenticatedImNavHost(
     messageRepository: MessageRepository,
     connection: ImConnection,
     profileRepository: ProfileRepository,
+    groupRepository: com.codex.im.group.GroupRepository,
     avatarUploadApi: AvatarUploadApi,
     imageUploadApi: ImageUploadApi,
     onLogout: suspend () -> Unit
@@ -331,6 +344,7 @@ private fun AuthenticatedImNavHost(
                         repository = messageRepository,
                         connection = connection,
                         profileRepository = profileRepository,
+                        groupRepository = groupRepository,
                         validSessionProvider = validSessionProvider,
                         thumbnailPreloader = CoilChatThumbnailPreloader(context)
                     )
@@ -345,8 +359,8 @@ private fun AuthenticatedImNavHost(
                             launchSingleTop = true
                         }
                     },
-                    onOpenConversation = { peerUserId ->
-                        SelfHostedImRoute.Chat.createRoute(peerUserId)?.let(navController::navigateToChat)
+                    onOpenConversation = { conversationId ->
+                        SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
                     }
                 )
                 TopLevelRouteBackHandler(
@@ -370,7 +384,7 @@ private fun AuthenticatedImNavHost(
                     viewModel = contactListViewModel,
                     state = contactState,
                     onOpenContact = { peerUserId ->
-                        SelfHostedImRoute.Chat.createRoute(peerUserId)?.let(navController::navigateToChat)
+                        SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)?.let(navController::navigateToChat)
                     }
                 )
                 TopLevelRouteBackHandler(
@@ -385,7 +399,7 @@ private fun AuthenticatedImNavHost(
                     GroupCreateViewModel(
                         session = session,
                         profileRepository = profileRepository,
-                        messageRepository = messageRepository,
+                        groupRepository = groupRepository,
                         contactResolver = DemoContactResolver::contactsFor,
                         validSessionProvider = validSessionProvider
                     )
@@ -395,11 +409,9 @@ private fun AuthenticatedImNavHost(
                     viewModel = groupCreateViewModel,
                     state = groupCreateState,
                     onBack = { navController.popBackStack() },
-                    onCreated = {
-                        navController.popBackStack(
-                            route = SelfHostedImRoute.Conversations.route,
-                            inclusive = false
-                        )
+                    onCreated = { conversationId ->
+                        GroupCreateNavigationPolicy.destinationAfterCreated(conversationId)
+                            ?.let(navController::navigateToChat)
                     }
                 )
             }
@@ -425,15 +437,17 @@ private fun AuthenticatedImNavHost(
             }
 
             composable(route = SelfHostedImRoute.Chat.pattern) { chatBackStackEntry ->
-                val peerUserId = chatBackStackEntry.arguments
-                    ?.getString(SelfHostedImRoute.Chat.PEER_USER_ID_ARG)
+                val conversationId = chatBackStackEntry.arguments
+                    ?.getString(SelfHostedImRoute.Chat.CONVERSATION_ID_ARG)
                     .orEmpty()
-                val chatViewModel = remember(session.userId, peerUserId) {
+                val peerUserId = conversationId.peerIdForCurrentSession(session.userId)
+                val chatViewModel = remember(session.userId, conversationId) {
                     ChatViewModel(
                         session = session,
                         repository = messageRepository,
                         connection = connection,
                         profileRepository = profileRepository,
+                        groupRepository = groupRepository,
                         initialPeerId = peerUserId,
                         imageUploadApi = imageUploadApi,
                         validSessionProvider = validSessionProvider
@@ -450,6 +464,18 @@ private fun AuthenticatedImNavHost(
             }
         }
     }
+}
+
+private fun String.peerIdForCurrentSession(currentUserId: String): String {
+    val parts = split(":")
+    if (parts.size == 3 && parts[0] == "single") {
+        return when (currentUserId) {
+            parts[1] -> parts[2]
+            parts[2] -> parts[1]
+            else -> this
+        }
+    }
+    return this
 }
 
 private fun NavHostController.navigateToTopLevelTab(route: String) {
