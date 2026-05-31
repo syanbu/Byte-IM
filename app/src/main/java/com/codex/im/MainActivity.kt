@@ -3,6 +3,10 @@ package com.codex.im
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -84,6 +88,8 @@ import com.codex.im.storage.ImDatabaseHelper
 
 class MainActivity : ComponentActivity() {
     private var connectionLifecycleManager: ConnectionLifecycleManager? = null
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,6 +106,7 @@ class MainActivity : ComponentActivity() {
             tokenProvider = { _ -> repository.ensureValidSession()?.accessToken }
         )
         connectionLifecycleManager = connection
+        registerNetworkRecoveryCallback(connection)
         val messageRepository = MessageRepository(
             messageDao = AndroidMessageDao(database),
             conversationDao = AndroidConversationDao(database),
@@ -136,6 +143,39 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         connectionLifecycleManager?.setForeground(false)
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        unregisterNetworkRecoveryCallback()
+        super.onDestroy()
+    }
+
+    private fun registerNetworkRecoveryCallback(connection: ConnectionLifecycleManager) {
+        val manager = getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                connection.notifyNetworkAvailable()
+            }
+
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                    connection.notifyNetworkAvailable()
+                }
+            }
+        }
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        manager.registerNetworkCallback(request, callback)
+        connectivityManager = manager
+        networkCallback = callback
+    }
+
+    private fun unregisterNetworkRecoveryCallback() {
+        val callback = networkCallback ?: return
+        connectivityManager?.unregisterNetworkCallback(callback)
+        networkCallback = null
+        connectivityManager = null
     }
 
 }

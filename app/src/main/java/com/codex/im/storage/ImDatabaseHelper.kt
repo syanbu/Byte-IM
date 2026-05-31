@@ -33,6 +33,9 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
               file_size_bytes INTEGER,
               local_original_path TEXT,
               local_thumbnail_path TEXT,
+              is_recalled INTEGER NOT NULL DEFAULT 0,
+              recalled_at INTEGER,
+              recalled_by TEXT,
               status TEXT NOT NULL,
               direction TEXT NOT NULL,
               created_at INTEGER NOT NULL,
@@ -55,7 +58,9 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
               last_message_preview TEXT NOT NULL,
               last_message_time INTEGER NOT NULL,
               unread_count INTEGER NOT NULL DEFAULT 0,
-              updated_at INTEGER NOT NULL
+              updated_at INTEGER NOT NULL,
+              peer_read_up_to_server_seq INTEGER,
+              peer_read_at INTEGER
             )
             """.trimIndent()
         )
@@ -106,6 +111,6 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 3
+        const val DATABASE_VERSION = 4
     }
 }

@@ -117,6 +117,8 @@ message.serverSeq <= conversation.peerReadUpToServerSeq
 
 满足条件则显示绿色对勾，否则显示空心圆圈。
 
+长按消息弹出操作时，已读/未读图标仍必须跟随消息气泡本体，而不是跟随 `复制 | 撤回` 动作条。当前实现中 `ChatMessageContent` 负责竖向放置动作条和消息行，`ChatBubbleLine` 单独负责横向对齐“已读/未读图标 + 气泡”，因此动作条出现或隐藏不会改变已读标记相对气泡的位置。
+
 ### 单聊本地存储
 
 单聊第一版推荐将读游标放在 `conversations` 表，而不是给每条消息单独写 `read_at`：
@@ -154,14 +156,14 @@ ALTER TABLE conversations ADD COLUMN peer_read_at INTEGER;
 
 撤回不是删除消息，而是把消息标记为已撤回。
 
-消息原始记录仍保留在 SQLite 中，但 UI 不再展示原文本或图片，而是在聊天列表中显示一条提示：
+消息原始记录仍保留在 SQLite 中，但 UI 不再展示原文本或图片，而是在聊天列表中显示一条居中的系统提示：
 
 ```text
 发送方看到：你撤回了一条消息
 接收方看到：对方撤回了一条消息
 ```
 
-这样聊天记录顺序不会突然断裂，也方便会话列表显示最后一条消息为撤回提示。
+这样聊天记录顺序不会突然断裂，也方便会话列表显示最后一条消息为撤回提示。撤回提示不是一条普通 message 气泡，因此不显示发送方头像，也不显示已读/未读状态。
 
 ### 协议命令
 
@@ -275,7 +277,7 @@ else:
     正常显示文本或图片
 ```
 
-撤回提示仍然作为 `LazyColumn` 中的一项展示，不直接从列表中过滤掉。
+撤回提示仍然作为 `LazyColumn` 中的一项展示，不直接从列表中过滤掉，但它使用居中的系统提示样式，不走普通左/右气泡行。
 
 会话列表 preview 建议同步更新为：
 
@@ -314,14 +316,16 @@ ChatScreen.kt
       ChatTextBubble
       ChatImageBubble
       ChatMessageActionMenu
+    RecalledMessageNotice
 ```
 
 职责划分：
 
-- `ChatMessageRow`：负责消息左右布局、头像、发送状态、已读状态。
+- `ChatMessageRow`：负责普通消息左右布局、头像、发送状态、已读状态。
 - `ChatTextBubble`：负责文本消息气泡背景、圆角、文本内容、长按手势。
 - `ChatImageBubble`：负责图片消息展示，后续也支持长按菜单。
 - `ChatMessageActionMenu`：负责展示“复制 / 撤回 / 重发 / 保存图片”等菜单项。
+- `RecalledMessageNotice`：负责已撤回消息的居中系统提示，不显示头像、气泡、复制/撤回菜单、已读/未读状态。
 - `ChatDisplayPolicy`：负责菜单项是否显示、撤回时间窗口、提示文案等纯判断逻辑。
 
 第一版可以先实现文本气泡和文本长按菜单，图片气泡后续复用同一个菜单模型。
@@ -360,10 +364,15 @@ Modifier.combinedClickable(
 )
 ```
 
-长按后展示 `DropdownMenu`：
+长按后展示贴近气泡的横向动作条，避免竖向菜单遮挡消息正文。文本消息可显示：
 
 ```text
-复制
+复制 | 撤回
+```
+
+图片消息复用同一套动作条，但只显示：
+
+```text
 撤回
 ```
 
@@ -385,6 +394,10 @@ fun canRecall(message: ChatMessage, currentUserId: String, now: Long): Boolean {
 
 在 B12 撤回字段落库前，可以先做气泡背景和“复制”。等 `isRecalled`、`RECALL_MESSAGE` 等能力完成后，再接入“撤回”菜单项。
 
+动作顺序固定为从左到右 `复制`、`撤回`。图片消息不支持复制，因此符合撤回条件时只显示 `撤回`。超过 2 分钟、不属于当前用户、未发送成功、没有 `serverSeq` 或已撤回时，`撤回` 直接隐藏，不显示禁用态。
+
+动作条是可取消的临时 UI：点击动作条以外的聊天空白区域会关闭动作条，不会触发复制或撤回。
+
 ### 复制与撤回职责边界
 
 复制：
@@ -392,6 +405,7 @@ fun canRecall(message: ChatMessage, currentUserId: String, now: Long): Boolean {
 - 不需要经过 ViewModel。
 - `ChatTextBubble` 或上层 `ChatScreen` 可以直接使用 `ClipboardManager`。
 - 复制内容为当前文本消息的 `content`。
+- 图片消息不显示复制入口。
 - 已撤回消息不能复制。
 
 撤回：
@@ -444,7 +458,7 @@ fun canRecall(message: ChatMessage, currentUserId: String, now: Long): Boolean {
 5. 服务端返回 RECALL_ACK 给 A。
 6. 服务端发送 RECALL_NOTIFY 给 B。
 7. A 和 B 都将本地消息标记为 is_recalled = 1。
-8. UI 将原消息替换为“你撤回了一条消息”或“对方撤回了一条消息”。
+8. UI 将原消息替换为居中的“你撤回了一条消息”或“对方撤回了一条消息”，不再显示原消息气泡、头像或已读/未读状态。
 ```
 
 ## 群聊扩展思路
@@ -701,6 +715,8 @@ else:
     正常消息气泡
 ```
 
+已撤回消息应走居中系统提示样式，不走普通 `ChatMessageRow` 气泡布局，因此不会显示头像、长按菜单或已读/未读状态。
+
 ### 第 10 步：补测试
 
 Android 单元测试建议覆盖：
@@ -714,7 +730,7 @@ Android 单元测试建议覆盖：
 - 2 分钟内的自己消息可以发起撤回。
 - 超过 2 分钟的消息不展示撤回入口。
 - 收到 `RECALL_NOTIFY` 后消息标记为已撤回。
-- 已撤回消息渲染为提示文案，不再渲染文本或图片气泡。
+- 已撤回消息渲染为居中提示文案，不再渲染文本或图片气泡、头像、已读/未读状态。
 
 Mock-server 测试建议覆盖：
 

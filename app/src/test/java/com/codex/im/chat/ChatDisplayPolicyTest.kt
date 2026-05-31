@@ -3,9 +3,11 @@ package com.codex.im.chat
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
+import com.codex.im.storage.MessageType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatDisplayPolicyTest {
@@ -91,6 +93,80 @@ class ChatDisplayPolicyTest {
         assertEquals(ChatComposerAction.PICK_IMAGE, ChatDisplayPolicy.composerAction(""))
         assertEquals(ChatComposerAction.PICK_IMAGE, ChatDisplayPolicy.composerAction("   "))
         assertEquals(ChatComposerAction.SEND_TEXT, ChatDisplayPolicy.composerAction("hello"))
+    }
+
+    @Test
+    fun textMessagesCanBeCopiedUntilRecalled() {
+        assertTrue(ChatDisplayPolicy.canCopy(message(content = "copy me")))
+        assertFalse(ChatDisplayPolicy.canCopy(message(content = "old").copy(isRecalled = true)))
+        assertFalse(ChatDisplayPolicy.canCopy(message(content = "[图片]").copy(type = MessageType.IMAGE)))
+    }
+
+    @Test
+    fun onlyCurrentUserSentMessagesWithServerSeqCanBeRecalledWithinTwoMinutes() {
+        val sent = message(
+            senderId = "13800113800",
+            status = MessageStatus.SENT,
+            direction = MessageDirection.OUTGOING
+        ).copy(serverSeq = 9L, createdAt = 1_000L)
+
+        assertTrue(ChatDisplayPolicy.canRecall(sent, currentUserId = "13800113800", now = 121_000L))
+        assertFalse(ChatDisplayPolicy.canRecall(sent, currentUserId = "13800113800", now = 121_001L))
+        assertFalse(ChatDisplayPolicy.canRecall(sent.copy(senderId = "13900113900"), currentUserId = "13800113800", now = 2_000L))
+        assertFalse(ChatDisplayPolicy.canRecall(sent.copy(serverSeq = null), currentUserId = "13800113800", now = 2_000L))
+        assertFalse(ChatDisplayPolicy.canRecall(sent.copy(isRecalled = true), currentUserId = "13800113800", now = 2_000L))
+    }
+
+    @Test
+    fun messageActionsAreOrderedLeftToRightAndHideExpiredRecall() {
+        val sent = message(
+            senderId = "13800113800",
+            status = MessageStatus.SENT,
+            direction = MessageDirection.OUTGOING
+        ).copy(serverSeq = 9L, createdAt = 1_000L)
+
+        assertEquals(
+            listOf(ChatMessageAction.COPY, ChatMessageAction.RECALL),
+            ChatDisplayPolicy.messageActions(sent, currentUserId = "13800113800", now = 121_000L)
+        )
+        assertEquals(
+            listOf(ChatMessageAction.COPY),
+            ChatDisplayPolicy.messageActions(sent, currentUserId = "13800113800", now = 121_001L)
+        )
+    }
+
+    @Test
+    fun imageMessageActionsOnlyShowRecallWhenEligible() {
+        val image = message(
+            senderId = "13800113800",
+            content = "[图片]",
+            status = MessageStatus.SENT,
+            direction = MessageDirection.OUTGOING
+        ).copy(type = MessageType.IMAGE, serverSeq = 9L, createdAt = 1_000L)
+
+        assertEquals(
+            listOf(ChatMessageAction.RECALL),
+            ChatDisplayPolicy.messageActions(image, currentUserId = "13800113800", now = 121_000L)
+        )
+        assertEquals(
+            emptyList<ChatMessageAction>(),
+            ChatDisplayPolicy.messageActions(image, currentUserId = "13800113800", now = 121_001L)
+        )
+    }
+
+    @Test
+    fun recalledMessagePromptDependsOnSender() {
+        val own = message(senderId = "13800113800").copy(isRecalled = true)
+        val peer = message(senderId = "13900113900", direction = MessageDirection.INCOMING).copy(isRecalled = true)
+
+        assertEquals("你撤回了一条消息", ChatDisplayPolicy.recalledMessageText(own, currentUserId = "13800113800"))
+        assertEquals("对方撤回了一条消息", ChatDisplayPolicy.recalledMessageText(peer, currentUserId = "13800113800"))
+    }
+
+    @Test
+    fun recalledMessagesUseCenteredNoticeInsteadOfBubbleRow() {
+        assertEquals(ChatMessageRowKind.CENTERED_NOTICE, ChatDisplayPolicy.rowKind(message().copy(isRecalled = true)))
+        assertEquals(ChatMessageRowKind.BUBBLE, ChatDisplayPolicy.rowKind(message().copy(isRecalled = false)))
     }
 
     private fun message(

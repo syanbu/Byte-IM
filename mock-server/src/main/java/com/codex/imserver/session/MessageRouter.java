@@ -19,8 +19,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -31,6 +33,7 @@ public final class MessageRouter {
     private final TokenService tokenService;
     private final ServerSeqStore serverSeqStore;
     private final AcceptedMessageStore acceptedMessageStore;
+    private final LongSupplier clock;
     private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ConcurrentMap<String, AcceptedMessage>> undeliveredMessagesByReceiver = new ConcurrentHashMap<>();
 
@@ -52,10 +55,21 @@ public final class MessageRouter {
             ServerSeqStore serverSeqStore,
             AcceptedMessageStore acceptedMessageStore
     ) {
+        this(registry, tokenService, serverSeqStore, acceptedMessageStore, System::currentTimeMillis);
+    }
+
+    MessageRouter(
+            ClientSessionRegistry registry,
+            TokenService tokenService,
+            ServerSeqStore serverSeqStore,
+            AcceptedMessageStore acceptedMessageStore,
+            LongSupplier clock
+    ) {
         this.registry = registry;
         this.tokenService = tokenService;
         this.serverSeqStore = serverSeqStore;
         this.acceptedMessageStore = acceptedMessageStore;
+        this.clock = clock;
         restoreAcceptedMessages();
     }
 
@@ -79,7 +93,7 @@ public final class MessageRouter {
         String conversationId = message.get("conversationId").getAsString();
         long clientSeq = message.get("clientSeq").getAsLong();
         long nextServerSeq = nextServerSeq(conversationId);
-        long serverTime = System.currentTimeMillis();
+        long serverTime = clock.getAsLong();
 
         ImServerLogger.log(
                 "[IM] SEND_MESSAGE sender=%s receiver=%s conversationId=%s messageId=%s clientSeq=%d serverSeq=%d content=%s",
@@ -156,6 +170,72 @@ public final class MessageRouter {
         });
     }
 
+    public synchronized void handleReadAck(String socketUserId, ImPacket packet) {
+        JsonObject ack = JsonParser
+                .parseString(new String(packet.body(), StandardCharsets.UTF_8))
+                .getAsJsonObject();
+        String readerId = ack.get("readerId").getAsString();
+        if (!socketUserId.equals(readerId)) {
+            ImServerLogger.log("[IM] READ_ACK rejected socketUserId=%s readerId=%s", socketUserId, readerId);
+            return;
+        }
+        String peerId = ack.get("peerId").getAsString();
+        registry.find(peerId).ifPresentOrElse(
+                client -> {
+                    client.send(packet(ImCommand.READ_ACK, ack));
+                    ImServerLogger.log(
+                            "[IM] READ_ACK forwarded reader=%s peer=%s readUpToServerSeq=%d",
+                            readerId,
+                            peerId,
+                            ack.get("readUpToServerSeq").getAsLong()
+                    );
+                },
+                () -> ImServerLogger.log("[IM] READ_ACK skipped peer offline reader=%s peer=%s", readerId, peerId)
+        );
+    }
+
+    public synchronized void handleRecallMessage(String socketUserId, ImPacket packet) {
+        JsonObject request = JsonParser
+                .parseString(new String(packet.body(), StandardCharsets.UTF_8))
+                .getAsJsonObject();
+        String messageId = request.get("messageId").getAsString();
+        String requesterId = request.get("requesterId").getAsString();
+        String conversationId = request.get("conversationId").getAsString();
+        AcceptedMessage accepted = acceptedMessagesById.get(messageId);
+        if (!socketUserId.equals(requesterId)) {
+            sendRecallFailure(socketUserId, messageId, conversationId, "REQUESTER_MISMATCH");
+            return;
+        }
+        if (accepted == null) {
+            sendRecallFailure(socketUserId, messageId, conversationId, "NOT_FOUND");
+            return;
+        }
+        String senderId = accepted.message().get("senderId").getAsString();
+        if (!requesterId.equals(senderId)) {
+            sendRecallFailure(socketUserId, messageId, conversationId, "NOT_SENDER");
+            return;
+        }
+        if (!conversationId.equals(accepted.message().get("conversationId").getAsString())) {
+            sendRecallFailure(socketUserId, messageId, conversationId, "CONVERSATION_MISMATCH");
+            return;
+        }
+        if (accepted.recalled()) {
+            sendRecallSuccess(socketUserId, accepted);
+            return;
+        }
+        long serverTime = accepted.ack().get("serverTime").getAsLong();
+        long recalledAt = clock.getAsLong();
+        if (recalledAt - serverTime > RECALL_WINDOW_MS) {
+            sendRecallFailure(socketUserId, messageId, conversationId, "EXPIRED");
+            return;
+        }
+        AcceptedMessage recalled = accepted.markRecalled(requesterId, recalledAt);
+        acceptedMessagesById.put(messageId, recalled);
+        acceptedMessageStore.markRecalled(messageId, requesterId, recalledAt);
+        sendRecallSuccess(socketUserId, recalled);
+        registry.find(recalled.receiverUserId()).ifPresent(client -> client.send(packet(ImCommand.RECALL_NOTIFY, recallNotifyBody(recalled))));
+    }
+
     private void sendAck(String senderUserId, JsonObject ack) {
         String messageId = ack.get("messageId").getAsString();
         long clientSeq = ack.get("clientSeq").getAsLong();
@@ -183,7 +263,7 @@ public final class MessageRouter {
         }
         ImServerLogger.log("[IM] HEARTBEAT received userId=%s", userId);
         JsonObject body = new JsonObject();
-        body.addProperty("serverTime", System.currentTimeMillis());
+        body.addProperty("serverTime", clock.getAsLong());
         client.send(packet(ImCommand.HEARTBEAT_ACK, body));
         ImServerLogger.log("[IM] HEARTBEAT_ACK sent userId=%s", userId);
     }
@@ -267,6 +347,30 @@ public final class MessageRouter {
         return new ImPacket(command.value(), body.toString().getBytes(StandardCharsets.UTF_8));
     }
 
+    private void sendRecallFailure(String requesterId, String messageId, String conversationId, String reason) {
+        JsonObject body = new JsonObject();
+        body.addProperty("messageId", messageId);
+        body.addProperty("conversationId", conversationId);
+        body.addProperty("success", false);
+        body.addProperty("reason", reason);
+        registry.find(requesterId).ifPresent(client -> client.send(packet(ImCommand.RECALL_ACK, body)));
+    }
+
+    private void sendRecallSuccess(String requesterId, AcceptedMessage accepted) {
+        JsonObject body = recallNotifyBody(accepted);
+        body.addProperty("success", true);
+        registry.find(requesterId).ifPresent(client -> client.send(packet(ImCommand.RECALL_ACK, body)));
+    }
+
+    private JsonObject recallNotifyBody(AcceptedMessage accepted) {
+        JsonObject body = new JsonObject();
+        body.addProperty("messageId", accepted.message().get("messageId").getAsString());
+        body.addProperty("conversationId", accepted.message().get("conversationId").getAsString());
+        body.addProperty("recalledBy", accepted.recalledBy());
+        body.addProperty("recalledAt", accepted.recalledAt());
+        return body;
+    }
+
     private void restoreAcceptedMessages() {
         for (StoredAcceptedMessage stored : acceptedMessageStore.loadAll()) {
             acceptedMessagesById.put(stored.messageId(), stored.accepted());
@@ -283,10 +387,21 @@ public final class MessageRouter {
             JsonObject message,
             String receiverUserId,
             long serverSeq,
-            boolean delivered
+            boolean delivered,
+            boolean recalled,
+            String recalledBy,
+            long recalledAt
     ) {
+        public AcceptedMessage(JsonObject ack, JsonObject message, String receiverUserId, long serverSeq, boolean delivered) {
+            this(ack, message, receiverUserId, serverSeq, delivered, false, null, 0L);
+        }
+
         private AcceptedMessage markDelivered() {
-            return new AcceptedMessage(ack, message, receiverUserId, serverSeq, true);
+            return new AcceptedMessage(ack, message, receiverUserId, serverSeq, true, recalled, recalledBy, recalledAt);
+        }
+
+        private AcceptedMessage markRecalled(String recalledBy, long recalledAt) {
+            return new AcceptedMessage(ack, message, receiverUserId, serverSeq, delivered, true, recalledBy, recalledAt);
         }
     }
 
@@ -297,6 +412,8 @@ public final class MessageRouter {
         Optional<AcceptedMessage> saveIfAbsent(String messageId, AcceptedMessage accepted);
 
         void markDelivered(String messageId, String receiverUserId);
+
+        void markRecalled(String messageId, String recalledBy, long recalledAt);
 
         List<StoredAcceptedMessage> loadAll();
     }
@@ -317,6 +434,11 @@ public final class MessageRouter {
                 }
                 return accepted.markDelivered();
             });
+        }
+
+        @Override
+        public void markRecalled(String messageId, String recalledBy, long recalledAt) {
+            acceptedMessagesById.computeIfPresent(messageId, (ignored, accepted) -> accepted.markRecalled(recalledBy, recalledAt));
         }
 
         @Override
@@ -481,11 +603,30 @@ public final class MessageRouter {
         }
 
         @Override
+        public synchronized void markRecalled(String messageId, String recalledBy, long recalledAt) {
+            try (Connection connection = DriverManager.getConnection(jdbcUrl);
+                 PreparedStatement statement = connection.prepareStatement(
+                         """
+                         UPDATE accepted_messages
+                         SET recalled = 1, recalled_by = ?, recalled_at = ?
+                         WHERE message_id = ?
+                         """
+                 )) {
+                statement.setString(1, recalledBy);
+                statement.setLong(2, recalledAt);
+                statement.setString(3, messageId);
+                statement.executeUpdate();
+            } catch (SQLException error) {
+                throw new IllegalStateException("Unable to update accepted message recall state", error);
+            }
+        }
+
+        @Override
         public synchronized List<StoredAcceptedMessage> loadAll() {
             try (Connection connection = DriverManager.getConnection(jdbcUrl);
                  PreparedStatement statement = connection.prepareStatement(
                          """
-                         SELECT message_id, receiver_id, server_seq, delivered, ack_json, message_json
+                         SELECT message_id, receiver_id, server_seq, delivered, recalled, recalled_by, recalled_at, ack_json, message_json
                          FROM accepted_messages
                          ORDER BY conversation_id ASC, server_seq ASC
                          """
@@ -502,7 +643,10 @@ public final class MessageRouter {
                                     message,
                                     resultSet.getString("receiver_id"),
                                     resultSet.getLong("server_seq"),
-                                    resultSet.getInt("delivered") == 1
+                                    resultSet.getInt("delivered") == 1,
+                                    resultSet.getInt("recalled") == 1,
+                                    resultSet.getString("recalled_by"),
+                                    resultSet.getLong("recalled_at")
                             )
                     ));
                 }
@@ -516,7 +660,7 @@ public final class MessageRouter {
             try (Connection connection = DriverManager.getConnection(jdbcUrl);
                  PreparedStatement statement = connection.prepareStatement(
                          """
-                         SELECT receiver_id, server_seq, delivered, ack_json, message_json
+                         SELECT receiver_id, server_seq, delivered, recalled, recalled_by, recalled_at, ack_json, message_json
                          FROM accepted_messages
                          WHERE message_id = ?
                          """
@@ -531,7 +675,10 @@ public final class MessageRouter {
                             JsonParser.parseString(resultSet.getString("message_json")).getAsJsonObject(),
                             resultSet.getString("receiver_id"),
                             resultSet.getLong("server_seq"),
-                            resultSet.getInt("delivered") == 1
+                            resultSet.getInt("delivered") == 1,
+                            resultSet.getInt("recalled") == 1,
+                            resultSet.getString("recalled_by"),
+                            resultSet.getLong("recalled_at")
                     ));
                 }
             } catch (SQLException error) {
@@ -555,14 +702,37 @@ public final class MessageRouter {
                           timestamp INTEGER NOT NULL,
                           server_time INTEGER NOT NULL,
                           delivered INTEGER NOT NULL DEFAULT 0,
+                          recalled INTEGER NOT NULL DEFAULT 0,
+                          recalled_by TEXT,
+                          recalled_at INTEGER NOT NULL DEFAULT 0,
                           ack_json TEXT NOT NULL,
                           message_json TEXT NOT NULL,
                           UNIQUE(conversation_id, server_seq)
                         )
                         """
                 );
+                addColumnIfMissing(connection, statement, "recalled", "INTEGER NOT NULL DEFAULT 0");
+                addColumnIfMissing(connection, statement, "recalled_by", "TEXT");
+                addColumnIfMissing(connection, statement, "recalled_at", "INTEGER NOT NULL DEFAULT 0");
             } catch (SQLException error) {
                 throw new IllegalStateException("Unable to initialize accepted message database", error);
+            }
+        }
+
+        private void addColumnIfMissing(
+                Connection connection,
+                Statement statement,
+                String columnName,
+                String columnDefinition
+        ) throws SQLException {
+            Set<String> columns = new HashSet<>();
+            try (ResultSet resultSet = connection.createStatement().executeQuery("PRAGMA table_info(accepted_messages)")) {
+                while (resultSet.next()) {
+                    columns.add(resultSet.getString("name"));
+                }
+            }
+            if (!columns.contains(columnName)) {
+                statement.executeUpdate("ALTER TABLE accepted_messages ADD COLUMN " + columnName + " " + columnDefinition);
             }
         }
 
@@ -574,4 +744,6 @@ public final class MessageRouter {
             return body.get(name).getAsLong();
         }
     }
+
+    private static final long RECALL_WINDOW_MS = 2 * 60 * 1000L;
 }

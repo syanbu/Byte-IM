@@ -6,6 +6,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -41,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.codex.im.message.ChatImageCompressor
 import com.codex.im.storage.ChatMessage
@@ -59,7 +64,9 @@ fun ChatScreen(
 ) {
     var draft by remember { mutableStateOf("") }
     var previewMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var activeActionMessageId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
     val context = LocalContext.current
     var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
@@ -120,6 +127,11 @@ fun ChatScreen(
         modifier = modifier
             .fillMaxSize()
             .imePadding()
+            .clickable(
+                indication = null,
+                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                onClick = { activeActionMessageId = null }
+            )
     ) {
         Row(
             modifier = Modifier
@@ -148,18 +160,36 @@ fun ChatScreen(
             reverseLayout = true
         ) {
             items(state.messages, key = { it.messageId }) { message ->
-                ChatMessageRow(
-                    message = message,
-                    peerName = state.peerName,
-                    peerAvatarUrl = state.peerAvatarUrl,
-                    currentUserAvatarUrl = state.currentUserAvatarUrl,
-                    onOpenImagePreview = { previewMessage = it },
-                    onRetryImage = { message ->
-                        scope.launch {
-                            viewModel.retryImageMessage(message.messageId)
+                when (ChatDisplayPolicy.rowKind(message)) {
+                    ChatMessageRowKind.CENTERED_NOTICE -> RecalledMessageNotice(
+                        text = ChatDisplayPolicy.recalledMessageText(message, viewModel.currentUserId)
+                    )
+                    ChatMessageRowKind.BUBBLE -> ChatMessageRow(
+                        message = message,
+                        peerName = state.peerName,
+                        peerAvatarUrl = state.peerAvatarUrl,
+                        currentUserAvatarUrl = state.currentUserAvatarUrl,
+                        currentUserId = viewModel.currentUserId,
+                        peerReadUpToServerSeq = state.peerReadUpToServerSeq,
+                        showActions = activeActionMessageId == message.messageId,
+                        onOpenImagePreview = { previewMessage = it },
+                        onOpenActions = { activeActionMessageId = message.messageId },
+                        onDismissActions = { activeActionMessageId = null },
+                        onRetryImage = { message ->
+                            scope.launch {
+                                viewModel.retryImageMessage(message.messageId)
+                            }
+                        },
+                        onCopyText = { text ->
+                            clipboard.setText(AnnotatedString(text))
+                        },
+                        onRecall = { message ->
+                            scope.launch {
+                                viewModel.recallMessage(message.messageId)
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
             if (state.messages.isNotEmpty()) {
                 item(key = "history-loader") {
@@ -201,6 +231,23 @@ fun ChatScreen(
         ChatImagePreviewScreen(
             message = message,
             onDismiss = { previewMessage = null }
+        )
+    }
+}
+
+@Composable
+private fun RecalledMessageNotice(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -282,8 +329,15 @@ private fun ChatMessageRow(
     peerName: String,
     peerAvatarUrl: String?,
     currentUserAvatarUrl: String?,
+    currentUserId: String,
+    peerReadUpToServerSeq: Long?,
+    showActions: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
-    onRetryImage: (ChatMessage) -> Unit
+    onOpenActions: () -> Unit,
+    onDismissActions: () -> Unit,
+    onRetryImage: (ChatMessage) -> Unit,
+    onCopyText: (String) -> Unit,
+    onRecall: (ChatMessage) -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
     Row(
@@ -291,7 +345,7 @@ private fun ChatMessageRow(
             .fillMaxWidth()
             .padding(vertical = 6.dp),
         horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
         if (!outgoing) {
             AvatarImage(
@@ -300,8 +354,94 @@ private fun ChatMessageRow(
                 modifier = Modifier.size(36.dp)
             )
         }
+        ChatMessageContent(
+            message = message,
+            currentUserId = currentUserId,
+            outgoing = outgoing,
+            peerReadUpToServerSeq = peerReadUpToServerSeq,
+            showActions = showActions,
+            onOpenImagePreview = onOpenImagePreview,
+            onOpenActions = onOpenActions,
+            onDismissActions = onDismissActions,
+            onRetryImage = onRetryImage,
+            onCopyText = onCopyText,
+            onRecall = onRecall
+        )
+        if (outgoing) {
+            AvatarImage(
+                avatarUrl = currentUserAvatarUrl,
+                displayName = "Me",
+                modifier = Modifier.size(36.dp)
+            )
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+private fun ChatMessageContent(
+    message: ChatMessage,
+    currentUserId: String,
+    outgoing: Boolean,
+    peerReadUpToServerSeq: Long?,
+    showActions: Boolean,
+    onOpenImagePreview: (ChatMessage) -> Unit,
+    onOpenActions: () -> Unit,
+    onDismissActions: () -> Unit,
+    onRetryImage: (ChatMessage) -> Unit,
+    onCopyText: (String) -> Unit,
+    onRecall: (ChatMessage) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val actions = ChatDisplayPolicy.messageActions(message, currentUserId, now = System.currentTimeMillis())
+    Column(
+        modifier = modifier,
+        horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start
+    ) {
+        if (showActions && actions.isNotEmpty()) {
+            ChatMessageActionBar(
+                actions = actions,
+                onCopy = {
+                    onDismissActions()
+                    onCopyText(message.content)
+                },
+                onRecall = {
+                    onDismissActions()
+                    onRecall(message)
+                },
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+        }
+        ChatBubbleLine(
+            message = message,
+            outgoing = outgoing,
+            peerReadUpToServerSeq = peerReadUpToServerSeq,
+            onOpenImagePreview = onOpenImagePreview,
+            onRetryImage = onRetryImage,
+            onLongPressImage = onOpenActions,
+            onLongPressText = onOpenActions
+        )
+    }
+}
+
+@Composable
+private fun ChatBubbleLine(
+    message: ChatMessage,
+    outgoing: Boolean,
+    peerReadUpToServerSeq: Long?,
+    onOpenImagePreview: (ChatMessage) -> Unit,
+    onRetryImage: (ChatMessage) -> Unit,
+    onLongPressImage: () -> Unit,
+    onLongPressText: () -> Unit
+) {
+    Row(
+        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         if (outgoing) {
             OutgoingMessageStatus(
+                message = message,
+                peerReadUpToServerSeq = peerReadUpToServerSeq,
                 status = message.status,
                 onRetry = {
                     if (message.type == MessageType.IMAGE) {
@@ -314,27 +454,91 @@ private fun ChatMessageRow(
             ChatImageBubble(
                 message = message,
                 modifier = Modifier.padding(horizontal = 10.dp),
-                onOpenPreview = onOpenImagePreview
+                onOpenPreview = onOpenImagePreview,
+                onLongPress = onLongPressImage
             )
         } else {
-            Text(
-                text = message.content,
-                style = MaterialTheme.typography.bodyLarge,
+            ChatTextBubble(
+                message = message,
+                outgoing = outgoing,
+                onLongPress = onLongPressText,
                 modifier = Modifier.padding(horizontal = 10.dp)
-            )
-        }
-        if (outgoing) {
-            AvatarImage(
-                avatarUrl = currentUserAvatarUrl,
-                displayName = "Me",
-                modifier = Modifier.size(36.dp)
             )
         }
     }
 }
 
 @Composable
-private fun OutgoingMessageStatus(status: MessageStatus, onRetry: () -> Unit = {}) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun ChatTextBubble(
+    message: ChatMessage,
+    outgoing: Boolean,
+    onLongPress: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bubbleColor = if (outgoing) {
+        Color(0xFFD8F5D0)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    Box(modifier = modifier) {
+        Text(
+            text = message.content,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier
+                .background(bubbleColor, RoundedCornerShape(8.dp))
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = onLongPress
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun ChatMessageActionBar(
+    actions: List<ChatMessageAction>,
+    onCopy: () -> Unit,
+    onRecall: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.inverseSurface, RoundedCornerShape(8.dp))
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        actions.forEach { action ->
+            Text(
+                text = when (action) {
+                    ChatMessageAction.COPY -> "复制"
+                    ChatMessageAction.RECALL -> "撤回"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
+                modifier = Modifier
+                    .widthIn(min = 48.dp)
+                    .clickable(
+                        onClick = when (action) {
+                            ChatMessageAction.COPY -> onCopy
+                            ChatMessageAction.RECALL -> onRecall
+                        }
+                    )
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun OutgoingMessageStatus(
+    message: ChatMessage,
+    peerReadUpToServerSeq: Long?,
+    status: MessageStatus,
+    onRetry: () -> Unit = {}
+) {
     Box(
         modifier = Modifier.size(18.dp),
         contentAlignment = Alignment.Center
@@ -353,7 +557,11 @@ private fun OutgoingMessageStatus(status: MessageStatus, onRetry: () -> Unit = {
                 modifier = Modifier.clickable(onClick = onRetry)
             )
             MessageStatus.SENT,
-            MessageStatus.RECEIVED -> Unit
+            MessageStatus.RECEIVED -> Text(
+                text = if (message.serverSeq != null && peerReadUpToServerSeq != null && message.serverSeq <= peerReadUpToServerSeq) "✓" else "○",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (message.serverSeq != null && peerReadUpToServerSeq != null && message.serverSeq <= peerReadUpToServerSeq) Color(0xFF20A464) else MaterialTheme.colorScheme.outline
+            )
         }
     }
 }

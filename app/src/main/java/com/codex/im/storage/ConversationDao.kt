@@ -8,6 +8,10 @@ interface ConversationDao {
     fun clearUnread(conversationId: String)
 
     fun totalUnreadCount(): Int
+
+    fun updatePeerReadCursor(conversationId: String, readUpToServerSeq: Long, readAt: Long): Boolean
+
+    fun updatePreviewForRecalledMessage(messageId: String, preview: String, updatedAt: Long): Boolean
 }
 
 class InMemoryConversationDao : ConversationDao {
@@ -28,7 +32,9 @@ class InMemoryConversationDao : ConversationDao {
                 lastMessagePreview = preview,
                 lastMessageTime = message.createdAt,
                 unreadCount = unreadCount,
-                updatedAt = message.updatedAt
+                updatedAt = message.updatedAt,
+                peerReadUpToServerSeq = current?.peerReadUpToServerSeq,
+                peerReadAt = current?.peerReadAt
             )
         } else {
             current.copy(unreadCount = unreadCount, updatedAt = message.updatedAt)
@@ -48,4 +54,27 @@ class InMemoryConversationDao : ConversationDao {
     }
 
     override fun totalUnreadCount(): Int = conversations.values.sumOf { it.unreadCount }
+
+    override fun updatePeerReadCursor(conversationId: String, readUpToServerSeq: Long, readAt: Long): Boolean {
+        val current = conversations[conversationId] ?: return false
+        val currentCursor = current.peerReadUpToServerSeq
+        if (currentCursor != null && readUpToServerSeq <= currentCursor) {
+            return false
+        }
+        conversations[conversationId] = current.copy(
+            peerReadUpToServerSeq = readUpToServerSeq,
+            peerReadAt = readAt,
+            updatedAt = readAt
+        )
+        return true
+    }
+
+    override fun updatePreviewForRecalledMessage(messageId: String, preview: String, updatedAt: Long): Boolean {
+        val entry = conversations.entries.firstOrNull { it.value.lastMessageId == messageId } ?: return false
+        conversations[entry.key] = entry.value.copy(
+            lastMessagePreview = preview,
+            updatedAt = updatedAt
+        )
+        return true
+    }
 }

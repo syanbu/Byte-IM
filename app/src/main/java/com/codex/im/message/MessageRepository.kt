@@ -32,6 +32,11 @@ class MessageRepository(
 ) : MessagesTabUnreadBadgeSource {
     @Volatile
     private var activeConversationId: String? = null
+    @Volatile
+    private var activeUserId: String? = null
+    @Volatile
+    private var activePeerId: String? = null
+    private val lastSentReadCursorByConversation = mutableMapOf<String, Long>()
     private val mutableConversationUpdates = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
     override val conversationUpdates: SharedFlow<Unit> = mutableConversationUpdates.asSharedFlow()
 
@@ -209,6 +214,9 @@ class MessageRepository(
         when (packet.cmd) {
             ImCommand.MESSAGE_ACK.value -> handleAck(packet.body.decodeToString())
             ImCommand.RECEIVE_MESSAGE.value -> handleIncoming(packet.body.decodeToString())
+            ImCommand.READ_ACK.value -> handleReadAck(packet.body.decodeToString())
+            ImCommand.RECALL_ACK.value -> handleRecallAck(packet.body.decodeToString())
+            ImCommand.RECALL_NOTIFY.value -> handleRecallNotify(packet.body.decodeToString())
         }
     }
 
@@ -241,6 +249,13 @@ class MessageRepository(
     }
 
     fun conversations(limit: Int = 50) = conversationDao.listConversations(limit)
+
+    fun conversationPeerReadCursor(userId: String, peerId: String): Long? {
+        val conversationId = conversationIdFor(userId, peerId)
+        return conversationDao.listConversations(limit = 100)
+            .firstOrNull { it.conversationId == conversationId }
+            ?.peerReadUpToServerSeq
+    }
 
     override fun totalUnreadCount(): Int = conversationDao.totalUnreadCount()
 
@@ -301,16 +316,47 @@ class MessageRepository(
         }
     }
 
-    fun openConversation(currentUserId: String, peerId: String): String {
+    fun openConversation(currentUserId: String, peerId: String, now: Long = System.currentTimeMillis()): String {
         val conversationId = conversationIdFor(currentUserId, peerId)
         activeConversationId = conversationId
+        activeUserId = currentUserId
+        activePeerId = peerId
         conversationDao.clearUnread(conversationId)
+        sendReadAckIfAdvanced(
+            conversationId = conversationId,
+            readerId = currentUserId,
+            peerId = peerId,
+            readAt = now
+        )
         notifyConversationChanged()
         return conversationId
     }
 
     fun closeConversation() {
         activeConversationId = null
+        activeUserId = null
+        activePeerId = null
+    }
+
+    fun recallMessage(messageId: String, requesterId: String, now: Long): Boolean {
+        val message = messageDao.findByMessageId(messageId) ?: return false
+        if (message.senderId != requesterId || message.serverSeq == null || message.isRecalled) {
+            return false
+        }
+        return connection.send(
+            ImPacket(
+                cmd = ImCommand.RECALL_MESSAGE.value,
+                body = """
+                    {
+                      "messageId":"${message.messageId.escapeJson()}",
+                      "conversationId":"${message.conversationId.escapeJson()}",
+                      "requesterId":"${requesterId.escapeJson()}",
+                      "requestAt":$now
+                    }
+                """.trimIndent().replace(Regex("\\s+"), "")
+                    .toByteArray()
+            )
+        )
     }
 
     fun conversationIdFor(firstUserId: String, secondUserId: String): String {
@@ -383,7 +429,83 @@ class MessageRepository(
                 )
             )
         }
+        if (message.conversationId == activeConversationId && serverSeq != null) {
+            val readerId = activeUserId ?: receiverId
+            val peerId = activePeerId ?: senderId
+            sendReadAckIfAdvanced(message.conversationId, readerId, peerId, timestamp)
+        }
         cacheIncomingThumbnailIfNeeded(inserted, message)
+    }
+
+    private fun handleReadAck(json: String) {
+        val body = JsonParser.parseString(json).asJsonObject
+        val conversationId = body.requiredString("conversationId")
+        val readUpToServerSeq = body.requiredLong("readUpToServerSeq")
+        val readAt = body.optionalLong("readAt") ?: System.currentTimeMillis()
+        val changed = conversationDao.updatePeerReadCursor(conversationId, readUpToServerSeq, readAt)
+        if (changed) {
+            notifyConversationChanged()
+        }
+    }
+
+    private fun handleRecallAck(json: String) {
+        val body = JsonParser.parseString(json).asJsonObject
+        if (body.optionalBoolean("success") == false) {
+            notifyConversationChanged()
+            return
+        }
+        markMessageRecalled(
+            messageId = body.requiredString("messageId"),
+            recalledBy = body.requiredString("recalledBy"),
+            recalledAt = body.optionalLong("recalledAt") ?: System.currentTimeMillis()
+        )
+    }
+
+    private fun handleRecallNotify(json: String) {
+        val body = JsonParser.parseString(json).asJsonObject
+        markMessageRecalled(
+            messageId = body.requiredString("messageId"),
+            recalledBy = body.requiredString("recalledBy"),
+            recalledAt = body.optionalLong("recalledAt") ?: System.currentTimeMillis()
+        )
+    }
+
+    private fun markMessageRecalled(messageId: String, recalledBy: String, recalledAt: Long) {
+        val message = messageDao.findByMessageId(messageId) ?: return
+        val preview = if (message.senderId == recalledBy && message.direction == MessageDirection.OUTGOING) {
+            "你撤回了一条消息"
+        } else {
+            "对方撤回了一条消息"
+        }
+        val changed = messageDao.markRecalled(messageId, recalledBy, recalledAt)
+        val previewChanged = conversationDao.updatePreviewForRecalledMessage(messageId, preview, recalledAt)
+        if (changed || previewChanged) {
+            notifyConversationChanged()
+        }
+    }
+
+    private fun sendReadAckIfAdvanced(conversationId: String, readerId: String, peerId: String, readAt: Long) {
+        val readUpToServerSeq = messageDao.maxIncomingServerSeq(conversationId) ?: return
+        val previous = lastSentReadCursorByConversation[conversationId]
+        if (previous != null && readUpToServerSeq <= previous) {
+            return
+        }
+        lastSentReadCursorByConversation[conversationId] = readUpToServerSeq
+        connection.send(
+            ImPacket(
+                cmd = ImCommand.READ_ACK.value,
+                body = """
+                    {
+                      "conversationId":"${conversationId.escapeJson()}",
+                      "readerId":"${readerId.escapeJson()}",
+                      "peerId":"${peerId.escapeJson()}",
+                      "readUpToServerSeq":$readUpToServerSeq,
+                      "readAt":$readAt
+                    }
+                """.trimIndent().replace(Regex("\\s+"), "")
+                    .toByteArray()
+            )
+        )
     }
 
     private fun cacheIncomingThumbnailIfNeeded(inserted: Boolean, message: ChatMessage): Boolean {
@@ -464,6 +586,11 @@ class MessageRepository(
     private fun JsonObject.optionalString(name: String): String? {
         val value = get(name) ?: return null
         return if (value.isJsonNull) null else value.asString
+    }
+
+    private fun JsonObject.optionalBoolean(name: String): Boolean? {
+        val value = get(name) ?: return null
+        return if (value.isJsonNull) null else value.asBoolean
     }
 
     private fun JsonObject.optionalObject(name: String): JsonObject? {

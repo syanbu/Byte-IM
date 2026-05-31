@@ -29,8 +29,11 @@ Defined in:
 | 10 | `SEND_MESSAGE` | Sender Client -> Server | Sends one chat message to the server. |
 | 11 | `MESSAGE_ACK` | Server -> Sender Client | Confirms the server accepted a sent message and assigned `serverSeq`. |
 | 12 | `RECEIVE_MESSAGE` | Server -> Receiver Client | Forwards an online message to the receiver. |
-| 13 | `READ_ACK` | Reserved | Read receipt. Not implemented yet. |
+| 13 | `READ_ACK` | Receiver Client -> Server -> Sender Client | Read receipt cursor for single chat. The reader reports the greatest incoming `serverSeq` they have viewed; the server forwards it to the peer. |
 | 14 | `DELIVERY_ACK` | Receiver Client -> Server | Confirms the receiver persisted a `RECEIVE_MESSAGE` for later redelivery suppression. |
+| 15 | `RECALL_MESSAGE` | Sender Client -> Server | Requests recall of an already accepted message. |
+| 16 | `RECALL_ACK` | Server -> Requester Client | Returns recall success or failure. Success means the local row should be marked recalled. |
+| 17 | `RECALL_NOTIFY` | Server -> Peer Client | Notifies the peer that an existing message was recalled. |
 | 20 | `HISTORY_QUERY` | Reserved | History query. Not implemented yet. |
 | 21 | `HISTORY_RESULT` | Reserved | History query result. Not implemented yet. |
 
@@ -48,7 +51,7 @@ Current states:
 | `Connecting` | Client is opening the WebSocket connection. |
 | `Connected` | WebSocket `onOpen` fired. The socket is open, but IM auth is not confirmed yet. |
 | `Authenticated` | Client received protocol `AUTH_ACK`. The IM session is authenticated and usable. |
-| `Reconnecting(delayMillis, reason)` | Client detected a disconnect, failure, or heartbeat timeout and is waiting for the next reconnect attempt. |
+| `Reconnecting(delayMillis, reason)` | Client detected a disconnect, failure, heartbeat timeout, or failed WebSocket write and is waiting for the next reconnect attempt. |
 | `Failed(reason)` | WebSocket or protocol handling failed. |
 
 ## Runtime Flow
@@ -100,11 +103,32 @@ Authenticated
   -> Authenticated resets reconnect delay to 1s
 ```
 
+Failed writes use the same reconnect policy:
+
+```text
+Authenticated
+  -> connection.send(packet) returns false for a message or heartbeat
+  -> disconnect raw WebSocket
+  -> Reconnecting(delayMillis, "send failed")
+  -> reconnect with the normal backoff/token-provider path
+  -> Authenticated lets the B9 outbox worker replay due pending messages
+```
+
+Network restore can wake an existing reconnect delay:
+
+```text
+Reconnecting(delayMillis, reason)
+  -> Android ConnectivityManager reports an internet-capable network
+  -> cancel the pending delay
+  -> reconnect immediately with the normal token-provider path
+```
+
 Foreground/background policy:
 
-- Foreground: run heartbeat every 15s and reconnect automatically after disconnect, failure, or heartbeat timeout.
-- Background: keep the WebSocket open, slow heartbeat to every 75s, and keep reconnect enabled.
+- Foreground: run heartbeat every 15s and reconnect automatically after disconnect, failure, heartbeat timeout, or failed WebSocket write.
+- Background: keep the WebSocket open, slow heartbeat to every 75s, and keep reconnect enabled. Failed writes still trigger immediate reconnect scheduling.
 - Return to foreground: authenticated sockets switch heartbeat back to 15s; disconnected or failed sockets schedule reconnect.
+- Network restore: internet-capable network availability cancels any pending reconnect backoff delay and starts a reconnect immediately.
 
 Reconnect in B7 restores the WebSocket session. B9 layers a login-session scoped outbox worker on top of `ConnectionState.Authenticated` to retry due pending sender messages after reconnect.
 
@@ -172,6 +196,58 @@ RECEIVE_MESSAGE
 - If `DELIVERY_ACK` is lost, server redelivery remains safe because Android deduplicates by `messageId`.
 - The mock server persists accepted messages plus the receiver `delivered` flag, so auth-triggered redelivery survives server restart instead of only surviving within the current process.
 - Android should have only one login-session scoped consumer of WebSocket incoming packets for this path. UI ViewModels must refresh from repository/storage updates instead of each collecting and reprocessing the same `RECEIVE_MESSAGE`, otherwise duplicate `DELIVERY_ACK` sends can occur even when local message persistence remains deduplicated.
+
+## Read Receipts
+
+B12 uses `READ_ACK` for read receipts and keeps it separate from `DELIVERY_ACK`.
+
+Receiver-to-server body:
+
+```json
+{
+  "conversationId": "single:13800113800:13900113900",
+  "readerId": "13900113900",
+  "peerId": "13800113800",
+  "readUpToServerSeq": 1008,
+  "readAt": 1717000000000
+}
+```
+
+Server-to-sender body keeps the same cursor fields. Android stores the sender-side peer read cursor on the conversation and only moves it forward. The chat UI derives the outgoing read marker from:
+
+```text
+message.direction == OUTGOING
+message.serverSeq != null
+message.serverSeq <= conversation.peerReadUpToServerSeq
+```
+
+## Message Recall
+
+B12 recall is a state update, not a deletion. Android keeps the original `messages` row and marks it recalled; UI renders the recall prompt instead of the original text or image.
+
+Recall request:
+
+```json
+{
+  "messageId": "m_001",
+  "conversationId": "single:13800113800:13900113900",
+  "requesterId": "13800113800",
+  "requestAt": 1717000000000
+}
+```
+
+Successful `RECALL_ACK` and `RECALL_NOTIFY` include:
+
+```json
+{
+  "messageId": "m_001",
+  "conversationId": "single:13800113800:13900113900",
+  "recalledBy": "13800113800",
+  "recalledAt": 1717000001000
+}
+```
+
+`RECALL_ACK` also carries `success: true` on success or `success: false` with a `reason` such as `NOT_FOUND`, `NOT_SENDER`, `CONVERSATION_MISMATCH`, or `EXPIRED`. The mock server validates sender ownership, conversation match, and the 2-minute server-time recall window. Repeated successful recall is idempotent.
 
 ## Current Mock Server Logs
 

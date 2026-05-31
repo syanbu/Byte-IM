@@ -67,6 +67,33 @@ class ConnectionLifecycleManagerTest {
     }
 
     @Test
+    fun failedPacketSendDisconnectsAndSchedulesReconnect() = runTest {
+        val fixture = Fixture(this)
+        fixture.manager.connect(TOKEN)
+        runCurrent()
+        fixture.raw.state.value = ConnectionState.Authenticated
+        runCurrent()
+
+        fixture.raw.sendSucceeds = false
+        val sent = fixture.manager.send(
+            ImPacket(
+                cmd = ImCommand.SEND_MESSAGE.value,
+                body = "{}".toByteArray()
+            )
+        )
+        runCurrent()
+
+        assertEquals(false, sent)
+        assertEquals(1, fixture.raw.disconnectCount)
+        assertEquals(ConnectionState.Reconnecting(1_000L, "send failed"), fixture.manager.states.value)
+
+        advanceTimeBy(1_000L)
+        runCurrent()
+
+        assertEquals(listOf(TOKEN, TOKEN), fixture.raw.connectTokens)
+    }
+
+    @Test
     fun authenticatedConnectionResetsReconnectPolicy() = runTest {
         val fixture = Fixture(this)
         fixture.manager.connect(TOKEN)
@@ -86,6 +113,34 @@ class ConnectionLifecycleManagerTest {
         runCurrent()
 
         assertEquals(ConnectionState.Reconnecting(1_000L, "after auth"), fixture.manager.states.value)
+    }
+
+    @Test
+    fun networkAvailableReconnectsImmediatelyDuringBackoffDelay() = runTest {
+        val fixture = Fixture(this)
+        fixture.manager.connect(TOKEN)
+        runCurrent()
+        fixture.raw.state.value = ConnectionState.Authenticated
+        runCurrent()
+        fixture.raw.state.value = ConnectionState.Failed("first failure")
+        runCurrent()
+        advanceTimeBy(1_000L)
+        runCurrent()
+        fixture.raw.state.value = ConnectionState.Failed("second failure")
+        runCurrent()
+
+        assertEquals(ConnectionState.Reconnecting(2_000L, "second failure"), fixture.manager.states.value)
+        val connectCountBeforeNetworkAvailable = fixture.raw.connectTokens.size
+
+        fixture.manager.notifyNetworkAvailable()
+        runCurrent()
+
+        assertEquals(connectCountBeforeNetworkAvailable + 1, fixture.raw.connectTokens.size)
+
+        advanceTimeBy(2_000L)
+        runCurrent()
+
+        assertEquals(connectCountBeforeNetworkAvailable + 1, fixture.raw.connectTokens.size)
     }
 
     @Test
@@ -233,6 +288,7 @@ class ConnectionLifecycleManagerTest {
         val sentPackets = mutableListOf<ImPacket>()
         val connectTokens = mutableListOf<String>()
         var disconnectCount = 0
+        var sendSucceeds = true
 
         override val states: StateFlow<ConnectionState> = state
         override val incomingPackets: SharedFlow<ImPacket> = incoming
@@ -249,7 +305,7 @@ class ConnectionLifecycleManagerTest {
 
         override fun send(packet: ImPacket): Boolean {
             sentPackets += packet
-            return true
+            return sendSucceeds
         }
     }
 

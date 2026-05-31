@@ -227,6 +227,31 @@ class MessageDaoContractTest {
     }
 
     @Test
+    fun markRecalledKeepsOriginalRowAndRecallMetadata() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(sampleMessage(messageId = "recall-me", createdAt = 100, content = "secret"))
+
+        assertTrue(dao.markRecalled(messageId = "recall-me", recalledBy = "u1", recalledAt = 200L))
+
+        val recalled = dao.findByMessageId("recall-me")
+        assertEquals("secret", recalled?.content)
+        assertEquals(true, recalled?.isRecalled)
+        assertEquals(200L, recalled?.recalledAt)
+        assertEquals("u1", recalled?.recalledBy)
+        assertEquals(listOf("recall-me"), dao.queryPage("single:u1:u2", beforeTime = null, limit = 20).map { it.messageId })
+    }
+
+    @Test
+    fun maxIncomingServerSeqIgnoresOutgoingAndLocalMessages() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(sampleMessage(messageId = "incoming-7", createdAt = 100, serverSeq = 7, direction = MessageDirection.INCOMING))
+        dao.insertOrIgnore(sampleMessage(messageId = "incoming-local", createdAt = 200, serverSeq = null, direction = MessageDirection.INCOMING))
+        dao.insertOrIgnore(sampleMessage(messageId = "outgoing-9", createdAt = 300, serverSeq = 9, direction = MessageDirection.OUTGOING))
+
+        assertEquals(7L, dao.maxIncomingServerSeq("single:u1:u2"))
+    }
+
+    @Test
     fun queryIncomingImagesMissingLocalThumbnailReturnsOnlyUncachedIncomingImages() {
         val dao = InMemoryMessageDao()
         dao.insertOrIgnore(

@@ -172,6 +172,40 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
         return markStatus(messageId, MessageStatus.FAILED, updatedAt)
     }
 
+    override fun markRecalled(messageId: String, recalledBy: String, recalledAt: Long): Boolean {
+        val values = ContentValues().apply {
+            put("is_recalled", 1)
+            put("recalled_at", recalledAt)
+            put("recalled_by", recalledBy)
+            put("updated_at", recalledAt)
+        }
+        return database.update(
+            "messages",
+            values,
+            "message_id = ? AND is_recalled = 0",
+            arrayOf(messageId)
+        ) > 0
+    }
+
+    override fun maxIncomingServerSeq(conversationId: String): Long? {
+        return database.rawQuery(
+            """
+            SELECT MAX(server_seq) AS max_server_seq
+            FROM messages
+            WHERE conversation_id = ?
+              AND direction = ?
+              AND server_seq IS NOT NULL
+            """.trimIndent(),
+            arrayOf(conversationId, MessageDirection.INCOMING.name)
+        ).use { cursor ->
+            if (!cursor.moveToFirst() || cursor.isNull(cursor.getColumnIndexOrThrow("max_server_seq"))) {
+                null
+            } else {
+                cursor.getLong(cursor.getColumnIndexOrThrow("max_server_seq"))
+            }
+        }
+    }
+
     private fun ChatMessage.toValues(): ContentValues {
         return ContentValues().apply {
             put("message_id", messageId)
@@ -190,6 +224,9 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             if (fileSizeBytes == null) putNull("file_size_bytes") else put("file_size_bytes", fileSizeBytes)
             if (localOriginalPath == null) putNull("local_original_path") else put("local_original_path", localOriginalPath)
             if (localThumbnailPath == null) putNull("local_thumbnail_path") else put("local_thumbnail_path", localThumbnailPath)
+            put("is_recalled", if (isRecalled) 1 else 0)
+            if (recalledAt == null) putNull("recalled_at") else put("recalled_at", recalledAt)
+            if (recalledBy == null) putNull("recalled_by") else put("recalled_by", recalledBy)
             put("status", status.name)
             put("direction", direction.name)
             put("created_at", createdAt)
@@ -207,6 +244,8 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
         val fileSizeBytesIndex = getColumnIndexOrThrow("file_size_bytes")
         val localOriginalPathIndex = getColumnIndexOrThrow("local_original_path")
         val localThumbnailPathIndex = getColumnIndexOrThrow("local_thumbnail_path")
+        val recalledAtIndex = getColumnIndexOrThrow("recalled_at")
+        val recalledByIndex = getColumnIndexOrThrow("recalled_by")
         return ChatMessage(
             messageId = getString(getColumnIndexOrThrow("message_id")),
             conversationId = getString(getColumnIndexOrThrow("conversation_id")),
@@ -227,7 +266,10 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             mimeType = if (isNull(mimeTypeIndex)) null else getString(mimeTypeIndex),
             fileSizeBytes = if (isNull(fileSizeBytesIndex)) null else getLong(fileSizeBytesIndex),
             localOriginalPath = if (isNull(localOriginalPathIndex)) null else getString(localOriginalPathIndex),
-            localThumbnailPath = if (isNull(localThumbnailPathIndex)) null else getString(localThumbnailPathIndex)
+            localThumbnailPath = if (isNull(localThumbnailPathIndex)) null else getString(localThumbnailPathIndex),
+            isRecalled = getInt(getColumnIndexOrThrow("is_recalled")) == 1,
+            recalledAt = if (isNull(recalledAtIndex)) null else getLong(recalledAtIndex),
+            recalledBy = if (isNull(recalledByIndex)) null else getString(recalledByIndex)
         )
     }
 }

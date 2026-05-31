@@ -226,6 +226,115 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun openConversationSendsReadAckForLatestIncomingServerSeq() {
+        val fixture = Fixture()
+        fixture.repository.handlePacket(incomingMessagePacket("remote-read-1", "u2", "u1", 1, 6, "read me", 1_000L))
+        fixture.connection.sentPackets.clear()
+
+        fixture.repository.openConversation(currentUserId = "u1", peerId = "u2", now = 2_000L)
+
+        val packet = fixture.connection.sentPackets.single()
+        assertEquals(ImCommand.READ_ACK.value, packet.cmd)
+        assertEquals(
+            """{"conversationId":"single:u1:u2","readerId":"u1","peerId":"u2","readUpToServerSeq":6,"readAt":2000}""",
+            packet.body.decodeToString()
+        )
+    }
+
+    @Test
+    fun readAckIsNotSentRepeatedlyForSameOrLowerCursor() {
+        val fixture = Fixture()
+        fixture.repository.handlePacket(incomingMessagePacket("remote-read-1", "u2", "u1", 1, 6, "read me", 1_000L))
+        fixture.connection.sentPackets.clear()
+
+        fixture.repository.openConversation(currentUserId = "u1", peerId = "u2", now = 2_000L)
+        fixture.repository.openConversation(currentUserId = "u1", peerId = "u2", now = 3_000L)
+
+        assertEquals(1, fixture.connection.sentPackets.size)
+    }
+
+    @Test
+    fun incomingMessageForOpenConversationSendsNewReadAckAfterPersisting() {
+        val fixture = Fixture()
+        fixture.repository.openConversation(currentUserId = "u1", peerId = "u2", now = 1_000L)
+        fixture.connection.sentPackets.clear()
+
+        fixture.repository.handlePacket(incomingMessagePacket("remote-open-read", "u2", "u1", 1, 7, "new", 2_000L))
+
+        assertEquals(listOf(ImCommand.DELIVERY_ACK.value, ImCommand.READ_ACK.value), fixture.connection.sentPackets.map { it.cmd })
+        assertEquals(
+            """{"conversationId":"single:u1:u2","readerId":"u1","peerId":"u2","readUpToServerSeq":7,"readAt":2000}""",
+            fixture.connection.sentPackets.last().body.decodeToString()
+        )
+    }
+
+    @Test
+    fun inboundReadAckUpdatesConversationPeerReadCursor() {
+        val fixture = Fixture()
+        fixture.repository.sendText("u1", "u2", "hello", now = 1_000L)
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.READ_ACK.value,
+                body = """{"conversationId":"single:u1:u2","readerId":"u2","readUpToServerSeq":12,"readAt":3000}""".toByteArray()
+            )
+        )
+
+        val conversation = fixture.conversationDao.listConversations(limit = 20).single()
+        assertEquals(12L, conversation.peerReadUpToServerSeq)
+        assertEquals(3_000L, conversation.peerReadAt)
+    }
+
+    @Test
+    fun sendRecallRequestSendsRecallMessagePacket() {
+        val fixture = Fixture()
+        val message = fixture.repository.sendText("u1", "u2", "hello", now = 1_000L)
+        fixture.repository.handlePacket(ImPacket(ImCommand.MESSAGE_ACK.value, """{"messageId":"${message.messageId}","serverSeq":8,"serverTime":1100}""".toByteArray()))
+        fixture.connection.sentPackets.clear()
+
+        assertEquals(true, fixture.repository.recallMessage(message.messageId, requesterId = "u1", now = 2_000L))
+
+        val packet = fixture.connection.sentPackets.single()
+        assertEquals(ImCommand.RECALL_MESSAGE.value, packet.cmd)
+        assertTrue(packet.body.decodeToString().contains(""""messageId":"${message.messageId}""""))
+        assertTrue(packet.body.decodeToString().contains(""""requesterId":"u1""""))
+    }
+
+    @Test
+    fun successfulRecallAckMarksRequesterMessageRecalledAndUpdatesPreview() {
+        val fixture = Fixture()
+        val message = fixture.repository.sendText("u1", "u2", "secret", now = 1_000L)
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECALL_ACK.value,
+                body = """{"messageId":"${message.messageId}","conversationId":"single:u1:u2","success":true,"recalledBy":"u1","recalledAt":2000}""".toByteArray()
+            )
+        )
+
+        val stored = fixture.messageDao.findByMessageId(message.messageId)
+        assertEquals(true, stored?.isRecalled)
+        assertEquals("你撤回了一条消息", fixture.conversationDao.listConversations(limit = 20).single().lastMessagePreview)
+    }
+
+    @Test
+    fun recallNotifyMarksPeerMessageRecalledAndUpdatesPreview() {
+        val fixture = Fixture()
+        fixture.repository.handlePacket(incomingMessagePacket("remote-recall", "u2", "u1", 1, 7, "secret", 1_000L))
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECALL_NOTIFY.value,
+                body = """{"messageId":"remote-recall","conversationId":"single:u1:u2","recalledBy":"u2","recalledAt":2000}""".toByteArray()
+            )
+        )
+
+        val stored = fixture.messageDao.findByMessageId("remote-recall")
+        assertEquals(true, stored?.isRecalled)
+        assertEquals("对方撤回了一条消息", fixture.conversationDao.listConversations(limit = 20).single().lastMessagePreview)
+    }
+
+    @Test
     fun duplicateIncomingMessageStillSendsDeliveryAckWithoutDuplicatingLocalRow() {
         val fixture = Fixture()
         val packet = ImPacket(

@@ -20,7 +20,10 @@ data class ChatMessage(
     val mimeType: String? = null,
     val fileSizeBytes: Long? = null,
     val localOriginalPath: String? = null,
-    val localThumbnailPath: String? = null
+    val localThumbnailPath: String? = null,
+    val isRecalled: Boolean = false,
+    val recalledAt: Long? = null,
+    val recalledBy: String? = null
 )
 
 data class Conversation(
@@ -31,7 +34,9 @@ data class Conversation(
     val lastMessagePreview: String,
     val lastMessageTime: Long,
     val unreadCount: Int,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val peerReadUpToServerSeq: Long? = null,
+    val peerReadAt: Long? = null
 )
 
 data class PendingMessage(

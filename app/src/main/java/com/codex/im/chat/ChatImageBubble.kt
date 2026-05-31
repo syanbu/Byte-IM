@@ -1,7 +1,8 @@
 package com.codex.im.chat
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -20,10 +21,12 @@ import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageStatus
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun ChatImageBubble(
     message: ChatMessage,
     modifier: Modifier = Modifier,
-    onOpenPreview: (ChatMessage) -> Unit = {}
+    onOpenPreview: (ChatMessage) -> Unit = {},
+    onLongPress: () -> Unit = {}
 ) {
     val bubbleShape = RoundedCornerShape(18.dp)
     val model = message.localThumbnailPath ?: message.thumbnailUrl
@@ -36,11 +39,14 @@ fun ChatImageBubble(
             .size(width = bubbleSize.widthDp.dp, height = bubbleSize.heightDp.dp)
             .clip(bubbleShape)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(
-                enabled = message.localOriginalPath != null || message.imageUrl != null
-            ) {
-                onOpenPreview(message)
-            },
+            .combinedClickable(
+                onClick = {
+                    if (message.localOriginalPath != null || message.imageUrl != null) {
+                        onOpenPreview(message)
+                    }
+                },
+                onLongClick = onLongPress
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (model != null) {

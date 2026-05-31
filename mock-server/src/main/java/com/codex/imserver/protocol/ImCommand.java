@@ -11,6 +11,9 @@ public enum ImCommand {
     RECEIVE_MESSAGE(12),
     READ_ACK(13),
     DELIVERY_ACK(14),
+    RECALL_MESSAGE(15),
+    RECALL_ACK(16),
+    RECALL_NOTIFY(17),
     HISTORY_QUERY(20),
     HISTORY_RESULT(21);
 

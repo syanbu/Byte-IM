@@ -35,7 +35,8 @@ Done for the B9 first-pass sender reliability scope.
 If a user sends messages while offline or before the WebSocket session is authenticated:
 
 - Android stores each message locally as `SENDING` and writes each original `SEND_MESSAGE` packet into `pending_messages` in one local SQLite transaction.
-- The initial `connection.send()` may fail, but the pending record remains.
+- The initial `connection.send()` may fail, but the pending record remains. A failed WebSocket write now also tells the connection lifecycle manager to reconnect immediately through the B7 backoff path.
+- If the device regains network while the connection is already waiting in a reconnect backoff delay, Android network availability cancels that wait and starts a reconnect immediately.
 - After reconnect and `ConnectionState.Authenticated`, the outbox worker scans due pending rows and resends them with the same original body.
 
 The sender local write path is:
@@ -93,3 +94,4 @@ If the mock server receives the same `messageId` more than once in the same proc
 | 2026-05-26 | Android debug build | `.\gradlew.bat :app:assembleDebug --console=plain` | Passed. |
 | 2026-05-26 | Sender outbox atomicity | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --console=plain` | Passed: `connection.send()` occurs only after the local transaction commits. |
 | 2026-05-26 | Android transaction compile check | `.\gradlew.bat :app:assembleDebugAndroidTest --console=plain` | Passed after allowing Gradle to fetch missing wrapper/cache data: instrumented SQLite rollback coverage compiles. |
+| 2026-05-31 | Offline-send reconnect regression | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.connection.ConnectionLifecycleManagerTest --console=plain` | Passed: failed WebSocket writes trigger reconnect immediately, and network availability cancels pending reconnect backoff; pending message replay still happens after the session returns to `Authenticated`. |

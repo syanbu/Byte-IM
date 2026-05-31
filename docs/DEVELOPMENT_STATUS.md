@@ -28,7 +28,8 @@ Feature note: [`docs/messages-conversation-summary-and-unread.md`](messages-conv
 | Mock server | Local Netty server for auth and WebSocket tests | Done for current B1/B2 path | [mock-server.md](status/mock-server.md) |
 | B10 | Group chat and @ mention | Deferred | Later optional scope |
 | B11 | Image messages | Implemented for first-pass single-image gallery-send scope | [B11-image-message-design-status.md](status/B11-image-message-design-status.md) |
-| B12-B13 | Recall/read receipts, push | Deferred | Later optional scope |
+| B12 | Recall/read receipts | Implemented for first-pass single-chat scope | [B12-message-recall-and-read-receipts.md](status/B12-message-recall-and-read-receipts.md) |
+| B13 | Push | Deferred | Later optional scope |
 
 ## Recent Self-Design Work
 

@@ -37,7 +37,8 @@ data class ChatUiState(
     val isLoadingMore: Boolean = false,
     val hasMoreLocal: Boolean = true,
     val isHistoryMemoryLimitReached: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val peerReadUpToServerSeq: Long? = null
 )
 
 class ChatViewModel(
@@ -54,6 +55,7 @@ class ChatViewModel(
 ) {
     private val mutableState = MutableStateFlow(ChatUiState(peerId = initialPeerId))
     val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
+    val currentUserId: String = session.userId
     private var started = false
     private val jobs = mutableListOf<Job>()
     private val thumbnailRetryCounts = mutableMapOf<String, Int>()
@@ -104,7 +106,8 @@ class ChatViewModel(
             isLoadingMore = false,
             hasMoreLocal = true,
             isHistoryMemoryLimitReached = false,
-            errorMessage = null
+            errorMessage = null,
+            peerReadUpToServerSeq = null
         )
         scope.launch(dispatcher) {
             if (trimmedPeerId.isNotEmpty()) {
@@ -184,6 +187,15 @@ class ChatViewModel(
                 MessageStatus.SENDING,
                 MessageStatus.SENT,
                 MessageStatus.RECEIVED -> Unit
+            }
+        }
+    }
+
+    suspend fun recallMessage(messageId: String, now: Long = System.currentTimeMillis()) {
+        withContext(dispatcher) {
+            val sent = repository.recallMessage(messageId, requesterId = session.userId, now = now)
+            if (!sent) {
+                mutableState.value = mutableState.value.copy(errorMessage = "消息撤回失败")
             }
         }
     }
@@ -318,7 +330,8 @@ class ChatViewModel(
             messages = messages,
             hasMoreLocal = messages.size == HISTORY_PAGE_SIZE,
             isHistoryMemoryLimitReached = false,
-            errorMessage = null
+            errorMessage = null,
+            peerReadUpToServerSeq = repository.conversationPeerReadCursor(session.userId, peerId)
         )
     }
 
@@ -353,7 +366,8 @@ class ChatViewModel(
         )
         mutableState.value = mutableState.value.copy(
             messages = mergeMessages(currentMessages, latestMessages),
-            errorMessage = null
+            errorMessage = null,
+            peerReadUpToServerSeq = repository.conversationPeerReadCursor(session.userId, peerId)
         )
     }
 
@@ -371,7 +385,8 @@ class ChatViewModel(
             limit = limit
         )
         mutableState.value = current.copy(
-            messages = mergeMessages(current.messages, latestMessages)
+            messages = mergeMessages(current.messages, latestMessages),
+            peerReadUpToServerSeq = repository.conversationPeerReadCursor(session.userId, peerId)
         )
     }
 

@@ -30,6 +30,10 @@ interface MessageDao {
     fun markAcked(messageId: String, serverSeq: Long, updatedAt: Long): Boolean
 
     fun markFailed(messageId: String, updatedAt: Long): Boolean
+
+    fun markRecalled(messageId: String, recalledBy: String, recalledAt: Long): Boolean
+
+    fun maxIncomingServerSeq(conversationId: String): Long?
 }
 
 class InMemoryMessageDao : MessageDao {
@@ -133,5 +137,28 @@ class InMemoryMessageDao : MessageDao {
 
     override fun markFailed(messageId: String, updatedAt: Long): Boolean {
         return markStatus(messageId, MessageStatus.FAILED, updatedAt)
+    }
+
+    override fun markRecalled(messageId: String, recalledBy: String, recalledAt: Long): Boolean {
+        val current = messagesById[messageId] ?: return false
+        if (current.isRecalled) {
+            return false
+        }
+        messagesById[messageId] = current.copy(
+            isRecalled = true,
+            recalledAt = recalledAt,
+            recalledBy = recalledBy,
+            updatedAt = recalledAt
+        )
+        return true
+    }
+
+    override fun maxIncomingServerSeq(conversationId: String): Long? {
+        return messagesById.values
+            .asSequence()
+            .filter { it.conversationId == conversationId }
+            .filter { it.direction == MessageDirection.INCOMING }
+            .mapNotNull { it.serverSeq }
+            .maxOrNull()
     }
 }

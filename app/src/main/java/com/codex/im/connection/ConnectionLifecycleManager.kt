@@ -84,7 +84,28 @@ class ConnectionLifecycleManager(
         }
     }
 
-    override fun send(packet: ImPacket): Boolean = connection.send(packet)
+    fun notifyNetworkAvailable() {
+        val tokenHint = requestedToken ?: return
+        if (!started) {
+            return
+        }
+        when (connection.states.value) {
+            ConnectionState.Authenticated -> restartHeartbeatLoop()
+            ConnectionState.Disconnected,
+            is ConnectionState.Failed,
+            is ConnectionState.Reconnecting -> {
+                reconnectJob?.cancel()
+                reconnectJob = null
+                attemptConnect(tokenHint)
+            }
+            ConnectionState.Connecting,
+            ConnectionState.Connected -> Unit
+        }
+    }
+
+    override fun send(packet: ImPacket): Boolean {
+        return sendPacket(packet)
+    }
 
     private fun restartHeartbeatLoop(initialDelayMillis: Long = 0L) {
         heartbeatJob?.cancel()
@@ -126,7 +147,7 @@ class ConnectionLifecycleManager(
                 reconnectPolicy.reset()
                 reconnectJob?.cancel()
                 reconnectJob = null
-                    startHeartbeatLoop()
+                startHeartbeatLoop()
             }
             ConnectionState.Disconnected -> {
                 heartbeatJob?.cancel()
@@ -160,7 +181,9 @@ class ConnectionLifecycleManager(
             while (started && connection.states.value == ConnectionState.Authenticated) {
                 val heartbeatIntervalMillis = currentHeartbeatIntervalMillis()
                 val ackBeforeSend = heartbeatAckGeneration
-                connection.send(HeartbeatPacketFactory.create())
+                if (!sendPacket(HeartbeatPacketFactory.create())) {
+                    break
+                }
                 delay(heartbeatIntervalMillis)
                 if (!started || connection.states.value != ConnectionState.Authenticated) {
                     break
@@ -178,6 +201,23 @@ class ConnectionLifecycleManager(
         }
     }
 
+    private fun sendPacket(packet: ImPacket): Boolean {
+        val sent = connection.send(packet)
+        if (!sent) {
+            scheduleReconnectAfterSendFailure()
+        }
+        return sent
+    }
+
+    private fun scheduleReconnectAfterSendFailure() {
+        if (!started) {
+            return
+        }
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+        scheduleReconnect(reason = "send failed", disconnectBeforeDelay = true)
+    }
+
     private fun handleHeartbeatTimeout() {
         val tokenHint = requestedToken ?: return
         heartbeatJob = null
@@ -192,7 +232,7 @@ class ConnectionLifecycleManager(
         }
     }
 
-    private fun scheduleReconnect(reason: String) {
+    private fun scheduleReconnect(reason: String, disconnectBeforeDelay: Boolean = false) {
         val tokenHint = requestedToken
         if (tokenHint == null || reconnectJob?.isActive == true) {
             return
@@ -200,6 +240,9 @@ class ConnectionLifecycleManager(
         val delayMillis = reconnectPolicy.nextDelayMillis()
         mutableStates.value = ConnectionState.Reconnecting(delayMillis, reason)
         reconnectJob = scope.launch(dispatcher) {
+            if (disconnectBeforeDelay) {
+                connection.disconnect()
+            }
             delay(delayMillis)
             if (started) {
                 attemptConnect(tokenHint)

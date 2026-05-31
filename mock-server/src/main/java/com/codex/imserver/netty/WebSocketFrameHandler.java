@@ -69,6 +69,24 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
                 messageRouter.handleDeliveryAck(receiverUserId, packet);
                 return;
             }
+            if (packet.cmd() == ImCommand.READ_ACK.value()) {
+                String readerUserId = registry.userIdOf(client).orElse(null);
+                if (readerUserId == null) {
+                    ImServerLogger.log("[IM] READ_ACK rejected unauthenticated client");
+                    return;
+                }
+                messageRouter.handleReadAck(readerUserId, packet);
+                return;
+            }
+            if (packet.cmd() == ImCommand.RECALL_MESSAGE.value()) {
+                String requesterUserId = registry.userIdOf(client).orElse(null);
+                if (requesterUserId == null) {
+                    ImServerLogger.log("[IM] RECALL_MESSAGE rejected unauthenticated client");
+                    return;
+                }
+                messageRouter.handleRecallMessage(requesterUserId, packet);
+                return;
+            }
             ImServerLogger.log("[IM] Unknown packet cmd=%d", packet.cmd());
         } catch (RuntimeException error) {
             ImServerLogger.log("[IM] WebSocket packet error: %s", error.getMessage());

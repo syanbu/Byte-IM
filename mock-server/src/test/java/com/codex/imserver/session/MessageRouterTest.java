@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.LongSupplier;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -218,6 +219,202 @@ public class MessageRouterTest {
         router.handleAuth(tokenService.issue("13800113800").token(), secondReceiver);
 
         assertEquals(List.of(ImCommand.AUTH_ACK.value()), secondReceiver.sentPackets.stream().map(ImPacket::cmd).toList());
+    }
+
+    @Test
+    public void readAckForwardsToSingleChatPeerWhenReaderMatchesSocketUser() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient reader = new CapturingClient();
+        CapturingClient peer = new CapturingClient();
+        registry.register("13900113900", reader);
+        registry.register("13800113800", peer);
+        MessageRouter router = new MessageRouter(registry);
+
+        router.handleReadAck("13900113900", readAck("""
+            {
+              "conversationId":"single:13800113800:13900113900",
+              "readerId":"13900113900",
+              "peerId":"13800113800",
+              "readUpToServerSeq":1001,
+              "readAt":2000
+            }
+            """));
+
+        assertEquals(1, peer.sentPackets.size());
+        assertEquals(ImCommand.READ_ACK.value(), peer.sentPackets.get(0).cmd());
+        JsonObject forwarded = body(peer.sentPackets.get(0));
+        assertEquals("13900113900", forwarded.get("readerId").getAsString());
+        assertEquals(1001L, forwarded.get("readUpToServerSeq").getAsLong());
+    }
+
+    @Test
+    public void readAckWithMismatchedReaderIsIgnored() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient peer = new CapturingClient();
+        registry.register("13800113800", peer);
+        MessageRouter router = new MessageRouter(registry);
+
+        router.handleReadAck("13900113900", readAck("""
+            {
+              "conversationId":"single:13800113800:13900113900",
+              "readerId":"someone-else",
+              "peerId":"13800113800",
+              "readUpToServerSeq":1001,
+              "readAt":2000
+            }
+            """));
+
+        assertTrue(peer.sentPackets.isEmpty());
+    }
+
+    @Test
+    public void recallByOriginalSenderWithinTwoMinutesSendsAckAndNotify() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), () -> 130_000L);
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"recall-ok",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"hello",
+              "timestamp":1000
+            }
+            """));
+        sender.sentPackets.clear();
+        receiver.sentPackets.clear();
+
+        router.handleRecallMessage("13800113800", recallMessage("""
+            {
+              "messageId":"recall-ok",
+              "conversationId":"single:13800113800:13900113900",
+              "requesterId":"13800113800",
+              "requestAt":130000
+            }
+            """));
+
+        assertEquals(ImCommand.RECALL_ACK.value(), sender.sentPackets.get(0).cmd());
+        assertEquals(ImCommand.RECALL_NOTIFY.value(), receiver.sentPackets.get(0).cmd());
+        assertTrue(body(sender.sentPackets.get(0)).get("success").getAsBoolean());
+        assertEquals("recall-ok", body(receiver.sentPackets.get(0)).get("messageId").getAsString());
+    }
+
+    @Test
+    public void nonSenderCannotRecallMessage() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), () -> 2_000L);
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"recall-denied",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"hello",
+              "timestamp":1000
+            }
+            """));
+        receiver.sentPackets.clear();
+
+        router.handleRecallMessage("13900113900", recallMessage("""
+            {
+              "messageId":"recall-denied",
+              "conversationId":"single:13800113800:13900113900",
+              "requesterId":"13900113900",
+              "requestAt":2000
+            }
+            """));
+
+        assertEquals(ImCommand.RECALL_ACK.value(), receiver.sentPackets.get(0).cmd());
+        assertFalse(body(receiver.sentPackets.get(0)).get("success").getAsBoolean());
+        assertEquals("NOT_SENDER", body(receiver.sentPackets.get(0)).get("reason").getAsString());
+        assertEquals(1, sender.sentPackets.size());
+    }
+
+    @Test
+    public void recallAfterTwoMinutesFails() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
+        MutableClock clock = new MutableClock(1_000L);
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), clock);
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"recall-expired",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"hello",
+              "timestamp":1000
+            }
+            """));
+        sender.sentPackets.clear();
+        receiver.sentPackets.clear();
+        clock.now = 121_001L;
+
+        router.handleRecallMessage("13800113800", recallMessage("""
+            {
+              "messageId":"recall-expired",
+              "conversationId":"single:13800113800:13900113900",
+              "requesterId":"13800113800",
+              "requestAt":130001
+            }
+            """));
+
+        assertFalse(body(sender.sentPackets.get(0)).get("success").getAsBoolean());
+        assertEquals("EXPIRED", body(sender.sentPackets.get(0)).get("reason").getAsString());
+        assertTrue(receiver.sentPackets.isEmpty());
+    }
+
+    @Test
+    public void repeatedRecallIsIdempotent() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
+        MessageRouter router = new MessageRouter(registry, TokenService.defaultService(), new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), () -> 2_000L);
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"recall-repeat",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"hello",
+              "timestamp":1000
+            }
+            """));
+        ImPacket recall = recallMessage("""
+            {
+              "messageId":"recall-repeat",
+              "conversationId":"single:13800113800:13900113900",
+              "requesterId":"13800113800",
+              "requestAt":2000
+            }
+            """);
+        sender.sentPackets.clear();
+        receiver.sentPackets.clear();
+
+        router.handleRecallMessage("13800113800", recall);
+        router.handleRecallMessage("13800113800", recall);
+
+        assertEquals(2, sender.sentPackets.size());
+        assertTrue(body(sender.sentPackets.get(0)).get("success").getAsBoolean());
+        assertTrue(body(sender.sentPackets.get(1)).get("success").getAsBoolean());
+        assertEquals(1, receiver.sentPackets.size());
     }
 
     @Test
@@ -470,6 +667,50 @@ public class MessageRouterTest {
     }
 
     @Test
+    public void sqliteAcceptedMessageStoreMigratesLegacyDatabaseWithRecallColumns() throws Exception {
+        Path directory = Files.createTempDirectory("im-message-store-migration-test");
+        Path database = directory.resolve("messages.sqlite");
+        try (java.sql.Connection connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + database.toAbsolutePath().toUri());
+             java.sql.Statement statement = connection.createStatement()) {
+            statement.executeUpdate("""
+                CREATE TABLE accepted_messages (
+                  message_id TEXT PRIMARY KEY,
+                  conversation_id TEXT NOT NULL,
+                  sender_id TEXT NOT NULL,
+                  receiver_id TEXT NOT NULL,
+                  client_seq INTEGER NOT NULL,
+                  server_seq INTEGER NOT NULL,
+                  content TEXT NOT NULL,
+                  timestamp INTEGER NOT NULL,
+                  server_time INTEGER NOT NULL,
+                  delivered INTEGER NOT NULL DEFAULT 0,
+                  ack_json TEXT NOT NULL,
+                  message_json TEXT NOT NULL,
+                  UNIQUE(conversation_id, server_seq)
+                )
+                """);
+            statement.executeUpdate("""
+                INSERT INTO accepted_messages(
+                  message_id, conversation_id, sender_id, receiver_id, client_seq, server_seq,
+                  content, timestamp, server_time, delivered, ack_json, message_json
+                ) VALUES(
+                  'legacy-1', 'single:13800113800:13900113900', '13800113800', '13900113900',
+                  1, 1001, 'legacy', 1000, 2000, 0,
+                  '{"messageId":"legacy-1","conversationId":"single:13800113800:13900113900","clientSeq":1,"serverSeq":1001,"serverTime":2000}',
+                  '{"messageId":"legacy-1","conversationId":"single:13800113800:13900113900","senderId":"13800113800","receiverId":"13900113900","clientSeq":1,"serverSeq":1001,"serverTime":2000,"content":"legacy","timestamp":1000}'
+                )
+                """);
+        }
+
+        MessageRouter.SQLiteAcceptedMessageStore store = new MessageRouter.SQLiteAcceptedMessageStore(database);
+        List<MessageRouter.StoredAcceptedMessage> restored = store.loadAll();
+
+        assertEquals(1, restored.size());
+        assertEquals("legacy-1", restored.get(0).messageId());
+        assertFalse(restored.get(0).accepted().recalled());
+    }
+
+    @Test
     public void duplicateMessageIdRemainsIdempotentAcrossRouterRestart() throws Exception {
         Path directory = Files.createTempDirectory("im-router-restart-idempotency");
         Path sequenceDatabase = directory.resolve("sequences.sqlite");
@@ -679,6 +920,14 @@ public class MessageRouterTest {
         return new ImPacket(ImCommand.DELIVERY_ACK.value(), json.getBytes(StandardCharsets.UTF_8));
     }
 
+    private static ImPacket readAck(String json) {
+        return new ImPacket(ImCommand.READ_ACK.value(), json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static ImPacket recallMessage(String json) {
+        return new ImPacket(ImCommand.RECALL_MESSAGE.value(), json.getBytes(StandardCharsets.UTF_8));
+    }
+
     private static JsonObject body(ImPacket packet) {
         return JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
     }
@@ -695,6 +944,19 @@ public class MessageRouterTest {
         @Override
         public void recordStatus(String status) {
             statusEvents.add(status);
+        }
+    }
+
+    private static final class MutableClock implements LongSupplier {
+        private long now;
+
+        private MutableClock(long now) {
+            this.now = now;
+        }
+
+        @Override
+        public long getAsLong() {
+            return now;
         }
     }
 }
