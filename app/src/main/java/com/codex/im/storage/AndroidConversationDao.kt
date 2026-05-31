@@ -29,6 +29,10 @@ class AndroidConversationDao(private val database: SQLiteDatabase) : Conversatio
         database.insertWithOnConflict("conversations", null, next.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    override fun upsertConversation(conversation: Conversation) {
+        database.insertWithOnConflict("conversations", null, conversation.toValues(), SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
     override fun listConversations(limit: Int): List<Conversation> {
         return database.query(
             "conversations",

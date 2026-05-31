@@ -90,6 +90,24 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun startMarksLocalGroupConversationsAsGroups() = runTest {
+        val fixture = Fixture(this)
+        fixture.repository.createLocalGroupConversation(
+            creatorUserId = "13800113800",
+            memberUserIds = listOf("13900113900", "17724734511"),
+            now = 1_000L
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals("群聊(3)", item.peerName)
+        assertEquals(true, item.isGroup)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun startDoesNotAddDuplicateConversationWhenCanonicalConversationAlreadyExists() = runTest {
         val fixture = Fixture(this)
         fixture.repository.sendText("13900113900", "13800113800", "hello from other login", now = 1_000L)

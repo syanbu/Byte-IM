@@ -64,6 +64,8 @@ import com.codex.im.contacts.ContactListViewModel
 import com.codex.im.contacts.DemoContactResolver
 import com.codex.im.conversation.ConversationListScreen
 import com.codex.im.conversation.ConversationListViewModel
+import com.codex.im.group.GroupCreateScreen
+import com.codex.im.group.GroupCreateViewModel
 import com.codex.im.message.AndroidChatThumbnailCache
 import com.codex.im.message.CoilChatThumbnailPreloader
 import com.codex.im.message.MessageIdGenerator
@@ -337,6 +339,12 @@ private fun AuthenticatedImNavHost(
                 ConversationListScreen(
                     viewModel = conversationListViewModel,
                     state = conversationState,
+                    unreadCount = unreadMessagesCount,
+                    onStartGroupChat = {
+                        navController.navigate(SelfHostedImRoute.GroupCreate.route) {
+                            launchSingleTop = true
+                        }
+                    },
                     onOpenConversation = { peerUserId ->
                         SelfHostedImRoute.Chat.createRoute(peerUserId)?.let(navController::navigateToChat)
                     }
@@ -369,6 +377,30 @@ private fun AuthenticatedImNavHost(
                     route = SelfHostedImRoute.Contacts.route,
                     currentRoute = currentRoute,
                     activity = activity
+                )
+            }
+
+            composable(SelfHostedImRoute.GroupCreate.route) {
+                val groupCreateViewModel = remember(session.userId) {
+                    GroupCreateViewModel(
+                        session = session,
+                        profileRepository = profileRepository,
+                        messageRepository = messageRepository,
+                        contactResolver = DemoContactResolver::contactsFor,
+                        validSessionProvider = validSessionProvider
+                    )
+                }
+                val groupCreateState by groupCreateViewModel.state.collectAsState()
+                GroupCreateScreen(
+                    viewModel = groupCreateViewModel,
+                    state = groupCreateState,
+                    onBack = { navController.popBackStack() },
+                    onCreated = {
+                        navController.popBackStack(
+                            route = SelfHostedImRoute.Conversations.route,
+                            inclusive = false
+                        )
+                    }
                 )
             }
 

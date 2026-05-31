@@ -3,6 +3,8 @@ package com.codex.im.storage
 interface ConversationDao {
     fun upsertFromMessage(message: ChatMessage, incrementUnread: Boolean)
 
+    fun upsertConversation(conversation: Conversation)
+
     fun listConversations(limit: Int): List<Conversation>
 
     fun clearUnread(conversationId: String)
@@ -40,6 +42,10 @@ class InMemoryConversationDao : ConversationDao {
             current.copy(unreadCount = unreadCount, updatedAt = message.updatedAt)
         }
         conversations[message.conversationId] = next
+    }
+
+    override fun upsertConversation(conversation: Conversation) {
+        conversations[conversation.conversationId] = conversation
     }
 
     override fun listConversations(limit: Int): List<Conversation> {

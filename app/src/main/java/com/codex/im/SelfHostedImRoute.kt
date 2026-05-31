@@ -5,6 +5,8 @@ sealed class SelfHostedImRoute(val route: String) {
 
     data object Contacts : SelfHostedImRoute("contacts")
 
+    data object GroupCreate : SelfHostedImRoute("group-create")
+
     data object Me : SelfHostedImRoute("me")
 
     data object Chat : SelfHostedImRoute("chat/{peerUserId}") {

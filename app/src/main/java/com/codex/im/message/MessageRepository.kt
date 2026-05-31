@@ -5,6 +5,7 @@ import com.codex.im.connection.ImConnection
 import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.ChatMessage
+import com.codex.im.storage.Conversation
 import com.codex.im.storage.ConversationDao
 import com.codex.im.storage.MessageDao
 import com.codex.im.storage.MessageDirection
@@ -250,6 +251,33 @@ class MessageRepository(
 
     fun conversations(limit: Int = 50) = conversationDao.listConversations(limit)
 
+    fun createLocalGroupConversation(
+        creatorUserId: String,
+        memberUserIds: List<String>,
+        now: Long = System.currentTimeMillis()
+    ): Conversation {
+        val normalizedMembers = memberUserIds
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != creatorUserId }
+            .distinct()
+            .sorted()
+        require(normalizedMembers.isNotEmpty()) { "At least one member is required" }
+        val conversationId = groupConversationIdFor(creatorUserId, normalizedMembers, now)
+        val conversation = Conversation(
+            conversationId = conversationId,
+            peerId = conversationId,
+            peerName = "群聊(${normalizedMembers.size + 1})",
+            lastMessageId = null,
+            lastMessagePreview = "已创建群聊",
+            lastMessageTime = now,
+            unreadCount = 0,
+            updatedAt = now
+        )
+        conversationDao.upsertConversation(conversation)
+        notifyConversationChanged()
+        return conversation
+    }
+
     fun conversationPeerReadCursor(userId: String, peerId: String): Long? {
         val conversationId = conversationIdFor(userId, peerId)
         return conversationDao.listConversations(limit = 100)
@@ -362,6 +390,11 @@ class MessageRepository(
     fun conversationIdFor(firstUserId: String, secondUserId: String): String {
         val participants = listOf(firstUserId, secondUserId).sorted()
         return "single:${participants[0]}:${participants[1]}"
+    }
+
+    private fun groupConversationIdFor(creatorUserId: String, memberUserIds: List<String>, now: Long): String {
+        val memberHash = memberUserIds.joinToString(",").hashCode().toUInt().toString(16)
+        return "group:$creatorUserId:$now:$memberHash"
     }
 
     private fun handleAck(json: String) {

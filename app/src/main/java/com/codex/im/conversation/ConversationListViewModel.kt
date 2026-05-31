@@ -27,7 +27,8 @@ data class ConversationListItem(
     val peerAvatarUrl: String?,
     val lastMessagePreview: String,
     val lastMessageTime: Long,
-    val unreadCount: Int
+    val unreadCount: Int,
+    val isGroup: Boolean = false
 )
 
 data class ConversationListUiState(
@@ -150,7 +151,8 @@ class ConversationListViewModel(
             peerAvatarUrl = profile?.avatarUrl,
             lastMessagePreview = lastMessagePreview,
             lastMessageTime = lastMessageTime,
-            unreadCount = unreadCount
+            unreadCount = unreadCount,
+            isGroup = conversationId.startsWith("group:")
         )
     }
 
