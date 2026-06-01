@@ -1,0 +1,261 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-tertiary-container": "#741c16",
+                      "text-secondary": "#808080",
+                      "on-background": "#1c1b1b",
+                      "surface-container": "#f0eded",
+                      "outline-variant": "#bbcbba",
+                      "on-tertiary": "#ffffff",
+                      "inverse-on-surface": "#f3f0ef",
+                      "on-surface-variant": "#3d4a3d",
+                      "divider": "#EEEEEE",
+                      "tertiary-fixed": "#ffdad5",
+                      "surface-tint": "#006d33",
+                      "on-tertiary-fixed-variant": "#82261e",
+                      "bubble-peer": "#FFFFFF",
+                      "secondary-container": "#dcdddd",
+                      "inverse-primary": "#45e17c",
+                      "error": "#ba1a1a",
+                      "surface-bright": "#fcf9f8",
+                      "status-error": "#FA5151",
+                      "surface-container-high": "#eae7e7",
+                      "on-error": "#ffffff",
+                      "on-primary": "#ffffff",
+                      "background-dark": "#EDEDED",
+                      "on-secondary": "#ffffff",
+                      "on-secondary-fixed-variant": "#454747",
+                      "surface-variant": "#e5e2e1",
+                      "tertiary": "#a23d33",
+                      "on-surface": "#1c1b1b",
+                      "inverse-surface": "#313030",
+                      "tertiary-fixed-dim": "#ffb4aa",
+                      "surface-container-highest": "#e5e2e1",
+                      "surface-container-low": "#f6f3f2",
+                      "surface": "#fcf9f8",
+                      "primary-container": "#07c160",
+                      "primary-fixed-dim": "#45e17c",
+                      "secondary-fixed": "#e2e2e2",
+                      "background": "#fcf9f8",
+                      "tertiary-container": "#ff8475",
+                      "on-tertiary-fixed": "#410001",
+                      "on-secondary-container": "#5f6161",
+                      "outline": "#6c7b6c",
+                      "on-error-container": "#93000a",
+                      "secondary-fixed-dim": "#c6c6c7",
+                      "surface-container-lowest": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "surface-dim": "#dcd9d9",
+                      "secondary": "#5d5f5f",
+                      "on-secondary-fixed": "#1a1c1c",
+                      "on-primary-container": "#00471f",
+                      "primary-fixed": "#66ff95",
+                      "on-primary-fixed-variant": "#005225",
+                      "on-primary-fixed": "#00210b",
+                      "bubble-self": "#95EC69",
+                      "primary": "#006d33"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "avatar-size-lg": "50px",
+                      "list-item-height": "72px",
+                      "bubble-padding-h": "12px",
+                      "avatar-size-sm": "40px",
+                      "bubble-padding-v": "8px",
+                      "edge-margin": "16px",
+                      "gutter": "12px"
+              },
+              "fontFamily": {
+                      "badge-text": ["Inter"],
+                      "system-notice": ["Inter"],
+                      "list-title": ["Inter"],
+                      "list-preview": ["Inter"],
+                      "label-caps": ["Inter"],
+                      "timestamp": ["Inter"],
+                      "body-message": ["Inter"],
+                      "nav-title": ["Inter"]
+              },
+              "fontSize": {
+                      "badge-text": ["11px", {"lineHeight": "12px", "fontWeight": "700"}],
+                      "system-notice": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                      "list-title": ["16px", {"lineHeight": "22px", "fontWeight": "500"}],
+                      "list-preview": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.2px", "fontWeight": "400"}],
+                      "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "600"}],
+                      "timestamp": ["11px", {"lineHeight": "14px", "fontWeight": "400"}],
+                      "body-message": ["16px", {"lineHeight": "22px", "fontWeight": "400"}],
+                      "nav-title": ["18px", {"lineHeight": "24px", "fontWeight": "600"}]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #f7f7f7;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .contact-row:active {
+            background-color: #f0eded;
+        }
+        .search-container {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body-message min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 h-[56px] bg-surface dark:bg-inverse-surface border-b border-divider dark:border-outline-variant flex items-center justify-between px-edge-margin w-full">
+<div class="flex items-center gap-4">
+<button class="material-symbols-outlined text-on-surface dark:text-inverse-on-surface active:opacity-70 transition-opacity">menu</button>
+<h1 class="font-nav-title text-nav-title font-bold text-on-surface dark:text-inverse-on-surface">Contacts</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="material-symbols-outlined text-on-surface dark:text-inverse-on-surface active:opacity-70 transition-opacity">person_add</button>
+</div>
+</header>
+<main class="flex-1 mt-[56px] mb-[56px] overflow-y-auto">
+<!-- Search Bar -->
+<div class="px-edge-margin py-3 bg-surface">
+<div class="search-container flex items-center bg-surface-container rounded-xl px-4 py-2 gap-3 group focus-within:ring-2 focus-within:ring-primary-container">
+<span class="material-symbols-outlined text-secondary text-[20px]">search</span>
+<input class="bg-transparent border-none focus:ring-0 w-full font-list-preview text-list-preview placeholder:text-text-secondary" placeholder="Search contacts..." type="text">
+</div>
+</div>
+<!-- Alpha Index Group (A) -->
+<div class="bg-surface-container-low px-edge-margin py-1">
+<span class="font-label-caps text-label-caps text-secondary">A</span>
+</div>
+<!-- Contact Items -->
+<div class="bg-surface">
+<div class="contact-row flex items-center px-edge-margin h-[list-item-height] border-b border-divider transition-colors cursor-pointer">
+<div class="relative w-[50px] h-[50px] mr-gutter">
+<img class="w-full h-full rounded-xl object-cover" data-alt="A professional close-up headshot of a smiling man with clean features in a high-key, minimalist photography style. The lighting is soft and neutral, reflecting a clean corporate aesthetic. The background is a solid, light-grey studio backdrop, maintaining a focused and utilitarian vibe consistent with a modern communication application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHQ2_2ImLEmUeGsxV3vv6d_If8UK1swW6549wVikP9QrBemYfTyJEKyFVgs-N8LXP1A2EyuwcxNJIBb5AD9tCI7tQjAQ9yu3tUYXBAw0Ta9C6YviKYJiH1h9JeX_R5pkbIQnsBKr6td7pBM1PJ8dpUkUI1eciv4hjR5_UgF67_mnQm44kGrsO5QDB9QYWYLA9d3yQU6CWWy2JYCJEV0xlviQJp8xKR9_mWycaKcNTJhaXhH9WDUuEdevdafrTaMYq6isdUYAa1sGPZ">
+</div>
+<div class="flex flex-col flex-1">
+<span class="font-list-title text-list-title text-on-surface">Alex Thompson</span>
+<span class="font-list-preview text-list-preview text-text-secondary">ID: alex_t_99</span>
+</div>
+</div>
+<div class="contact-row flex items-center px-edge-margin h-[list-item-height] border-b border-divider transition-colors cursor-pointer">
+<div class="relative w-[50px] h-[50px] mr-gutter">
+<img class="w-full h-full rounded-xl object-cover" data-alt="A portrait of a confident woman with professional attire, captured in a bright and airy modern office environment. The lighting is natural and even, highlighting the clean, reliable brand persona. The image follows a modern minimalist aesthetic with a soft-focus background that prioritizes the subject’s clarity and approachable expression." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCNlLEH2j0H6qGUHC0NL4aPp6-t6sRLtMbQAltxVMqTAxqZUdHdfX3r7Mgu-FMTkWprPB1uc-_IP7g4VZPyiMmUmcY2LMCLN6SMq6a9SMy9kqg2NcUjR-vSInKcSOZwAU_O6a1G5u1ctvLyWFlscC2OJRBxRHrunR6hsfQlImBqmwUXhjHwaIEYgwIODdDEparzmpFu3vuGUqSmA9SU86bIbdC-PZihWIL9SjyyRGzFD8QDCXccQZrCsYTlJW7MggZj-2VRGMk1A0_0">
+</div>
+<div class="flex flex-col flex-1">
+<span class="font-list-title text-list-title text-on-surface">Amanda Chen</span>
+<span class="font-list-preview text-list-preview text-text-secondary">+1 (555) 012-3456</span>
+</div>
+</div>
+</div>
+<!-- Alpha Index Group (B) -->
+<div class="bg-surface-container-low px-edge-margin py-1">
+<span class="font-label-caps text-label-caps text-secondary">B</span>
+</div>
+<div class="bg-surface">
+<div class="contact-row flex items-center px-edge-margin h-[list-item-height] border-b border-divider transition-colors cursor-pointer">
+<div class="relative w-[50px] h-[50px] mr-gutter">
+<div class="w-full h-full rounded-xl bg-primary-container flex items-center justify-center">
+<span class="text-white font-bold text-lg">BS</span>
+</div>
+</div>
+<div class="flex flex-col flex-1">
+<span class="font-list-title text-list-title text-on-surface">Ben Smith</span>
+<span class="font-list-preview text-list-preview text-text-secondary">ID: b_smith_vault</span>
+</div>
+</div>
+</div>
+<!-- Alpha Index Group (D) -->
+<div class="bg-surface-container-low px-edge-margin py-1">
+<span class="font-label-caps text-label-caps text-secondary">D</span>
+</div>
+<div class="bg-surface">
+<div class="contact-row flex items-center px-edge-margin h-[list-item-height] border-b border-divider transition-colors cursor-pointer">
+<div class="relative w-[50px] h-[50px] mr-gutter">
+<img class="w-full h-full rounded-xl object-cover" data-alt="A sharp, detailed portrait of a young professional man in a minimalist setting. The visual style is rooted in efficiency and utility, featuring high-contrast lighting that defines facial features clearly against a neutral, bright background. The color palette is composed of soft greys and whites, echoing a corporate yet modern digital interface." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2VNHERl1fjKHCdVVdsoeFrlt1TMBz133wwGRFeqvPjDraclsh-3cMQTWFLPCas4uPuLCNzysvRKIJ_iK8ivYOKyN-5tbHFyepmUPmTRx2kCcqO5v6OZj6DaOepMaR6VXwZ0BPOqoaJGtfdSbjJqA2N1l9JWAXppBO_G_viq1l9pzmHJSF6SKwobftFeCiNUhSvTtnU1pXWtMZwNpm0HjwpyihTsrbUqzzh1nHDZ7sPWvylGsYO92qTD6BQ51t8052UonZENdU9TQ0">
+</div>
+<div class="flex flex-col flex-1">
+<span class="font-list-title text-list-title text-on-surface">David Miller</span>
+<span class="font-list-preview text-list-preview text-text-secondary">+1 (555) 789-1011</span>
+</div>
+</div>
+</div>
+<!-- Alpha Index Group (E) -->
+<div class="bg-surface-container-low px-edge-margin py-1">
+<span class="font-label-caps text-label-caps text-secondary">E</span>
+</div>
+<div class="bg-surface">
+<div class="contact-row flex items-center px-edge-margin h-[list-item-height] border-b border-divider transition-colors cursor-pointer">
+<div class="relative w-[50px] h-[50px] mr-gutter">
+<img class="w-full h-full rounded-xl object-cover" data-alt="A clean, bright headshot of a woman with a friendly expression, captured with professional studio lighting that creates soft shadows and high clarity. The aesthetic is utilitarian and trustworthy, utilizing a neutral color space of whites and soft greys to ensure the subject stands out as a reliable contact in a communication directory." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAjTvqJmWvJw3QIBmn7O0nRBuBUsKIJXDhMK0ii2UWDV85tIJd-_La99Tss1RnfYiurGT-IdjKPHpJGq1suJbTFBzdpDk_TEHHrqy3YeiEhhvp-VCIrAx0fM1ajnVniKGu2xRuJCpSPRX4Jf6-7gWc62ikIZvktiKSer-LX8kJJGFf5CgjvRZE7AzvzFUpnGk42j7z6I4496mPj2QQKw0oW8veQcExwb-3vvtPjDeZV3RiHi6D2nzUensS2wl3b9J0jAS3I3JxOzjkN">
+</div>
+<div class="flex flex-col flex-1">
+<span class="font-list-title text-list-title text-on-surface">Elena Rodriguez</span>
+<span class="font-list-preview text-list-preview text-text-secondary">ID: elena_rod</span>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 h-[56px] bg-surface dark:bg-inverse-surface border-t border-divider dark:border-outline-variant flex justify-around items-center w-full px-2">
+<!-- Messages Tab -->
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-low dark:hover:bg-surface-container-high active:scale-95 transition-transform duration-150 flex-1 h-full">
+<span class="material-symbols-outlined">chat</span>
+<span class="font-label-caps text-label-caps">Messages</span>
+</button>
+<!-- Contacts Tab (Active) -->
+<button class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed hover:bg-surface-container-low dark:hover:bg-surface-container-high active:scale-95 transition-transform duration-150 flex-1 h-full">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">group</span>
+<span class="font-label-caps text-label-caps">Contacts</span>
+</button>
+<!-- Me Tab -->
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-low dark:hover:bg-surface-container-high active:scale-95 transition-transform duration-150 flex-1 h-full">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-caps text-label-caps">Me</span>
+</button>
+</nav>
+<!-- Floating Action Button (SUPPRESSED based on shell logic for Contacts screen usually, but as per "Standard Android" many have an "Add Contact" FAB. Here we keep it simple as the TopBar has the action per JSON guidance for "leading/trailing icons") -->
+<script>
+        // Simple micro-interaction for rows
+        document.querySelectorAll('.contact-row').forEach(row => {
+            row.addEventListener('click', () => {
+                // Potential navigation logic
+                row.style.opacity = '0.7';
+                setTimeout(() => row.style.opacity = '1', 100);
+            });
+        });
+
+        // Search highlight interaction
+        const searchInput = document.querySelector('input');
+        const searchContainer = document.querySelector('.search-container');
+        
+        searchInput.addEventListener('focus', () => {
+            searchContainer.classList.add('bg-white', 'shadow-sm');
+        });
+        
+        searchInput.addEventListener('blur', () => {
+            searchContainer.classList.remove('bg-white', 'shadow-sm');
+        });
+    </script>
+</body></html>

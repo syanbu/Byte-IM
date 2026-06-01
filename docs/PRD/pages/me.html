@@ -1,0 +1,243 @@
+<!DOCTYPE html><html class="light" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>ByteIM - Me</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-container": "#741c16",
+                        "text-secondary": "#808080",
+                        "on-background": "#1c1b1b",
+                        "surface-container": "#f0eded",
+                        "outline-variant": "#bbcbba",
+                        "on-tertiary": "#ffffff",
+                        "inverse-on-surface": "#f3f0ef",
+                        "on-surface-variant": "#3d4a3d",
+                        "divider": "#EEEEEE",
+                        "tertiary-fixed": "#ffdad5",
+                        "surface-tint": "#006d33",
+                        "on-tertiary-fixed-variant": "#82261e",
+                        "bubble-peer": "#FFFFFF",
+                        "secondary-container": "#dcdddd",
+                        "inverse-primary": "#45e17c",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#fcf9f8",
+                        "status-error": "#FA5151",
+                        "surface-container-high": "#eae7e7",
+                        "on-error": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "background-dark": "#EDEDED",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#454747",
+                        "surface-variant": "#e5e2e1",
+                        "tertiary": "#a23d33",
+                        "on-surface": "#1c1b1b",
+                        "inverse-surface": "#313030",
+                        "tertiary-fixed-dim": "#ffb4aa",
+                        "surface-container-highest": "#e5e2e1",
+                        "surface-container-low": "#f6f3f2",
+                        "surface": "#fcf9f8",
+                        "primary-container": "#07c160",
+                        "primary-fixed-dim": "#45e17c",
+                        "secondary-fixed": "#e2e2e2",
+                        "background": "#fcf9f8",
+                        "tertiary-container": "#ff8475",
+                        "on-tertiary-fixed": "#410001",
+                        "on-secondary-container": "#5f6161",
+                        "outline": "#6c7b6c",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-dim": "#dcd9d9",
+                        "secondary": "#5d5f5f",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "on-primary-container": "#00471f",
+                        "primary-fixed": "#66ff95",
+                        "on-primary-fixed-variant": "#005225",
+                        "on-primary-fixed": "#00210b",
+                        "bubble-self": "#95EC69",
+                        "primary": "#006d33"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "avatar-size-lg": "50px",
+                        "list-item-height": "72px",
+                        "bubble-padding-h": "12px",
+                        "avatar-size-sm": "40px",
+                        "bubble-padding-v": "8px",
+                        "edge-margin": "16px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "badge-text": ["Inter"],
+                        "system-notice": ["Inter"],
+                        "list-title": ["Inter"],
+                        "list-preview": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "timestamp": ["Inter"],
+                        "body-message": ["Inter"],
+                        "nav-title": ["Inter"]
+                    },
+                    "fontSize": {
+                        "badge-text": ["11px", {"lineHeight": "12px", "fontWeight": "700"}],
+                        "system-notice": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                        "list-title": ["16px", {"lineHeight": "22px", "fontWeight": "500"}],
+                        "list-preview": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.2px", "fontWeight": "400"}],
+                        "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "600"}],
+                        "timestamp": ["11px", {"lineHeight": "14px", "fontWeight": "400"}],
+                        "body-message": ["16px", {"lineHeight": "22px", "fontWeight": "400"}],
+                        "nav-title": ["18px", {"lineHeight": "24px", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #EDEDED; /* background-dark token from guide */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body-message text-on-surface">
+<!-- Top App Bar -->
+<header class="fixed top-0 w-full z-50 h-[56px] flex items-center justify-between px-edge-margin bg-surface dark:bg-inverse-surface border-b border-divider dark:border-outline-variant">
+<div class="flex items-center gap-4">
+
+
+</div>
+
+</header>
+<!-- Main Content -->
+<main class="pt-[56px] pb-[72px] min-h-screen">
+<!-- User Profile Header -->
+<section class="mt-2 bg-surface-container-lowest active:bg-surface-container-high transition-colors cursor-pointer px-edge-margin py-4 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="relative w-[64px] h-[64px]">
+<img alt="Profile Avatar" class="w-full h-full rounded-xl object-cover" data-alt="A high-quality professional portrait of a person with a friendly expression. The photograph uses soft, studio lighting against a clean, neutral background, consistent with a modern corporate communication app aesthetic. The color palette is subtle, focusing on natural skin tones and a clean white background, reflecting a reliable and utilitarian brand personality." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgfL9jbwS8cPONk-Emo-qi_kLWB8LIUtNLTBq4wMi-5z2sUZJql9KirteDix_DGbEUuooHypDEA8M5P3nW_ChsF8UyTOrg9Ro4Z93kpTNFz3sNIwmLbzR0ldLx9ccXUukEL1Y9v73tgpOnlS_-VaaBZyTUZ-HbwoBV1GVGxDjc8YREfamt2sUKhGhpnZ8kf0UK4OJkof2OI6xDfVr-nLE-B4IJSwRZl6izBCYPlAxMzR8o-vGVzXRoCKhidr2kFzV8dKQ_WCTQbE9L">
+</div>
+<div class="flex flex-col">
+<span class="font-list-title text-list-title text-on-surface">Alex Thompson</span>
+<span class="font-list-preview text-list-preview text-text-secondary">ID: +1 234 567 8900</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-outline" data-icon="qr_code_2">qr_code_2</span>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</div>
+</section>
+<!-- Menu Groups -->
+<div class="mt-2 space-y-2">
+<!-- Group 1 -->
+<div class="bg-surface-container-lowest">
+<button class="w-full h-list-item-height px-edge-margin flex items-center justify-between hover:bg-surface-container transition-colors border-b border-divider last:border-0">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="payments">payments</span>
+<span class="font-list-title text-list-title">Services</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+<!-- Group 2 -->
+<div class="bg-surface-container-lowest">
+<button class="w-full h-list-item-height px-edge-margin flex items-center justify-between hover:bg-surface-container transition-colors border-b border-divider">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="bookmark">bookmark</span>
+<span class="font-list-title text-list-title">Favorites</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="w-full h-list-item-height px-edge-margin flex items-center justify-between hover:bg-surface-container transition-colors border-b border-divider">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="image">image</span>
+<span class="font-list-title text-list-title">Moments</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="w-full h-list-item-height px-edge-margin flex items-center justify-between hover:bg-surface-container transition-colors border-b border-divider">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="folder">folder</span>
+<span class="font-list-title text-list-title">Files</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="w-full h-list-item-height px-edge-margin flex items-center justify-between hover:bg-surface-container transition-colors">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="mood">mood</span>
+<span class="font-list-title text-list-title">Stickers</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+<!-- Group 3 -->
+<div class="bg-surface-container-lowest">
+<button class="w-full h-list-item-height px-edge-margin flex items-center justify-between hover:bg-surface-container transition-colors border-b border-divider last:border-0">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="settings">settings</span>
+<span class="font-list-title text-list-title">Settings</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+<!-- Logout Section -->
+<div class="mt-8 px-edge-margin">
+<button class="w-full h-[50px] bg-surface-container-lowest text-error font-list-title text-list-title rounded-xl active:opacity-70 transition-opacity border border-divider shadow-sm">
+                    Logout
+                </button>
+</div>
+<!-- Version Footnote -->
+<div class="py-6 flex flex-col items-center justify-center gap-1 opacity-40">
+<span class="font-system-notice text-system-notice">ByteIM v2.4.1</span>
+<span class="font-system-notice text-system-notice">Powered by Open Protocols</span>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 w-full z-50 h-[56px] bg-surface dark:bg-inverse-surface border-t border-divider dark:border-outline-variant flex justify-around items-center px-2">
+<!-- Messages Tab -->
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-low dark:hover:bg-surface-container-high active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="chat">chat</span>
+<span class="font-label-caps text-label-caps">Messages</span>
+</button>
+<!-- Contacts Tab -->
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-low dark:hover:bg-surface-container-high active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label-caps text-label-caps">Contacts</span>
+</button>
+<!-- Me Tab (ACTIVE) -->
+<button class="flex flex-col items-center justify-center text-primary dark:text-primary-fixed hover:bg-surface-container-low dark:hover:bg-surface-container-high active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined" data-icon="person" style="font-variation-settings: &quot;FILL&quot; 1;">person</span>
+<span class="font-label-caps text-label-caps">Me</span>
+</button>
+</nav>
+<script>
+        // Simple visual feedback for menu items
+        document.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', function() {
+                // Future interaction logic here
+            });
+        });
+    </script>
+
+
+</body></html>

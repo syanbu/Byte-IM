@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Profile Details</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary-fixed": "#00210b",
+                      "outline-variant": "#bbcbba",
+                      "text-secondary": "#808080",
+                      "surface-dim": "#dcd9d9",
+                      "error": "#ba1a1a",
+                      "surface-bright": "#fcf9f8",
+                      "on-surface-variant": "#3d4a3d",
+                      "on-surface": "#1c1b1b",
+                      "bubble-peer": "#FFFFFF",
+                      "on-error-container": "#93000a",
+                      "divider": "#EEEEEE",
+                      "surface-tint": "#006d33",
+                      "on-primary": "#ffffff",
+                      "surface-container-low": "#f6f3f2",
+                      "on-tertiary-fixed": "#410001",
+                      "secondary": "#5d5f5f",
+                      "outline": "#6c7b6c",
+                      "bubble-self": "#95EC69",
+                      "tertiary-fixed-dim": "#ffb4aa",
+                      "tertiary": "#a23d33",
+                      "primary-fixed-dim": "#45e17c",
+                      "background-dark": "#EDEDED",
+                      "on-secondary-fixed-variant": "#454747",
+                      "surface-container-highest": "#e5e2e1",
+                      "surface-container": "#f0eded",
+                      "on-secondary": "#ffffff",
+                      "primary-fixed": "#66ff95",
+                      "secondary-fixed": "#e2e2e2",
+                      "secondary-fixed-dim": "#c6c6c7",
+                      "primary": "#006d33",
+                      "primary-container": "#07c160",
+                      "on-background": "#1c1b1b",
+                      "on-error": "#ffffff",
+                      "on-tertiary": "#ffffff",
+                      "error-container": "#ffdad6",
+                      "status-error": "#FA5151",
+                      "tertiary-container": "#ff8475",
+                      "on-tertiary-fixed-variant": "#82261e",
+                      "on-secondary-container": "#5f6161",
+                      "on-tertiary-container": "#741c16",
+                      "secondary-container": "#dcdddd",
+                      "on-secondary-fixed": "#1a1c1c",
+                      "on-primary-fixed-variant": "#005225",
+                      "inverse-on-surface": "#f3f0ef",
+                      "surface-container-high": "#eae7e7",
+                      "on-primary-container": "#00471f",
+                      "inverse-primary": "#45e17c",
+                      "surface-variant": "#e5e2e1",
+                      "background": "#fcf9f8",
+                      "inverse-surface": "#313030",
+                      "surface": "#fcf9f8",
+                      "tertiary-fixed": "#ffdad5",
+                      "surface-container-lowest": "#ffffff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "list-item-height": "72px",
+                      "edge-margin": "16px",
+                      "gutter": "12px",
+                      "avatar-size-lg": "50px",
+                      "bubble-padding-v": "8px",
+                      "avatar-size-sm": "40px",
+                      "bubble-padding-h": "12px"
+              },
+              "fontFamily": {
+                      "list-title": ["Inter"],
+                      "label-caps": ["Inter"],
+                      "badge-text": ["Inter"],
+                      "nav-title": ["Inter"],
+                      "list-preview": ["Inter"],
+                      "timestamp": ["Inter"],
+                      "body-message": ["Inter"],
+                      "system-notice": ["Inter"]
+              },
+              "fontSize": {
+                      "list-title": ["16px", {"lineHeight": "22px", "fontWeight": "500"}],
+                      "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "600"}],
+                      "badge-text": ["11px", {"lineHeight": "12px", "fontWeight": "700"}],
+                      "nav-title": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                      "list-preview": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.2px", "fontWeight": "400"}],
+                      "timestamp": ["11px", {"lineHeight": "14px", "fontWeight": "400"}],
+                      "body-message": ["16px", {"lineHeight": "22px", "fontWeight": "400"}],
+                      "system-notice": ["12px", {"lineHeight": "16px", "fontWeight": "400"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+        
+        /* Interactive row style */
+        .list-row-active:active {
+            background-color: var(--tw-colors-surface-container-low);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark text-on-surface font-sans antialiased overflow-hidden flex justify-center w-full h-screen">
+<!-- Mobile Screen Container -->
+<main class="w-[390px] h-[884px] bg-background-dark relative overflow-y-auto shadow-xl">
+<!-- TopAppBar (From Shared Components JSON) -->
+<header class="bg-background-dark text-primary font-nav-title text-nav-title fixed top-0 w-[390px] z-50 h-[56px] border-b-0 flat no shadows flex items-center justify-between px-edge-margin transition-opacity">
+<button class="flex items-center justify-center w-8 h-8 -ml-2 text-on-surface active:opacity-70">
+<span class="material-symbols-outlined text-[24px]">arrow_back_ios_new</span>
+</button>
+<h1 class="font-nav-title text-nav-title font-bold text-on-surface absolute left-1/2 -translate-x-1/2">个人资料</h1>
+<div class="w-8"></div> <!-- Spacer for centering -->
+</header>
+<!-- Main Content Canvas -->
+<div class="pt-[56px] pb-8 flex flex-col">
+<!-- Group 1: Basic Info -->
+<section class="bg-surface-container-lowest flex flex-col w-full border-t border-b border-divider mt-2">
+<!-- Avatar Row -->
+<div class="flex items-center justify-between px-edge-margin py-3 border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">头像</span>
+<div class="flex items-center gap-1">
+<img alt="User Avatar" class="w-12 h-12 rounded object-cover border border-divider" data-alt="A close-up portrait of a young man with dark, slightly messy hair, looking off-camera with a serious expression. The lighting is soft and cinematic, emphasizing his facial features against a muted, slightly out-of-focus background. The style is modern and high-resolution, suitable for a profile picture in a sleek messaging app." src="https://lh3.googleusercontent.com/aida-public/AB6AXuABjYMhMbjJaiWKH5VTe4ZqWoCgTqajMF0ikFPakknKgqBJIVSfEo9c7s_ZQ3I6BxxBh9yknIhO2n2kMxxIoWnno9RZ5GQvCfk41ZHKvYzuP1xG5FvX1-PtPC9AG7tI7vOLF3Iob73l6_MbAlMxMQcS3xC2z6-ZQjzrw9O0qwT1cqZxj3QAkKA3mvi0F_PQgutYn53OWHQi6tNHYrhwpSDjh6G-XOMNUUdEY4PcC45uOvPbyBbE0nj168LMT1zPWPOf-EFO99x2jE1_"/>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+<!-- Name Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">名字</span>
+<div class="flex items-center gap-1">
+<span class="font-list-preview text-list-preview text-text-secondary">Alex Thompson</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+<!-- Gender Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">性别</span>
+<div class="flex items-center gap-1">
+<span class="font-list-preview text-list-preview text-text-secondary">男</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+<!-- Region Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">地区</span>
+<div class="flex items-center gap-1">
+<span class="font-list-preview text-list-preview text-text-secondary">广东 深圳</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+<!-- Phone Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">手机号</span>
+<div class="flex items-center gap-1">
+<span class="font-list-preview text-list-preview text-text-secondary">177******11</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+<!-- ByteIM ID Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">微信号</span>
+<div class="flex items-center gap-1">
+<span class="font-list-preview text-list-preview text-text-secondary">SyanMegumi</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+<!-- QR Code Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">我的二维码</span>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-text-secondary text-[20px]">qr_code</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+<!-- Tickle Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">拍一拍</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+<!-- Signature Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">签名</span>
+<div class="flex items-center gap-1">
+<span class="font-list-preview text-list-preview text-text-secondary">暑期可以做到吗？</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+</section>
+<!-- Group 2: Settings -->
+<section class="bg-surface-container-lowest flex flex-col w-full border-t border-b border-divider mt-2">
+<!-- Ringtone Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">来电铃声</span>
+<div class="flex items-center gap-1">
+<span class="font-list-preview text-list-preview text-text-secondary">Love Song</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</div>
+</section>
+<!-- Group 3: Utility -->
+<section class="bg-surface-container-lowest flex flex-col w-full border-t border-b border-divider mt-2">
+<!-- Address Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] border-b border-divider list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">我的地址</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+<!-- Invoice Title Row -->
+<div class="flex items-center justify-between px-edge-margin h-[56px] list-row-active cursor-pointer">
+<span class="font-list-title text-list-title text-on-surface">我的发票抬头</span>
+<span class="material-symbols-outlined text-secondary-fixed-dim text-[20px]">chevron_right</span>
+</div>
+</section>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,285 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body {
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: contain;
+        }
+        .message-row:active {
+            background-color: #f0eded;
+        }
+        .dropdown-animate {
+            transform-origin: top right;
+            transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+        }
+        .hidden-scale {
+            transform: scale(0.95);
+            opacity: 0;
+            pointer-events: none;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-container": "#741c16",
+                        "text-secondary": "#808080",
+                        "on-background": "#1c1b1b",
+                        "surface-container": "#f0eded",
+                        "outline-variant": "#bbcbba",
+                        "on-tertiary": "#ffffff",
+                        "inverse-on-surface": "#f3f0ef",
+                        "on-surface-variant": "#3d4a3d",
+                        "divider": "#EEEEEE",
+                        "tertiary-fixed": "#ffdad5",
+                        "surface-tint": "#006d33",
+                        "on-tertiary-fixed-variant": "#82261e",
+                        "bubble-peer": "#FFFFFF",
+                        "secondary-container": "#dcdddd",
+                        "inverse-primary": "#45e17c",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#fcf9f8",
+                        "status-error": "#FA5151",
+                        "surface-container-high": "#eae7e7",
+                        "on-error": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "background-dark": "#EDEDED",
+                        "on-secondary": "#ffffff",
+                        "on-secondary-fixed-variant": "#454747",
+                        "surface-variant": "#e5e2e1",
+                        "tertiary": "#a23d33",
+                        "on-surface": "#1c1b1b",
+                        "inverse-surface": "#313030",
+                        "tertiary-fixed-dim": "#ffb4aa",
+                        "surface-container-highest": "#e5e2e1",
+                        "surface-container-low": "#f6f3f2",
+                        "surface": "#fcf9f8",
+                        "primary-container": "#07c160",
+                        "primary-fixed-dim": "#45e17c",
+                        "secondary-fixed": "#e2e2e2",
+                        "background": "#fcf9f8",
+                        "tertiary-container": "#ff8475",
+                        "on-tertiary-fixed": "#410001",
+                        "on-secondary-container": "#5f6161",
+                        "outline": "#6c7b6c",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "surface-dim": "#dcd9d9",
+                        "secondary": "#5d5f5f",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "on-primary-container": "#00471f",
+                        "primary-fixed": "#66ff95",
+                        "on-primary-fixed-variant": "#005225",
+                        "on-primary-fixed": "#00210b",
+                        "bubble-self": "#95EC69",
+                        "primary": "#006d33"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "avatar-size-lg": "50px",
+                        "list-item-height": "72px",
+                        "bubble-padding-h": "12px",
+                        "avatar-size-sm": "40px",
+                        "bubble-padding-v": "8px",
+                        "edge-margin": "16px",
+                        "gutter": "12px"
+                    },
+                    "fontFamily": {
+                        "badge-text": ["Inter"],
+                        "system-notice": ["Inter"],
+                        "list-title": ["Inter"],
+                        "list-preview": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "timestamp": ["Inter"],
+                        "body-message": ["Inter"],
+                        "nav-title": ["Inter"]
+                    },
+                    "fontSize": {
+                        "badge-text": ["11px", {"lineHeight": "12px", "fontWeight": "700"}],
+                        "system-notice": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                        "list-title": ["16px", {"lineHeight": "22px", "fontWeight": "500"}],
+                        "list-preview": ["14px", {"lineHeight": "20px", "letterSpacing": "-0.2px", "fontWeight": "400"}],
+                        "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.5px", "fontWeight": "600"}],
+                        "timestamp": ["11px", {"lineHeight": "14px", "fontWeight": "400"}],
+                        "body-message": ["16px", {"lineHeight": "22px", "fontWeight": "400"}],
+                        "nav-title": ["18px", {"lineHeight": "24px", "fontWeight": "600"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark text-on-surface font-list-preview">
+<!-- Top App Bar -->
+<header class="fixed top-0 w-full z-50 h-[56px] bg-surface dark:bg-inverse-surface border-b border-divider dark:border-outline-variant flex items-center justify-between px-edge-margin w-full">
+<h1 class="font-nav-title text-nav-title font-bold text-on-surface dark:text-inverse-on-surface">Messages(3)</h1>
+<div class="relative">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-variant dark:hover:bg-surface-container-high transition-opacity active:opacity-70" onclick="toggleDropdown()">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed" data-icon="add">add</span>
+</button>
+<!-- Dropdown Menu -->
+<div class="dropdown-animate hidden-scale absolute right-0 mt-2 w-48 bg-inverse-surface text-surface rounded-xl shadow-lg z-50 py-2" id="plusDropdown">
+<button class="w-full flex items-center px-4 py-3 hover:bg-surface-container-highest/20 transition-colors">
+<span class="material-symbols-outlined mr-3" data-icon="chat">chat</span>
+<span class="font-list-title text-list-preview">Start Group Chat</span>
+</button>
+<button class="w-full flex items-center px-4 py-3 hover:bg-surface-container-highest/20 transition-colors border-t border-white/10">
+<span class="material-symbols-outlined mr-3" data-icon="person_add">person_add</span>
+<span class="font-list-title text-list-preview">Add Friend</span>
+</button>
+<button class="w-full flex items-center px-4 py-3 hover:bg-surface-container-highest/20 transition-colors border-t border-white/10">
+<span class="material-symbols-outlined mr-3" data-icon="qr_code_scanner">qr_code_scanner</span>
+<span class="font-list-title text-list-preview">Scan</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<main class="pt-[56px] pb-[56px] min-h-screen">
+<div class="flex flex-col p-4 bg-background">
+<!-- Conversation List -->
+<!-- Item 1 (Unread @me) -->
+<div class="message-row flex items-center h-[list-item-height] px-edge-margin cursor-pointer transition-colors mb-3 rounded-xl bg-surface-container-low">
+<div class="relative flex-shrink-0">
+<img class="w-avatar-size-lg h-avatar-size-lg rounded-xl object-cover bg-surface-container" data-alt="A close-up studio portrait of a woman with short hair, captured with professional lighting that creates soft shadows and highlights on her face. The style is clean and minimalist, using a neutral, high-key background consistent with a modern corporate communication app's aesthetic. Her expression is friendly and approachable, suggesting a professional social context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSxJ7nwwMt4aon7WY2dIJWVuhLIt0GgImIRdxAE9bSbAruwW4q4J1-uaXQv4KKpWdk3aqd3SN_6FFN5L0P6F1UuKEBxElr884QF4fpsc25MGqV5Aqvhr8z8-_c3O4f4GCWlHzRlpGtrPxqlqpHcRJft5PEpxlJRrMP7IZVhdMyzaJhXLo2Va32jvp_QxvzYANc2M5jR5zuW4e_Me0NgDf02IXffkx8KTNlVg-PExRme43C_rlXr1P_BE9r8lKLkWxOyk2TVoMxfIaN">
+<div class="absolute -top-1 -right-1 bg-status-error text-white min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full font-badge-text text-badge-text border-2 border-surface">3</div>
+</div>
+<div class="ml-4 flex-grow flex flex-col justify-center overflow-hidden">
+<div class="flex justify-between items-baseline">
+<span class="font-list-title text-list-title text-on-surface truncate">Alex Rivera</span>
+<span class="font-timestamp text-timestamp text-text-secondary">14:30</span>
+</div>
+<div class="flex items-center">
+<span class="font-list-preview text-list-preview text-status-error mr-1 whitespace-nowrap">[@me]</span>
+<span class="font-list-preview text-list-preview text-text-secondary truncate">Let's meet for the sprint review!</span>
+</div>
+</div>
+</div>
+<!-- Item 2 (Group Chat) -->
+<div class="message-row flex items-center h-[list-item-height] px-edge-margin cursor-pointer transition-colors mb-3 rounded-xl bg-surface-container-low">
+<div class="relative flex-shrink-0 grid grid-cols-2 gap-0.5 w-avatar-size-lg h-avatar-size-lg rounded-xl overflow-hidden bg-surface-container p-0.5">
+<img class="w-full h-full object-cover rounded-sm" data-alt="Small avatar icon of a smiling man wearing glasses in a professional, bright office setting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB1tzPHn6qz99SHo8XcOIUESs-l5ND2MOiQ0rhH-0ai_nzo5vddv93IZJzYydqMVnoCUsAuzs6_K0IAmXL5XhngXanF9FM2oGls9SyFSqkihn9YB5kyprfyHw06uFkjrdN-yvgcEWSa2FobJPa_0UhKmaWUm7qkVde4xSd9MjCc1opDO1OKImuPazqFuHbN6DDEOxLzYlJ8H-dQYUakyWtSimF0CK0pbua9EaoRxJ3tR2be9Bbn4LvIbMo9qw9IpfDHYY9OWi4c2FnK">
+<img class="w-full h-full object-cover rounded-sm" data-alt="Small avatar icon of a confident woman with curly hair against a soft, bright pastel background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBD9HMLmfdsfxPUAGvAGh9zRG7zlOgMIMpL4591Z2sKzc-dsOGcga1UyEFVYRQE7mFOq23cHbd2GsNXz27vW3jBFypWW9kV8f8IOrFICL81UXalXYbKdKd2_tIEGw_88nHEc1E373qk1g2F5ew-xwa6hNqJZTFlBPxmJxxlcm83Mo25mnT5_eIiR6kYg55rOTj5xWMLQobjWVYeoyyxdrdE5OtKoQFGiVpNK4FBXhCHoSA-i76I7_kWfb3ywV62ShaQL5j0_czBFyEf">
+<img class="w-full h-full object-cover rounded-sm" data-alt="Small avatar icon of a man in a white t-shirt, clean studio lighting, modern minimalist look." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBPM1yNXlMwv0WdwL6nptRAh5sudHoKZGe9LQMAShLjDuxqEfjPQ_dqkm-pAFvS2e67doj6p5hA6ih_3xqXynUvPelBqayh9WWrQ7VR9Z00mIjsuTk3CPksX48qAPAJwagD61y-uWj3Srs_-8RNZqJyLZims3x4iEwq_tVbZOMXaFRkdgrmd1joLal3xFCyEkY7HXNBloycaD8HO5KdTU2E8y2jns8uJ0h-GgBNw8f1KXOHDuUHyhnMHDOme-uPccrX1k_Xs_iSf6Q6">
+<div class="bg-surface-container-high flex items-center justify-center text-[10px] font-bold text-secondary">9+</div>
+</div>
+<div class="ml-4 flex-grow flex flex-col justify-center overflow-hidden">
+<div class="flex justify-between items-baseline">
+<span class="font-list-title text-list-title text-on-surface truncate">Product Design Team</span>
+<span class="font-timestamp text-timestamp text-text-secondary">12:05</span>
+</div>
+<div class="font-list-preview text-list-preview text-text-secondary truncate">Jordan: The new prototypes are ready for review...</div>
+</div>
+</div>
+<!-- Item 3 (Single Chat) -->
+<div class="message-row flex items-center h-[list-item-height] px-edge-margin cursor-pointer transition-colors mb-3 rounded-xl bg-surface-container-low">
+<div class="relative flex-shrink-0">
+<img class="w-avatar-size-lg h-avatar-size-lg rounded-xl object-cover bg-surface-container" data-alt="Portrait of a young professional with a warm expression, photographed in a brightly lit environment that highlights a clean, corporate style. The image uses soft, even lighting to maintain a friendly and efficient tone, typical for high-frequency messaging interfaces where clarity and identity are paramount." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbBQflc-Yy7NsDuI68rHjXgJItPWNK6MzJWYrZed-15CKeXop4VOE8iVfaV__cB-NO_gfWOv5TEzIrAnPfKGc5ugvoHSLgzBpganobas8_itdDMf3mTLNEd4uCaxBtXk3_e8F6swoaeSoBc7OCigdRYBwben7yg8ddLgjXcGDb42Ly2KkySY8bHgVCvYV4fFEVIpb8_Itl4iPFifaIhCYog-cNGJgj9fI30eElcFxznpAbMjGMuAh0F029KydQBonPegdGTHGYshJw">
+</div>
+<div class="ml-4 flex-grow flex flex-col justify-center overflow-hidden">
+<div class="flex justify-between items-baseline">
+<span class="font-list-title text-list-title text-on-surface truncate">Sarah Chen</span>
+<span class="font-timestamp text-timestamp text-text-secondary">Yesterday</span>
+</div>
+<div class="font-list-preview text-list-preview text-text-secondary truncate">How are you? I saw your update on the internal portal.</div>
+</div>
+</div>
+<!-- Item 4 (Service Notification) -->
+<div class="message-row flex items-center h-[list-item-height] px-edge-margin cursor-pointer transition-colors mb-3 rounded-xl bg-surface-container-low">
+<div class="relative flex-shrink-0 w-avatar-size-lg h-avatar-size-lg rounded-xl bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-2xl" data-icon="notifications">notifications</span>
+</div>
+<div class="ml-4 flex-grow flex flex-col justify-center overflow-hidden">
+<div class="flex justify-between items-baseline">
+<span class="font-list-title text-list-title text-on-surface truncate">System Updates</span>
+<span class="font-timestamp text-timestamp text-text-secondary">Monday</span>
+</div>
+<div class="font-list-preview text-list-preview text-text-secondary truncate">Security patch applied. Please verify your recovery mail.</div>
+</div>
+</div>
+<!-- Item 5 (Single Chat) -->
+<div class="message-row flex items-center h-[list-item-height] px-edge-margin cursor-pointer transition-colors mb-3 rounded-xl bg-surface-container-low">
+<div class="relative flex-shrink-0">
+<img class="w-avatar-size-lg h-avatar-size-lg rounded-xl object-cover bg-surface-container" data-alt="Modern close-up portrait of a man with a slight smile, against a light gray wall. High-resolution photo with sharp detail, emphasizing professional efficiency and a clean utilitarian aesthetic through bright, even lighting and simple composition. Perfect for a communication profile avatar." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBzkaRCJIeqbv8BiydTvOojVJtMkg-oqsduGGncYgoOCFbmQz8qkrSsXyRmVgRXo24e_Pn5v-gpTt58D_L3WChSb5_PJV07Se_ZT3TNCPJr2A6OvyOGmVgbWUarSc_qDtQn-b2Ft1Y0E9F2UIxG3RBH7b9j-RmKKdUwlwFI-xizGqT1ovlkvDvMxfaFNifWsMBirKA1m57QpVxy7rj2xKVo5Un7sOSnTzuLw96RJkvqZqyk5EPpnqAwMVRFo0Vqzl4bu6To4ysNrpdH">
+</div>
+<div class="ml-4 flex-grow flex flex-col justify-center overflow-hidden">
+<div class="flex justify-between items-baseline">
+<span class="font-list-title text-list-title text-on-surface truncate">Marcus Smith</span>
+<span class="font-timestamp text-timestamp text-text-secondary">20 Oct</span>
+</div>
+<div class="font-list-preview text-list-preview text-text-secondary truncate">The logs were sent to the server.</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Nav Bar -->
+<nav class="fixed bottom-0 w-full z-50 h-[56px] bg-surface dark:bg-inverse-surface border-t border-divider dark:border-outline-variant flex justify-around items-center w-full px-2">
+<!-- Messages (Active) -->
+<div class="relative flex flex-col items-center justify-center text-primary dark:text-primary-fixed hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-transform duration-150 active:scale-95 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="chat" style="font-variation-settings: 'FILL' 1;">chat</span>
+<span class="font-label-caps text-label-caps">Messages</span>
+<!-- Nav unread badge -->
+<div class="absolute -top-1 right-2 bg-status-error text-white min-w-[14px] h-[14px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold">3</div>
+</div>
+<!-- Contacts -->
+<div class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-transform duration-150 active:scale-95 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="group">group</span>
+<span class="font-label-caps text-label-caps">Contacts</span>
+</div>
+<!-- Me -->
+<div class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim hover:bg-surface-container-low dark:hover:bg-surface-container-high transition-transform duration-150 active:scale-95 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-caps text-label-caps">Me</span>
+</div>
+</nav>
+<script>
+        function toggleDropdown() {
+            const dropdown = document.getElementById('plusDropdown');
+            dropdown.classList.toggle('hidden-scale');
+        }
+
+        // Close dropdown when clicking outside
+        window.addEventListener('click', (e) => {
+            const dropdown = document.getElementById('plusDropdown');
+            const plusBtn = dropdown.previousElementSibling;
+            if (!dropdown.contains(e.target) && !plusBtn.contains(e.target)) {
+                dropdown.classList.add('hidden-scale');
+            }
+        });
+
+        // Pull to refresh simulation / subtle interaction
+        let startY = 0;
+        document.addEventListener('touchstart', e => { startY = e.touches[0].pageY; }, {passive: true});
+        document.addEventListener('touchmove', e => {
+            const y = e.touches[0].pageY;
+            if (window.scrollY === 0 && y > startY + 50) {
+                // Potential Refresh UI trigger
+            }
+        }, {passive: true});
+    </script>
+
+
+</body></html>
