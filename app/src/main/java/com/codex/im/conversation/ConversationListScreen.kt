@@ -1,5 +1,6 @@
 package com.codex.im.conversation
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Badge
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -28,13 +28,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codex.im.MessagesTabUnreadBadgePolicy
 import com.codex.im.ui.AvatarImage
+import com.codex.im.ui.ByteImColors
+import com.codex.im.ui.ByteImDimensions
+import com.codex.im.ui.ByteImListSurface
+import com.codex.im.ui.ByteImSystemNotice
+import com.codex.im.ui.ByteImTopBar
+import com.codex.im.ui.ByteImUnreadBadge
 import java.text.DateFormat
 import java.util.Date
 
@@ -76,30 +82,29 @@ fun ConversationListScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .background(ByteImColors.AppBackground)
     ) {
         MessagesTopBar(
             unreadCount = unreadCount,
             onStartGroupChat = onStartGroupChat
         )
-        HorizontalDivider()
         ConversationConnectionStatusPolicy.visibleLabel(state.connectionStatus)?.let { statusLabel ->
-            Text(
+            ByteImSystemNotice(
                 text = statusLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                modifier = Modifier.padding(vertical = 8.dp)
             )
         }
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(state.items, key = { it.conversationId }) { item ->
-                ConversationRow(
-                    item = item,
-                    onClick = {
-                        viewModel.openConversation(if (item.isGroup) item.conversationId else item.peerId)
-                    }
-                )
-                HorizontalDivider()
+        ByteImListSurface(modifier = Modifier.weight(1f)) {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(state.items, key = { it.conversationId }) { item ->
+                    ConversationRow(
+                        item = item,
+                        onClick = {
+                            viewModel.openConversation(if (item.isGroup) item.conversationId else item.peerId)
+                        }
+                    )
+                    HorizontalDivider(color = ByteImColors.Divider)
+                }
             }
         }
     }
@@ -111,46 +116,40 @@ private fun MessagesTopBar(
     onStartGroupChat: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = MessageTopBarTitlePolicy.titleForUnreadCount(unreadCount),
-            style = MaterialTheme.typography.titleLarge
-        )
-        Box(modifier = Modifier.align(Alignment.CenterEnd)) {
-            IconButton(
-                onClick = { menuExpanded = !menuExpanded },
-                modifier = Modifier.size(40.dp)
-            ) {
-                Icon(
-                    painter = painterResource(id = MessageTopBarActionPolicy.addIconResId),
-                    contentDescription = "More actions",
-                    tint = Color.Unspecified,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text(text = "发起群聊") },
-                    onClick = {
-                        menuExpanded = false
-                        onStartGroupChat()
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(text = "添加朋友") },
-                    onClick = { menuExpanded = false }
-                )
+    ByteImTopBar(
+        title = MessageTopBarTitlePolicy.titleForUnreadCount(unreadCount),
+        action = {
+            Box {
+                IconButton(
+                    onClick = { menuExpanded = !menuExpanded },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = MessageTopBarActionPolicy.addIconResId),
+                        contentDescription = "More actions",
+                        tint = ByteImColors.PrimaryGreen,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(text = "发起群聊") },
+                        onClick = {
+                            menuExpanded = false
+                            onStartGroupChat()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(text = "添加朋友") },
+                        onClick = { menuExpanded = false }
+                    )
+                }
             }
         }
-    }
+    )
 }
 
 @Composable
@@ -161,8 +160,9 @@ private fun ConversationRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(ByteImDimensions.ListItemHeight)
             .clickable(enabled = onClick != null) { onClick?.invoke() }
-            .padding(vertical = 14.dp),
+            .padding(horizontal = ByteImDimensions.EdgePadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -170,30 +170,41 @@ private fun ConversationRow(
             avatarUrl = item.peerAvatarUrl,
             displayName = item.peerName,
             isGroup = item.isGroup,
-            modifier = Modifier.size(48.dp)
+            modifier = Modifier.size(ByteImDimensions.ListAvatarSize)
         )
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(text = item.peerName, style = MaterialTheme.typography.titleMedium)
-                Text(text = item.lastMessageTime.displayTime(), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = item.peerName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = ByteImColors.TextPrimary,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = item.lastMessageTime.displayTime(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ByteImColors.TextSecondary
+                )
             }
             Text(
                 text = ConversationListPreviewPolicy.previewAnnotatedText(
                     item = item,
-                    mentionColor = MaterialTheme.colorScheme.error
+                    mentionColor = ByteImColors.BadgeRed
                 ),
                 style = MaterialTheme.typography.bodyMedium,
+                color = ByteImColors.TextSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
         if (item.unreadCount > 0) {
-            Badge {
-                Text(text = item.unreadCount.toString())
-            }
+            ByteImUnreadBadge(text = if (item.unreadCount >= 100) "99+" else item.unreadCount.toString())
         }
     }
 }
