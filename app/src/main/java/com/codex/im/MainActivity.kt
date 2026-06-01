@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -94,6 +95,7 @@ import com.codex.im.storage.AndroidTransactionRunner
 import com.codex.im.storage.AndroidUserProfileDao
 import com.codex.im.storage.ImDatabaseHelper
 import com.codex.im.ui.ByteImColors
+import com.codex.im.ui.ByteImDimensions
 
 class MainActivity : ComponentActivity() {
     private var connectionLifecycleManager: ConnectionLifecycleManager? = null
@@ -319,10 +321,14 @@ private fun AuthenticatedImNavHost(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = ByteImColors.AppBackground,
         bottomBar = {
             if (BottomNavigationSpec.topLevelItems.any { it.route == currentRoute }) {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = ByteImColors.Surface,
+                    tonalElevation = 0.dp,
+                    modifier = Modifier.height(ByteImDimensions.BottomBarHeight)
+                ) {
                     BottomNavigationSpec.topLevelItems.forEach { tab ->
                         NavigationBarItem(
                             selected = currentRoute == tab.route,
@@ -541,7 +547,10 @@ private fun BottomNavigationIcon(spec: BottomNavigationItemSpec, unreadCount: In
     }
     BadgedBox(
         badge = {
-            Badge {
+            Badge(
+                containerColor = ByteImColors.BadgeRed,
+                contentColor = Color.White
+            ) {
                 Text(text = badgeText)
             }
         }
