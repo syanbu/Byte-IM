@@ -10,9 +10,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.SubcomposeAsyncImage
 import com.codex.im.storage.ChatMessage
+import com.codex.im.ui.ByteImColors
 
 @Composable
 fun ChatImagePreviewScreen(
@@ -24,7 +26,7 @@ fun ChatImagePreviewScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim)
+            .background(Color.Black)
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center
     ) {
@@ -34,13 +36,13 @@ fun ChatImagePreviewScreen(
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
             loading = {
-                CircularProgressIndicator()
+                CircularProgressIndicator(color = ByteImColors.PrimaryGreen)
             },
             error = {
                 Text(
                     text = "Image load failed",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error
+                    color = Color.White
                 )
             }
         )
