@@ -6,8 +6,8 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +25,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,11 +41,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -61,6 +59,12 @@ import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
 import com.codex.im.storage.MessageType
 import com.codex.im.ui.AvatarImage
+import com.codex.im.ui.ByteImColors
+import com.codex.im.ui.ByteImDimensions
+import com.codex.im.ui.ByteImSystemNotice
+import com.codex.im.ui.ByteImTopBar
+import com.codex.im.ui.byteImBubbleColor
+import com.codex.im.ui.byteImBubbleShape
 import kotlinx.coroutines.launch
 
 @Composable
@@ -143,6 +147,7 @@ fun ChatScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(ByteImColors.AppBackground)
             .imePadding()
             .clickable(
                 indication = null,
@@ -150,43 +155,30 @@ fun ChatScreen(
                 onClick = { activeActionMessageId = null }
             )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (onBack != null) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        painter = painterResource(id = ChatDisplayPolicy.backButtonIconRes),
-                        contentDescription = "Back",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
+        ByteImTopBar(
+            title = state.peerName,
+            onBack = onBack,
+            action = if (state.peerId.startsWith("group:")) {
+                {
+                    IconButton(onClick = { showGroupRename = true }) {
+                        Text(
+                            text = "...",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = ByteImColors.TextPrimary
+                        )
+                    }
                 }
+            } else {
+                null
             }
-            Text(
-                text = state.peerName,
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f)
-            )
-            if (state.peerId.startsWith("group:")) {
-                IconButton(onClick = { showGroupRename = true }) {
-                    Text(
-                        text = "...",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-        }
+        )
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+                .background(ByteImColors.AppBackground)
+                .padding(horizontal = ByteImDimensions.EdgePadding),
             reverseLayout = true
         ) {
             items(state.messages, key = { it.messageId }) { message ->
@@ -228,7 +220,8 @@ fun ChatScreen(
                     ChatDisplayPolicy.historyStatusText(state)?.let { statusText ->
                         Text(
                             text = statusText,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = ByteImColors.TextSecondary,
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
                     }
@@ -315,19 +308,7 @@ fun ChatScreen(
 
 @Composable
 private fun RecalledMessageNotice(text: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+    ByteImSystemNotice(text = text, modifier = Modifier.padding(vertical = 8.dp))
 }
 
 @Composable
@@ -341,7 +322,7 @@ private fun ChatComposerBar(
     onPickImage: () -> Unit,
     onSend: () -> Unit
 ) {
-    val barColor = MaterialTheme.colorScheme.surfaceContainer
+    val barColor = ByteImColors.Surface
     val inputShape = RoundedCornerShape(18.dp)
     val action = ChatDisplayPolicy.composerAction(draft.text)
     Column(
@@ -425,6 +406,10 @@ private fun ChatComposerBar(
             when (action) {
                 ChatComposerAction.PICK_IMAGE -> Button(
                     onClick = onPickImage,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ByteImColors.SurfaceLow,
+                        contentColor = ByteImColors.PrimaryGreen
+                    ),
                     contentPadding = ButtonDefaults.ContentPadding
                 ) {
                     Text("Image")
@@ -432,6 +417,10 @@ private fun ChatComposerBar(
                 ChatComposerAction.SEND_TEXT -> Button(
                     onClick = onSend,
                     enabled = canSend,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ByteImColors.PrimaryGreen,
+                        contentColor = Color.White
+                    ),
                     contentPadding = ButtonDefaults.ContentPadding
                 ) {
                     Text("Send")
@@ -480,7 +469,7 @@ private fun ChatMessageRow(
             AvatarImage(
                 avatarUrl = avatar.avatarUrl,
                 displayName = avatar.displayName,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(ByteImDimensions.ChatAvatarSize)
             )
         }
         ChatMessageContent(
@@ -495,13 +484,14 @@ private fun ChatMessageRow(
             onDismissActions = onDismissActions,
             onRetryImage = onRetryImage,
             onCopyText = onCopyText,
-            onRecall = onRecall
+            onRecall = onRecall,
+            modifier = Modifier.padding(horizontal = ByteImDimensions.Gutter)
         )
         if (outgoing) {
             AvatarImage(
                 avatarUrl = avatar.avatarUrl,
                 displayName = avatar.displayName,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(ByteImDimensions.ChatAvatarSize)
             )
         }
     }
@@ -611,22 +601,21 @@ private fun ChatTextBubble(
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bubbleColor = if (outgoing) {
-        Color(0xFFD8F5D0)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    }
     Box(modifier = modifier) {
         Text(
             text = message.mentionText(mentionMembers),
             style = MaterialTheme.typography.bodyLarge,
+            color = ByteImColors.TextPrimary,
             modifier = Modifier
-                .background(bubbleColor, RoundedCornerShape(8.dp))
+                .background(byteImBubbleColor(outgoing), byteImBubbleShape(outgoing))
                 .combinedClickable(
                     onClick = {},
                     onLongClick = onLongPress
                 )
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(
+                    horizontal = ByteImDimensions.BubbleHorizontalPadding,
+                    vertical = ByteImDimensions.BubbleVerticalPadding
+                )
         )
     }
 }
@@ -642,7 +631,7 @@ private fun ChatMessage.mentionText(mentionMembers: List<GroupMember>): Annotate
     if (ranges.isEmpty()) {
         return AnnotatedString(displayText.text)
     }
-    val highlightColor = MaterialTheme.colorScheme.primary
+    val highlightColor = ByteImColors.PrimaryGreen
     return buildAnnotatedString {
         var cursor = 0
         ranges.forEach { range ->
@@ -669,7 +658,7 @@ private fun ChatMessageActionBar(
 ) {
     Row(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.inverseSurface, RoundedCornerShape(8.dp))
+            .background(ByteImColors.InverseSurface, RoundedCornerShape(8.dp))
             .padding(horizontal = 4.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -717,15 +706,20 @@ private fun OutgoingMessageStatus(
             MessageStatus.FAILED -> Text(
                 text = "!",
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.error,
+                color = ByteImColors.BadgeRed,
                 modifier = Modifier.clickable(onClick = onRetry)
             )
             MessageStatus.SENT,
-            MessageStatus.RECEIVED -> Text(
-                text = if (message.serverSeq != null && peerReadUpToServerSeq != null && message.serverSeq <= peerReadUpToServerSeq) "✓" else "○",
-                style = MaterialTheme.typography.labelMedium,
-                color = if (message.serverSeq != null && peerReadUpToServerSeq != null && message.serverSeq <= peerReadUpToServerSeq) Color(0xFF20A464) else MaterialTheme.colorScheme.outline
-            )
+            MessageStatus.RECEIVED -> {
+                val isRead = message.serverSeq != null &&
+                    peerReadUpToServerSeq != null &&
+                    message.serverSeq <= peerReadUpToServerSeq
+                Text(
+                    text = if (isRead) "✓" else "○",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isRead) ByteImColors.PrimaryGreen else ByteImColors.TextSecondary
+                )
+            }
         }
     }
 }
