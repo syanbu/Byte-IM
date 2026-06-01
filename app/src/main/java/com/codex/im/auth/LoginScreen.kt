@@ -52,7 +52,7 @@ fun LoginScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text(text = "SelfHostedIM", style = MaterialTheme.typography.headlineMedium)
+        Text(text = "ByteIM", style = MaterialTheme.typography.headlineMedium)
         Text(
             text = if (isRegisterMode) "Create an account with a mainland China phone number" else "Sign in with a mainland China phone number",
             style = MaterialTheme.typography.bodyMedium

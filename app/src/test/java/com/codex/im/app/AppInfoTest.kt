@@ -6,8 +6,8 @@ import org.junit.Test
 
 class AppInfoTest {
     @Test
-    fun exposesInitialProjectMilestone() {
-        assertEquals("SelfHostedIM", AppInfo.name)
+    fun exposesAppInfo() {
+        assertEquals("ByteIM", AppInfo.name)
         assertEquals("0.1.0", AppInfo.versionName)
         assertTrue(AppInfo.completedMilestones.contains("phase-0-project-skeleton"))
     }

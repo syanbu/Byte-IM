@@ -28,6 +28,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -91,6 +93,7 @@ import com.codex.im.storage.AndroidPendingMessageDao
 import com.codex.im.storage.AndroidTransactionRunner
 import com.codex.im.storage.AndroidUserProfileDao
 import com.codex.im.storage.ImDatabaseHelper
+import com.codex.im.ui.ByteImColors
 
 class MainActivity : ComponentActivity() {
     private var connectionLifecycleManager: ConnectionLifecycleManager? = null
@@ -192,6 +195,19 @@ class MainActivity : ComponentActivity() {
 
 }
 
+private val ByteImColorScheme = lightColorScheme(
+    primary = ByteImColors.PrimaryGreen,
+    onPrimary = Color.White,
+    background = ByteImColors.AppBackground,
+    onBackground = ByteImColors.TextPrimary,
+    surface = ByteImColors.Surface,
+    onSurface = ByteImColors.TextPrimary,
+    surfaceVariant = Color(0xFFE5E2E1),
+    onSurfaceVariant = ByteImColors.TextSecondary,
+    outlineVariant = ByteImColors.Divider,
+    error = ByteImColors.BadgeRed
+)
+
 @Composable
 fun SelfHostedImApp(
     loginViewModel: LoginViewModel? = null,
@@ -203,10 +219,11 @@ fun SelfHostedImApp(
     avatarUploadApi: AvatarUploadApi? = null,
     imageUploadApi: ImageUploadApi? = null
 ) {
-    MaterialTheme {
+    MaterialTheme(colorScheme = ByteImColorScheme) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(ByteImColors.AppBackground)
                 .systemBarsPadding()
         ) {
             if (loginViewModel == null) {
