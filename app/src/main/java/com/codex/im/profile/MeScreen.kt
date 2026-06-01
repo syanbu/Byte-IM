@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,7 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.codex.im.R
 import com.codex.im.ui.AvatarImage
 import kotlinx.coroutines.launch
 
@@ -195,11 +198,7 @@ private fun ProfileSummaryRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Text(
-            text = ">",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        ChevronRightIcon()
     }
 }
 
@@ -223,7 +222,7 @@ private fun ProfileDetailScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextButton(onClick = onBack) {
-                Text("<")
+                ChevronLeftIcon()
             }
             Text(text = MeDisplayPolicy.profileTitle, style = MaterialTheme.typography.headlineSmall)
         }
@@ -276,11 +275,7 @@ private fun ProfileAvatarRow(
             displayName = profile?.nickname ?: profile?.phone ?: "",
             modifier = Modifier.size(48.dp)
         )
-        Text(
-            text = ">",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        ChevronRightIcon()
     }
 }
 
@@ -307,11 +302,7 @@ private fun ProfileNameRow(
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.weight(0.65f)
         )
-        Text(
-            text = ">",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        ChevronRightIcon()
     }
 }
 
@@ -334,7 +325,7 @@ private fun ProfileNameEditorScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextButton(onClick = onBack) {
-                Text("<")
+                ChevronLeftIcon()
             }
             Text(
                 text = MeDisplayPolicy.nameEditorTitle,
@@ -361,6 +352,26 @@ private fun ProfileNameEditorScreen(
             )
         }
     }
+}
+
+@Composable
+private fun ChevronLeftIcon() {
+    Icon(
+        painter = painterResource(id = R.drawable.ic_chevron_left),
+        contentDescription = "Back",
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(24.dp)
+    )
+}
+
+@Composable
+private fun ChevronRightIcon() {
+    Icon(
+        painter = painterResource(id = R.drawable.ic_chevron_right),
+        contentDescription = "Open",
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(24.dp)
+    )
 }
 
 @Composable

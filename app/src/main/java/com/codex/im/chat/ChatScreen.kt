@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -157,10 +159,10 @@ fun ChatScreen(
         ) {
             if (onBack != null) {
                 IconButton(onClick = onBack) {
-                    Text(
-                        text = ChatDisplayPolicy.backButtonSymbol,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                    Icon(
+                        painter = painterResource(id = ChatDisplayPolicy.backButtonIconRes),
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }

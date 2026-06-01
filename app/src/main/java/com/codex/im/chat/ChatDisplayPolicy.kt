@@ -1,5 +1,6 @@
 package com.codex.im.chat
 
+import com.codex.im.R
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.ConversationType
 import com.codex.im.storage.MessageDirection
@@ -9,7 +10,7 @@ import com.codex.im.storage.UserProfile
 
 object ChatDisplayPolicy {
     val backButtonLabel: String? = null
-    const val backButtonSymbol = "<"
+    val backButtonIconRes: Int = R.drawable.ic_chevron_left
     val composerLabel: String? = null
 
     fun composerAction(draft: String): ChatComposerAction {

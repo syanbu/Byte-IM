@@ -1,5 +1,6 @@
 package com.codex.im.chat
 
+import com.codex.im.R
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
@@ -73,8 +74,8 @@ class ChatDisplayPolicyTest {
     }
 
     @Test
-    fun chatTopBackButtonUsesPlainBackSymbol() {
-        assertEquals("<", ChatDisplayPolicy.backButtonSymbol)
+    fun chatTopBackButtonUsesChevronBackIcon() {
+        assertEquals(R.drawable.ic_chevron_left, ChatDisplayPolicy.backButtonIconRes)
     }
 
     @Test
