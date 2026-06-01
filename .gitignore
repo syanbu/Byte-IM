@@ -68,6 +68,7 @@ fastlane/readme.md
 mock-server/target/
 mock-server/data/
 mock-server/.env.local.ps1
+mock-server/.env.local.sh
 .vscode
 
 # Android Studio 构建的输出目录
