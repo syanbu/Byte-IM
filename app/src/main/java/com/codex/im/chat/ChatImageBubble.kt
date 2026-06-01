@@ -56,7 +56,9 @@ fun ChatImageBubble(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
                 loading = {
-                    CircularProgressIndicator()
+                    if (ChatImageBubbleLoadingPolicy.showInlineProgress()) {
+                        CircularProgressIndicator()
+                    }
                 },
                 error = {
                     Text(
@@ -75,7 +77,11 @@ fun ChatImageBubble(
         }
         when (message.status) {
             MessageStatus.UPLOADING,
-            MessageStatus.SENDING -> CircularProgressIndicator()
+            MessageStatus.SENDING -> {
+                if (ChatImageBubbleLoadingPolicy.showBubbleStatusProgress()) {
+                    CircularProgressIndicator()
+                }
+            }
             MessageStatus.UPLOAD_FAILED -> Text(
                 text = "Upload failed",
                 style = MaterialTheme.typography.bodySmall,

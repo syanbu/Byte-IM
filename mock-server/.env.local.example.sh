@@ -1,0 +1,5 @@
+export ALIYUN_OSS_ACCESS_KEY_ID=""
+export ALIYUN_OSS_ACCESS_KEY_SECRET=""
+export ALIYUN_OSS_ENDPOINT="oss-cn-shenzhen.aliyuncs.com"
+export ALIYUN_OSS_BUCKET="im-byte"
+export ALIYUN_OSS_PUBLIC_BASE_URL="https://im-byte.oss-cn-shenzhen.aliyuncs.com"

@@ -48,7 +48,7 @@ Implemented for gallery image send with multi-select expansion into independent 
 - Chat screen now supports:
   - gallery multi-image pick
   - local thumbnail bubble preview
-  - image bubble loading state
+  - image bubble stable placeholder/loading area without an inline loading spinner
   - upload/send failure text state
   - one-tap retry via the same red failure indicator for both `UPLOAD_FAILED` and `FAILED`
   - image preview overlay for the original image
@@ -113,6 +113,8 @@ For image messages, the chat list/bubble must display the thumbnail resource, no
 
 The bubble size is now stable before the thumbnail finishes loading. The sender stores `imageWidth` and `imageHeight` when the local `UPLOADING` row is first created, so the client can compute a bounded display size and apply that same size to the placeholder, loading state, loaded thumbnail, and failure state. This prevents the previous visual jump where the bubble used a fallback size during upload and then expanded after upload metadata was written.
 
+Chat thumbnail loading no longer renders a `CircularProgressIndicator` inside the image bubble. The image bubble keeps its stable placeholder surface while Coil resolves the local or remote thumbnail. Image `UPLOADING`/`SENDING` statuses also must not render an overlay spinner inside the bubble. Upload/send progress remains represented only by the outgoing message status indicator beside the bubble, so a sending image message shows one spinner in the message row.
+
 Receiver-side thumbnail caching is now strict for chat display:
 
 - on receive, the message row first persists URLs and metadata
@@ -145,7 +147,7 @@ Conversation-list-to-chat image preloading:
 - when the user taps a conversation row, the conversation list ViewModel exposes the navigation target first and starts local thumbnail preloading in a fire-and-forget background task
 - the preload scope is intentionally narrow: the most recent 5 image messages that already have `localThumbnailPath`
 - the preloader only enqueues local thumbnail files into Coil; it does not download remote `thumbnailUrl` resources
-- this reduces the first visible decode/loading spinner after app restart while keeping navigation lightweight and avoiding broad app-start cache scans
+- this reduces first visible thumbnail decode/loading delay after app restart while keeping navigation lightweight and avoiding broad app-start cache scans
 
 ## Data Model Changes
 
@@ -467,7 +469,7 @@ Required expansions:
 - image bubble composable
 - visual states for:
   - local thumbnail while uploading
-  - upload spinner
+  - row-level upload/send spinner beside the bubble
   - upload failed
   - send failed
   - remote thumbnail load
