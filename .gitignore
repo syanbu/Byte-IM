@@ -73,3 +73,5 @@ mock-server/.env.local.sh
 
 # Android Studio 构建的输出目录
 app/build/
+
+.claude
