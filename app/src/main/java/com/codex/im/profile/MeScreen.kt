@@ -3,6 +3,7 @@ package com.codex.im.profile
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,9 +35,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.codex.im.R
 import com.codex.im.ui.AvatarImage
+import com.codex.im.ui.ByteImColors
+import com.codex.im.ui.ByteImDimensions
+import com.codex.im.ui.ByteImListSurface
+import com.codex.im.ui.ByteImTopBar
 import kotlinx.coroutines.launch
 
 @Composable
@@ -143,18 +150,28 @@ private fun MeHomeScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .background(ByteImColors.AppBackground)
     ) {
-        Text(text = "Me", style = MaterialTheme.typography.headlineSmall)
+        ByteImTopBar(title = "Me")
+        Spacer(modifier = Modifier.height(12.dp))
         ProfileSummaryRow(
             profile = profile,
             onClick = onOpenProfile
         )
-        HorizontalDivider()
+        Spacer(modifier = Modifier.height(12.dp))
+        ByteImListSurface {
+            ServicesRow()
+        }
+        Spacer(modifier = Modifier.height(12.dp))
         Button(
             onClick = onLogout,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = ByteImDimensions.EdgePadding),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = ByteImColors.Surface,
+                contentColor = ByteImColors.BadgeRed
+            )
         ) {
             Text("Logout")
         }
@@ -162,7 +179,8 @@ private fun MeHomeScreen(
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = ByteImDimensions.EdgePadding)
             )
         }
     }
@@ -177,27 +195,49 @@ private fun ProfileSummaryRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
+            .background(ByteImColors.Surface)
+            .padding(horizontal = ByteImDimensions.EdgePadding, vertical = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         AvatarImage(
             avatarUrl = profile?.avatarUrl,
             displayName = profile?.nickname ?: profile?.phone ?: "",
-            modifier = Modifier.size(72.dp)
+            modifier = Modifier.size(ByteImDimensions.ProfileAvatarSize)
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = profile?.nickname.orEmpty(),
-                style = MaterialTheme.typography.headlineSmall
+                style = MaterialTheme.typography.titleLarge,
+                color = ByteImColors.TextPrimary,
+                fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "ID: ${profile?.phone.orEmpty()}",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.bodyMedium,
+                color = ByteImColors.TextSecondary
             )
         }
+        ChevronRightIcon()
+    }
+}
+
+@Composable
+private fun ServicesRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ByteImDimensions.ListItemHeight)
+            .padding(horizontal = ByteImDimensions.EdgePadding),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Services",
+            style = MaterialTheme.typography.bodyLarge,
+            color = ByteImColors.TextPrimary,
+            modifier = Modifier.weight(1f)
+        )
         ChevronRightIcon()
     }
 }
@@ -213,30 +253,21 @@ private fun ProfileDetailScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .background(ByteImColors.AppBackground)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = onBack) {
-                ChevronLeftIcon()
-            }
-            Text(text = MeDisplayPolicy.profileTitle, style = MaterialTheme.typography.headlineSmall)
-        }
-        Column(modifier = Modifier.fillMaxWidth()) {
+        ByteImTopBar(title = MeDisplayPolicy.profileTitle, onBack = onBack)
+        Spacer(modifier = Modifier.height(12.dp))
+        ByteImListSurface {
             ProfileAvatarRow(
                 profile = profile,
                 onClick = onChooseAvatar
             )
-            HorizontalDivider()
+            HorizontalDivider(color = ByteImColors.Divider)
             ProfileNameRow(
                 state = state,
                 onEditName = onEditName
             )
-            HorizontalDivider()
+            HorizontalDivider(color = ByteImColors.Divider)
             ProfileReadOnlyRow(
                 label = MeDisplayPolicy.idRowLabel,
                 value = profile?.phone.orEmpty()
@@ -246,7 +277,8 @@ private fun ProfileDetailScreen(
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = ByteImDimensions.EdgePadding, vertical = 8.dp)
             )
         }
     }
@@ -260,14 +292,16 @@ private fun ProfileAvatarRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(80.dp)
             .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
+            .padding(horizontal = ByteImDimensions.EdgePadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = MeDisplayPolicy.avatarRowLabel,
             style = MaterialTheme.typography.bodyLarge,
+            color = ByteImColors.TextPrimary,
             modifier = Modifier.weight(1f)
         )
         AvatarImage(
@@ -287,19 +321,22 @@ private fun ProfileNameRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(ByteImDimensions.ListItemHeight)
             .clickable(onClick = onEditName)
-            .padding(vertical = 14.dp),
+            .padding(horizontal = ByteImDimensions.EdgePadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = MeDisplayPolicy.nameRowLabel,
             style = MaterialTheme.typography.bodyLarge,
+            color = ByteImColors.TextPrimary,
             modifier = Modifier.weight(0.35f)
         )
         Text(
             text = state.profile?.nickname.orEmpty(),
             style = MaterialTheme.typography.bodyLarge,
+            color = ByteImColors.TextSecondary,
             modifier = Modifier.weight(0.65f)
         )
         ChevronRightIcon()
@@ -316,52 +353,42 @@ private fun ProfileNameEditorScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+            .background(ByteImColors.AppBackground)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(onClick = onBack) {
-                ChevronLeftIcon()
+        ByteImTopBar(
+            title = MeDisplayPolicy.nameEditorTitle,
+            onBack = onBack,
+            action = {
+                TextButton(
+                    enabled = !state.isSaving,
+                    onClick = onSave
+                ) {
+                    Text(
+                        text = if (state.isSaving) "Saving" else MeDisplayPolicy.nameEditorSaveLabel,
+                        color = ByteImColors.PrimaryGreen
+                    )
+                }
             }
-            Text(
-                text = MeDisplayPolicy.nameEditorTitle,
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(
-                enabled = !state.isSaving,
-                onClick = onSave
-            ) {
-                Text(if (state.isSaving) "Saving" else MeDisplayPolicy.nameEditorSaveLabel)
-            }
-        }
-        UnderlinedNameTextField(
-            value = state.draftNickname,
-            onValueChange = onNicknameChange,
-            modifier = Modifier.fillMaxWidth()
         )
+        Spacer(modifier = Modifier.height(12.dp))
+        ByteImListSurface {
+            UnderlinedNameTextField(
+                value = state.draftNickname,
+                onValueChange = onNicknameChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ByteImDimensions.EdgePadding)
+            )
+        }
         state.errorMessage?.let { message ->
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = ByteImDimensions.EdgePadding, vertical = 8.dp)
             )
         }
     }
-}
-
-@Composable
-private fun ChevronLeftIcon() {
-    Icon(
-        painter = painterResource(id = R.drawable.ic_chevron_left),
-        contentDescription = "Back",
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.size(24.dp)
-    )
 }
 
 @Composable
@@ -369,7 +396,7 @@ private fun ChevronRightIcon() {
     Icon(
         painter = painterResource(id = R.drawable.ic_chevron_right),
         contentDescription = "Open",
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        tint = ByteImColors.TextSecondary,
         modifier = Modifier.size(24.dp)
     )
 }
@@ -386,14 +413,14 @@ private fun UnderlinedNameTextField(
             onValueChange = onValueChange,
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(
-                color = MaterialTheme.colorScheme.onSurface
+                color = ByteImColors.TextPrimary
             ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            cursorBrush = SolidColor(ByteImColors.PrimaryGreen),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 12.dp)
         )
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        HorizontalDivider(color = ByteImColors.Divider)
     }
 }
 
@@ -405,19 +432,21 @@ private fun ProfileReadOnlyRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 18.dp),
+            .height(ByteImDimensions.ListItemHeight)
+            .padding(horizontal = ByteImDimensions.EdgePadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
+            color = ByteImColors.TextPrimary,
             modifier = Modifier.weight(0.35f)
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = ByteImColors.TextSecondary,
             modifier = Modifier.weight(0.65f)
         )
     }
