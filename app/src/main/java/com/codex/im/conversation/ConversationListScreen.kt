@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +39,7 @@ import com.codex.im.ui.ByteImListSurface
 import com.codex.im.ui.ByteImSystemNotice
 import com.codex.im.ui.ByteImTopBar
 import com.codex.im.ui.ByteImUnreadBadge
+import com.codex.im.ui.ConversationCreateMenu
 import java.text.DateFormat
 import java.util.Date
 
@@ -48,9 +47,9 @@ object MessageTopBarTitlePolicy {
     fun titleForUnreadCount(unreadCount: Int): String {
         val badgeText = MessagesTabUnreadBadgePolicy.badgeTextForCount(unreadCount)
         return if (badgeText == null) {
-            "Message"
+            "消息"
         } else {
-            "Message($badgeText)"
+            "消息($badgeText)"
         }
     }
 }
@@ -118,37 +117,43 @@ private fun MessagesTopBar(
     var menuExpanded by remember { mutableStateOf(false) }
     ByteImTopBar(
         title = MessageTopBarTitlePolicy.titleForUnreadCount(unreadCount),
-        action = {
-            Box {
+        centerTitle = true,
+        actions = listOf(
+            {
+                // 搜索图标：当前为视觉占位，后续接搜索路由
                 IconButton(
-                    onClick = { menuExpanded = !menuExpanded },
+                    onClick = { },
                     modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
-                        painter = painterResource(id = MessageTopBarActionPolicy.addIconResId),
-                        contentDescription = "More actions",
+                        painter = painterResource(id = MessageTopBarActionPolicy.searchIconResId),
+                        contentDescription = "搜索",
                         tint = ByteImColors.PrimaryGreen,
                         modifier = Modifier.size(28.dp)
                     )
                 }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(text = "发起群聊") },
-                        onClick = {
-                            menuExpanded = false
-                            onStartGroupChat()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(text = "添加朋友") },
-                        onClick = { menuExpanded = false }
+            },
+            {
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = !menuExpanded },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = MessageTopBarActionPolicy.addIconResId),
+                            contentDescription = "更多操作",
+                            tint = ByteImColors.PrimaryGreen,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    ConversationCreateMenu(
+                        expanded = menuExpanded,
+                        onDismiss = { menuExpanded = false },
+                        onStartGroupChat = onStartGroupChat
                     )
                 }
             }
-        }
+        )
     )
 }
 

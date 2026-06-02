@@ -85,7 +85,7 @@ class AuthRepository(
     private fun persistOnSuccess(result: AuthResult): AuthResult {
         if (result is AuthResult.Success) {
             if (!result.session.isRestorable(nowMillis())) {
-                return AuthResult.Failure("Invalid authentication response")
+                return AuthResult.Failure("认证响应无效")
             }
             saveSession(result.session)
         }

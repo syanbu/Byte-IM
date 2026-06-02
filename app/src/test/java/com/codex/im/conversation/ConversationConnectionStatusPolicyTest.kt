@@ -8,26 +8,26 @@ class ConversationConnectionStatusPolicyTest {
     @Test
     fun showsReconnectingStateForMessagesHeader() {
         assertEquals(
-            "Connection: Reconnecting in 4s",
-            ConversationConnectionStatusPolicy.visibleLabel("Reconnecting in 4s")
+            "连接状态：4 秒后重连",
+            ConversationConnectionStatusPolicy.visibleLabel("4 秒后重连")
         )
     }
 
     @Test
     fun showsDisconnectedForBlankState() {
         assertEquals(
-            "Connection: Disconnected",
+            "连接状态：未连接",
             ConversationConnectionStatusPolicy.visibleLabel(" ")
         )
     }
 
     @Test
     fun hidesAuthenticatedStateBecauseCommunicationIsHealthy() {
-        assertNull(ConversationConnectionStatusPolicy.visibleLabel("Authenticated"))
+        assertNull(ConversationConnectionStatusPolicy.visibleLabel("已认证"))
     }
 
     @Test
     fun hidesConnectedStateBecauseSocketIsNotDisconnected() {
-        assertNull(ConversationConnectionStatusPolicy.visibleLabel("Connected"))
+        assertNull(ConversationConnectionStatusPolicy.visibleLabel("已连接"))
     }
 }

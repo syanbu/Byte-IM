@@ -97,7 +97,7 @@ class MeViewModel(
         val current = mutableState.value
         val nickname = current.draftNickname.trim()
         if (nickname.isEmpty()) {
-            mutableState.value = current.copy(errorMessage = "Nickname cannot be empty")
+            mutableState.value = current.copy(errorMessage = "昵称不能为空")
             return
         }
         saveProfile(nickname)
@@ -123,7 +123,7 @@ class MeViewModel(
             if (validSession == null) {
                 mutableState.value = mutableState.value.copy(
                     isSaving = false,
-                    errorMessage = "Session expired. Please log in again."
+                    errorMessage = "登录已过期，请重新登录"
                 )
                 return@launch
             }
@@ -146,7 +146,7 @@ class MeViewModel(
             if (updated == null) {
                 mutableState.value = mutableState.value.copy(
                     isSaving = false,
-                    errorMessage = "Failed to update profile"
+                    errorMessage = "更新资料失败"
                 )
             } else {
                 selectedAvatarBytes = null

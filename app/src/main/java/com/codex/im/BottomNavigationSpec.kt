@@ -9,19 +9,19 @@ data class BottomNavigationItemSpec(
 object BottomNavigationSpec {
     val messages = BottomNavigationItemSpec(
         route = SelfHostedImRoute.Conversations.route,
-        label = "Messages",
+        label = "消息",
         iconResId = R.drawable.ic_nav_message
     )
 
     val contacts = BottomNavigationItemSpec(
         route = SelfHostedImRoute.Contacts.route,
-        label = "Contacts",
+        label = "通讯录",
         iconResId = R.drawable.ic_nav_contacts
     )
 
     val me = BottomNavigationItemSpec(
         route = SelfHostedImRoute.Me.route,
-        label = "Me",
+        label = "我",
         iconResId = R.drawable.ic_nav_me
     )
 

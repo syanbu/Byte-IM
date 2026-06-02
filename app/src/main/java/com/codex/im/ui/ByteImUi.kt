@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.codex.im.R
@@ -67,7 +69,8 @@ fun ByteImTopBar(
     title: String,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
-    action: (@Composable () -> Unit)? = null
+    actions: List<@Composable () -> Unit> = emptyList(),
+    centerTitle: Boolean = false
 ) {
     Row(
         modifier = modifier
@@ -82,22 +85,47 @@ fun ByteImTopBar(
             IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_chevron_left),
-                    contentDescription = "Back",
+                    contentDescription = "返回",
                     tint = ByteImColors.PrimaryGreen
                 )
             }
         }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = ByteImColors.TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        if (action != null) {
-            action()
+        if (centerTitle) {
+            // 微信风格：标题居中，左右两侧由返回 / actions 撑开
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ByteImColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = ByteImColors.TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        if (actions.isNotEmpty()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                actions.forEach { it() }
+            }
         }
     }
 }

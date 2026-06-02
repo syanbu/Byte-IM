@@ -45,10 +45,10 @@ object DisabledImageUploadApi : ImageUploadApi {
         messageId: String,
         contentType: String
     ): ImageUploadTargetsResult {
-        return ImageUploadTargetsResult.Failure("Image upload is not configured")
+        return ImageUploadTargetsResult.Failure("图片上传未配置")
     }
 
     override suspend fun upload(uploadUrl: String, contentType: String, bytes: ByteArray): AvatarPutResult {
-        return AvatarPutResult.Failure("Image upload is not configured")
+        return AvatarPutResult.Failure("图片上传未配置")
     }
 }

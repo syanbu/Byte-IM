@@ -80,9 +80,9 @@ fun LoginScreen(
             )
             Text(
                 text = if (isRegisterMode) {
-                    "Create an account with a mainland China phone number"
+                    "使用中国大陆手机号注册"
                 } else {
-                    "Sign in with a mainland China phone number"
+                    "使用中国大陆手机号登录"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = ByteImColors.TextSecondary
@@ -92,7 +92,7 @@ fun LoginScreen(
                 value = phone,
                 onValueChange = { phone = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Phone number") },
+                label = { Text("手机号") },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = ByteImColors.PrimaryGreen,
@@ -108,7 +108,7 @@ fun LoginScreen(
                     localErrorMessage = null
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Password") },
+                label = { Text("密码") },
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
@@ -126,7 +126,7 @@ fun LoginScreen(
                         localErrorMessage = null
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Confirm password") },
+                    label = { Text("确认密码") },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -154,7 +154,7 @@ fun LoginScreen(
                         }
                     }
                 ) {
-                    Text("Register")
+                    Text("注册")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedButton(
@@ -166,7 +166,7 @@ fun LoginScreen(
                         localErrorMessage = null
                     }
                 ) {
-                    Text("Back to login")
+                    Text("返回登录")
                 }
             } else {
                 Button(
@@ -178,7 +178,7 @@ fun LoginScreen(
                     ),
                     onClick = { scope.launch { onLogin(phone, password) } }
                 ) {
-                    Text("Login")
+                    Text("登录")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedButton(
@@ -189,7 +189,7 @@ fun LoginScreen(
                         localErrorMessage = null
                     }
                 ) {
-                    Text("Create account")
+                    Text("创建账号")
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -203,7 +203,7 @@ fun LoginScreen(
                 Text(text = it, color = MaterialTheme.colorScheme.error)
             }
             state.session?.let {
-                Text(text = "Logged in as ${it.username}", color = MaterialTheme.colorScheme.primary)
+                Text(text = "已登录：${it.username}", color = MaterialTheme.colorScheme.primary)
             }
         }
     }

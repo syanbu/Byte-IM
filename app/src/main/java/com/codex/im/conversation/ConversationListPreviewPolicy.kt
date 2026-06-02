@@ -35,7 +35,7 @@ object ConversationListPreviewPolicy {
     }
 
     private fun displayPreview(item: ConversationListItem): String {
-        val preview = item.lastMessagePreview.ifBlank { "Start a conversation" }
+        val preview = item.lastMessagePreview.ifBlank { "开始聊天吧" }
         val mentions = item.mentionDisplayNamesById.map { (userId, displayName) ->
             ChatMention(userId = userId, displayName = displayName)
         }

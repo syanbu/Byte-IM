@@ -426,7 +426,7 @@ private fun ChatComposerBar(
                     ),
                     contentPadding = ButtonDefaults.ContentPadding
                 ) {
-                    Text("Image")
+                    Text("图片")
                 }
                 ChatComposerAction.SEND_TEXT -> Button(
                     onClick = onSend,
@@ -437,7 +437,7 @@ private fun ChatComposerBar(
                     ),
                     contentPadding = ButtonDefaults.ContentPadding
                 ) {
-                    Text("Send")
+                    Text("发送")
                 }
             }
         }

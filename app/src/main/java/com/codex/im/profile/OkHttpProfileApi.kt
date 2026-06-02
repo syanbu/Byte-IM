@@ -37,9 +37,9 @@ class OkHttpProfileApi(
                     ProfileJsonParser.parseProfiles(body)
                 }
             } catch (error: IOException) {
-                ProfileBatchResult.Failure(error.message ?: "Network error")
+                ProfileBatchResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                ProfileBatchResult.Failure(error.message ?: "Network error")
+                ProfileBatchResult.Failure(error.message ?: "网络异常")
             }
         }
     }
@@ -71,9 +71,9 @@ class OkHttpProfileApi(
                     ProfileJsonParser.parseProfile(body)
                 }
             } catch (error: IOException) {
-                ProfileResult.Failure(error.message ?: "Network error")
+                ProfileResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                ProfileResult.Failure(error.message ?: "Network error")
+                ProfileResult.Failure(error.message ?: "网络异常")
             }
         }
     }
@@ -94,9 +94,9 @@ class OkHttpProfileApi(
                     ProfileJsonParser.parseProfile(body)
                 }
             } catch (error: IOException) {
-                ProfileResult.Failure(error.message ?: "Network error")
+                ProfileResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                ProfileResult.Failure(error.message ?: "Network error")
+                ProfileResult.Failure(error.message ?: "网络异常")
             }
         }
     }

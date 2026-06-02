@@ -144,7 +144,7 @@ class AuthRepositoryTest {
             save(storedSession)
         }
         val repository = AuthRepository(
-            FakeAuthApi(refreshResult = AuthResult.Failure("Network error")),
+            FakeAuthApi(refreshResult = AuthResult.Failure("网络异常")),
             tokenStore,
             nowMillis = { 1_000L }
         )
@@ -233,7 +233,7 @@ class AuthRepositoryTest {
             save(storedSession)
         }
         val repository = AuthRepository(
-            FakeAuthApi(refreshResult = AuthResult.Failure("Network error")),
+            FakeAuthApi(refreshResult = AuthResult.Failure("网络异常")),
             tokenStore,
             nowMillis = { 1_000L }
         )

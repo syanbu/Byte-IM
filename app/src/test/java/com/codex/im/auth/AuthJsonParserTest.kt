@@ -59,7 +59,7 @@ class AuthJsonParserTest {
 
         val result = AuthJsonParser.parse(json)
 
-        assertEquals(AuthResult.Failure("Invalid authentication response"), result)
+        assertEquals(AuthResult.Failure("认证响应无效"), result)
     }
 
     @Test

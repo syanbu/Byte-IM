@@ -90,7 +90,7 @@ class LoginViewModelTest {
         val repository = AuthRepository(
             FakeAuthApi(
                 result = AuthResult.Failure("unused"),
-                refreshResult = AuthResult.Failure("Network error")
+                refreshResult = AuthResult.Failure("网络异常")
             ),
             InMemoryTokenStore().apply { save(storedSession) },
             nowMillis = { 1_000L }

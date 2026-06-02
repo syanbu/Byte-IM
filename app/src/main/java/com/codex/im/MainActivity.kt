@@ -251,7 +251,7 @@ fun SelfHostedImApp(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(text = AppInfo.name, style = MaterialTheme.typography.headlineMedium)
-                Text(text = "Project skeleton ready", style = MaterialTheme.typography.bodyLarge)
+                Text(text = "项目骨架已就绪", style = MaterialTheme.typography.bodyLarge)
             }
             } else {
             val state by loginViewModel.state.collectAsState()
@@ -421,6 +421,11 @@ private fun AuthenticatedImNavHost(
                 ContactListScreen(
                     viewModel = contactListViewModel,
                     state = contactState,
+                    onStartGroupChat = {
+                        navController.navigate(SelfHostedImRoute.GroupCreate.route) {
+                            launchSingleTop = true
+                        }
+                    },
                     onOpenContact = { peerUserId ->
                         SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)?.let(navController::navigateToChat)
                     }

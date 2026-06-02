@@ -6,16 +6,16 @@ import org.junit.Test
 class MessageTopBarTitlePolicyTest {
     @Test
     fun hidesUnreadCountWhenThereAreNoUnreadMessages() {
-        assertEquals("Message", MessageTopBarTitlePolicy.titleForUnreadCount(0))
+        assertEquals("消息", MessageTopBarTitlePolicy.titleForUnreadCount(0))
     }
 
     @Test
     fun showsUnreadCountInTitle() {
-        assertEquals("Message(18)", MessageTopBarTitlePolicy.titleForUnreadCount(18))
+        assertEquals("消息(18)", MessageTopBarTitlePolicy.titleForUnreadCount(18))
     }
 
     @Test
     fun capsUnreadCountLikeBottomNavigationBadge() {
-        assertEquals("Message(99+)", MessageTopBarTitlePolicy.titleForUnreadCount(100))
+        assertEquals("消息(99+)", MessageTopBarTitlePolicy.titleForUnreadCount(100))
     }
 }

@@ -11,7 +11,7 @@ object ImageUploadJsonParser {
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
                 return ImageUploadTargetsResult.Failure(
-                    root.optionalString("message") ?: "Image upload target request failed"
+                    root.optionalString("message") ?: "图片上传地址请求失败"
                 )
             }
             val payload = root.optionalObject("data") ?: root
@@ -24,7 +24,7 @@ object ImageUploadJsonParser {
                 )
             )
         } catch (error: RuntimeException) {
-            ImageUploadTargetsResult.Failure(error.message ?: "Invalid image upload response")
+            ImageUploadTargetsResult.Failure(error.message ?: "图片上传响应无效")
         }
     }
 

@@ -26,7 +26,7 @@ object ChatDisplayPolicy {
     }
 
     fun messageLine(message: ChatMessage): String {
-        val prefix = if (message.direction == MessageDirection.OUTGOING) "Me" else message.senderId
+        val prefix = if (message.direction == MessageDirection.OUTGOING) "我" else message.senderId
         return "$prefix: ${message.content}"
     }
 
@@ -40,7 +40,7 @@ object ChatDisplayPolicy {
         senderProfile: UserProfile?
     ): BubbleAvatar {
         if (message.direction == MessageDirection.OUTGOING) {
-            return BubbleAvatar(displayName = "Me", avatarUrl = currentUserAvatarUrl)
+            return BubbleAvatar(displayName = "我", avatarUrl = currentUserAvatarUrl)
         }
         if (message.conversationType == ConversationType.GROUP) {
             return BubbleAvatar(
@@ -101,8 +101,8 @@ object ChatDisplayPolicy {
             return null
         }
         return when {
-            state.isLoadingMore -> "Loading earlier messages..."
-            state.isHistoryMemoryLimitReached -> "Loaded 2000 messages in this chat"
+            state.isLoadingMore -> "正在加载更早的消息..."
+            state.isHistoryMemoryLimitReached -> "本次聊天已加载 2000 条消息"
             else -> null
         }
     }

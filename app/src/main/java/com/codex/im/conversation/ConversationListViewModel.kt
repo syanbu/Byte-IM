@@ -37,7 +37,7 @@ data class ConversationListItem(
 
 data class ConversationListUiState(
     val items: List<ConversationListItem> = emptyList(),
-    val connectionStatus: String = "Disconnected",
+    val connectionStatus: String = "未连接",
     val navigationTargetPeerId: String? = null,
     val navigationTargetConversationId: String? = null
 )
@@ -264,12 +264,12 @@ class ConversationListViewModel(
 
     private fun ConnectionState.toStatusText(): String {
         return when (this) {
-            ConnectionState.Disconnected -> "Disconnected"
-            ConnectionState.Connecting -> "Connecting"
-            ConnectionState.Connected -> "Connected"
-            ConnectionState.Authenticated -> "Authenticated"
-            is ConnectionState.Reconnecting -> "Reconnecting in ${delayMillis / 1_000}s"
-            is ConnectionState.Failed -> "Failed: $reason"
+            ConnectionState.Disconnected -> "未连接"
+            ConnectionState.Connecting -> "正在连接"
+            ConnectionState.Connected -> "已连接"
+            ConnectionState.Authenticated -> "已认证"
+            is ConnectionState.Reconnecting -> "${delayMillis / 1_000} 秒后重连"
+            is ConnectionState.Failed -> "连接失败：$reason"
         }
     }
 

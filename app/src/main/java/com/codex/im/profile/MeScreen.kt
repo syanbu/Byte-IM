@@ -152,8 +152,6 @@ private fun MeHomeScreen(
             .fillMaxSize()
             .background(ByteImColors.AppBackground)
     ) {
-        ByteImTopBar(title = "Me")
-        Spacer(modifier = Modifier.height(12.dp))
         ProfileSummaryRow(
             profile = profile,
             onClick = onOpenProfile
@@ -173,7 +171,7 @@ private fun MeHomeScreen(
                 contentColor = ByteImColors.BadgeRed
             )
         ) {
-            Text("Logout")
+            Text("退出登录")
         }
         state.errorMessage?.let { message ->
             Text(
@@ -214,7 +212,7 @@ private fun ProfileSummaryRow(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "ID: ${profile?.phone.orEmpty()}",
+                text = "ID：${profile?.phone.orEmpty()}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = ByteImColors.TextSecondary
             )
@@ -233,7 +231,7 @@ private fun ServicesRow() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "Services",
+            text = "服务",
             style = MaterialTheme.typography.bodyLarge,
             color = ByteImColors.TextPrimary,
             modifier = Modifier.weight(1f)
@@ -364,7 +362,7 @@ private fun ProfileNameEditorScreen(
                     onClick = onSave
                 ) {
                     Text(
-                        text = if (state.isSaving) "Saving" else MeDisplayPolicy.nameEditorSaveLabel,
+                        text = if (state.isSaving) "保存中" else MeDisplayPolicy.nameEditorSaveLabel,
                         color = ByteImColors.PrimaryGreen
                     )
                 }
@@ -395,7 +393,7 @@ private fun ProfileNameEditorScreen(
 private fun ChevronRightIcon() {
     Icon(
         painter = painterResource(id = R.drawable.ic_chevron_right),
-        contentDescription = "Open",
+        contentDescription = "打开",
         tint = ByteImColors.TextSecondary,
         modifier = Modifier.size(24.dp)
     )

@@ -130,7 +130,7 @@ private fun GroupCreateContactRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "ID: ${item.userId}",
+                text = "ID：${item.userId}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = ByteImColors.TextSecondary,
                 maxLines = 1,

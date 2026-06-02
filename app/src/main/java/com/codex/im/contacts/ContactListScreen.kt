@@ -3,6 +3,7 @@ package com.codex.im.contacts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,13 +14,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,12 +36,14 @@ import com.codex.im.ui.ByteImColors
 import com.codex.im.ui.ByteImDimensions
 import com.codex.im.ui.ByteImListSurface
 import com.codex.im.ui.ByteImTopBar
+import com.codex.im.ui.ConversationCreateMenu
 
 @Composable
 fun ContactListScreen(
     viewModel: ContactListViewModel,
     state: ContactListUiState,
     modifier: Modifier = Modifier,
+    onStartGroupChat: () -> Unit,
     onOpenContact: (String) -> Unit
 ) {
     LaunchedEffect(viewModel) {
@@ -56,7 +66,7 @@ fun ContactListScreen(
             .fillMaxSize()
             .background(ByteImColors.AppBackground)
     ) {
-        ByteImTopBar(title = "Contacts")
+        ContactsTopBar(onStartGroupChat = onStartGroupChat)
         ByteImListSurface(modifier = Modifier.weight(1f)) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(state.items, key = { it.userId }) { item ->
@@ -69,6 +79,53 @@ fun ContactListScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ContactsTopBar(
+    onStartGroupChat: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    ByteImTopBar(
+        title = "通讯录",
+        centerTitle = true,
+        actions = listOf(
+            {
+                // 搜索图标：当前为视觉占位
+                IconButton(
+                    onClick = { },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = ContactTopBarActionPolicy.searchIconResId),
+                        contentDescription = "搜索",
+                        tint = ByteImColors.PrimaryGreen,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
+            {
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = !menuExpanded },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = ContactTopBarActionPolicy.addIconResId),
+                            contentDescription = "更多操作",
+                            tint = ByteImColors.PrimaryGreen,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    ConversationCreateMenu(
+                        expanded = menuExpanded,
+                        onDismiss = { menuExpanded = false },
+                        onStartGroupChat = onStartGroupChat
+                    )
+                }
+            }
+        )
+    )
 }
 
 @Composable
@@ -100,7 +157,7 @@ private fun ContactRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "ID: ${item.userId}",
+                text = "ID：${item.userId}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = ByteImColors.TextSecondary,
                 maxLines = 1,

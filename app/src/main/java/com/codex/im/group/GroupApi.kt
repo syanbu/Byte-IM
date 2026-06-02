@@ -83,9 +83,9 @@ class OkHttpGroupApi(
                     GroupJsonParser.parseCreateGroup(body)
                 }
             } catch (error: IOException) {
-                GroupCreateResult.Failure(error.message ?: "Network error")
+                GroupCreateResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                GroupCreateResult.Failure(error.message ?: "Invalid group response")
+                GroupCreateResult.Failure(error.message ?: "群组响应无效")
             }
         }
     }
@@ -106,9 +106,9 @@ class OkHttpGroupApi(
                     GroupJsonParser.parseGroup(body)
                 }
             } catch (error: IOException) {
-                GroupResult.Failure(error.message ?: "Network error")
+                GroupResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                GroupResult.Failure(error.message ?: "Invalid group response")
+                GroupResult.Failure(error.message ?: "群组响应无效")
             }
         }
     }
@@ -129,9 +129,9 @@ class OkHttpGroupApi(
                     GroupJsonParser.parseGroups(body)
                 }
             } catch (error: IOException) {
-                GroupListResult.Failure(error.message ?: "Network error")
+                GroupListResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                GroupListResult.Failure(error.message ?: "Invalid group response")
+                GroupListResult.Failure(error.message ?: "群组响应无效")
             }
         }
     }
@@ -152,9 +152,9 @@ class OkHttpGroupApi(
                     GroupJsonParser.parseMembers(body)
                 }
             } catch (error: IOException) {
-                GroupMembersResult.Failure(error.message ?: "Network error")
+                GroupMembersResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                GroupMembersResult.Failure(error.message ?: "Invalid group members response")
+                GroupMembersResult.Failure(error.message ?: "群成员响应无效")
             }
         }
     }
@@ -178,12 +178,12 @@ object GroupJsonParser {
             val root = JsonParser.parseString(json).asJsonObject
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
-                return GroupResult.Failure(root.optionalString("message") ?: "Group request failed")
+                return GroupResult.Failure(root.optionalString("message") ?: "群组请求失败")
             }
             val payload = root.optionalObject("data") ?: root
             GroupResult.Success(payload.toGroupInfo())
         } catch (error: RuntimeException) {
-            GroupResult.Failure(error.message ?: "Invalid group response")
+            GroupResult.Failure(error.message ?: "群组响应无效")
         }
     }
 
@@ -192,7 +192,7 @@ object GroupJsonParser {
             val root = JsonParser.parseString(json).asJsonObject
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
-                return GroupListResult.Failure(root.optionalString("message") ?: "Group request failed")
+                return GroupListResult.Failure(root.optionalString("message") ?: "群组请求失败")
             }
             val payload = root.optionalObject("data") ?: root
             val groups = payload.optionalArray("groups")
@@ -200,7 +200,7 @@ object GroupJsonParser {
                 .orEmpty()
             GroupListResult.Success(groups)
         } catch (error: RuntimeException) {
-            GroupListResult.Failure(error.message ?: "Invalid group response")
+            GroupListResult.Failure(error.message ?: "群组响应无效")
         }
     }
 
@@ -209,7 +209,7 @@ object GroupJsonParser {
             val root = JsonParser.parseString(json).asJsonObject
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
-                return GroupCreateResult.Failure(root.optionalString("message") ?: "Create group failed")
+                return GroupCreateResult.Failure(root.optionalString("message") ?: "创建群组失败")
             }
             val payload = root.optionalObject("data") ?: root
             val group = payload.toGroupInfo()
@@ -218,7 +218,7 @@ object GroupJsonParser {
                 members = payload.membersOrFallback(group)
             )
         } catch (error: RuntimeException) {
-            GroupCreateResult.Failure(error.message ?: "Invalid group response")
+            GroupCreateResult.Failure(error.message ?: "群组响应无效")
         }
     }
 
@@ -227,7 +227,7 @@ object GroupJsonParser {
             val root = JsonParser.parseString(json).asJsonObject
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
-                return GroupMembersResult.Failure(root.optionalString("message") ?: "Group members request failed")
+                return GroupMembersResult.Failure(root.optionalString("message") ?: "获取群成员失败")
             }
             val payload = root.optionalObject("data") ?: root
             val group = payload.toGroupInfo()
@@ -236,7 +236,7 @@ object GroupJsonParser {
                 members = payload.membersOrFallback(group)
             )
         } catch (error: RuntimeException) {
-            GroupMembersResult.Failure(error.message ?: "Invalid group members response")
+            GroupMembersResult.Failure(error.message ?: "群成员响应无效")
         }
     }
 

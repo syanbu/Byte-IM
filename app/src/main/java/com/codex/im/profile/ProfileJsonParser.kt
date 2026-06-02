@@ -12,12 +12,12 @@ object ProfileJsonParser {
             val root = JsonParser.parseString(json).asJsonObject
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
-                return ProfileResult.Failure(root.optionalString("message") ?: "Profile request failed")
+                return ProfileResult.Failure(root.optionalString("message") ?: "资料请求失败")
             }
             val payload = root.optionalObject("data") ?: root
             ProfileResult.Success(payload.toUserProfile())
         } catch (error: RuntimeException) {
-            ProfileResult.Failure(error.message ?: "Invalid profile response")
+            ProfileResult.Failure(error.message ?: "资料响应无效")
         }
     }
 
@@ -26,7 +26,7 @@ object ProfileJsonParser {
             val root = JsonParser.parseString(json).asJsonObject
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
-                return ProfileBatchResult.Failure(root.optionalString("message") ?: "Profile request failed")
+                return ProfileBatchResult.Failure(root.optionalString("message") ?: "资料请求失败")
             }
             val payload = root.optionalObject("data") ?: root
             val profiles = payload.optionalArray("profiles")
@@ -34,7 +34,7 @@ object ProfileJsonParser {
                 ?: emptyList()
             ProfileBatchResult.Success(profiles)
         } catch (error: RuntimeException) {
-            ProfileBatchResult.Failure(error.message ?: "Invalid profile response")
+            ProfileBatchResult.Failure(error.message ?: "资料响应无效")
         }
     }
 

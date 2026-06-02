@@ -23,7 +23,7 @@ class ChatDisplayPolicyTest {
             )
         )
 
-        assertEquals("Me: hello", line)
+        assertEquals("我: hello", line)
         assertFalse(line.contains("[SENT]"))
     }
 
@@ -65,7 +65,7 @@ class ChatDisplayPolicyTest {
             )
         )
 
-        assertEquals("Loading earlier messages...", text)
+        assertEquals("正在加载更早的消息...", text)
     }
 
     @Test

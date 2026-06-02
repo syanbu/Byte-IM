@@ -9,7 +9,7 @@ object AuthJsonParser {
             val root = JsonParser.parseString(json).asJsonObject
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
-                return AuthResult.Failure(root.optionalString("message") ?: "Authentication failed")
+                return AuthResult.Failure(root.optionalString("message") ?: "认证失败")
             }
 
             val payload = root.optionalObject("data") ?: root
@@ -41,7 +41,7 @@ object AuthJsonParser {
                 ?: payload.optionalLong("refresh_expires_at")
 
             if (accessToken.isNullOrBlank() || refreshToken.isNullOrBlank() || userId.isNullOrBlank() || username.isNullOrBlank() || phone.isNullOrBlank() || nickname.isNullOrBlank() || accessExpiresAt == null || refreshExpiresAt == null) {
-                AuthResult.Failure(root.optionalString("message") ?: "Invalid authentication response")
+                AuthResult.Failure(root.optionalString("message") ?: "认证响应无效")
             } else {
                 AuthResult.Success(
                     AuthSession(
@@ -60,7 +60,7 @@ object AuthJsonParser {
                 )
             }
         } catch (_: RuntimeException) {
-            AuthResult.Failure("Invalid authentication response")
+            AuthResult.Failure("认证响应无效")
         }
     }
 

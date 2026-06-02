@@ -40,7 +40,7 @@ fun ChatImagePreviewScreen(
             },
             error = {
                 Text(
-                    text = "Image load failed",
+                    text = "图片加载失败",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White
                 )

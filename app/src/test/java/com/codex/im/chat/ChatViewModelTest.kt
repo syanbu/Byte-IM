@@ -1046,7 +1046,7 @@ class ChatViewModelTest {
             groupDao.replaceMembers(
                 "g_1001",
                 listOf(
-                    GroupMember("g_1001", "13800113800", "Me", null, GroupMemberRole.OWNER, 1_000L, 1_000L),
+                    GroupMember("g_1001", "13800113800", "我", null, GroupMemberRole.OWNER, 1_000L, 1_000L),
                     GroupMember("g_1001", "13900113900", "ByteDance2", null, GroupMemberRole.MEMBER, 1_000L, 1_000L),
                     GroupMember("g_1001", "17724734511", "ZhangSan", null, GroupMemberRole.MEMBER, 1_000L, 1_000L)
                 )

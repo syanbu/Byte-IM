@@ -28,9 +28,9 @@ class OkHttpAvatarUploadApi(
                     AvatarUploadJsonParser.parseTarget(body)
                 }
             } catch (error: IOException) {
-                AvatarUploadResult.Failure(error.message ?: "Network error")
+                AvatarUploadResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                AvatarUploadResult.Failure(error.message ?: "Network error")
+                AvatarUploadResult.Failure(error.message ?: "网络异常")
             }
         }
     }
@@ -50,9 +50,9 @@ class OkHttpAvatarUploadApi(
                     }
                 }
             } catch (error: IOException) {
-                AvatarPutResult.Failure(error.message ?: "Network error")
+                AvatarPutResult.Failure(error.message ?: "网络异常")
             } catch (error: RuntimeException) {
-                AvatarPutResult.Failure(error.message ?: "Network error")
+                AvatarPutResult.Failure(error.message ?: "网络异常")
             }
         }
     }

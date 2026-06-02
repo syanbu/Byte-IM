@@ -9,7 +9,7 @@ class RegistrationInputValidatorTest {
     fun returnsErrorWhenPasswordsDoNotMatch() {
         val result = RegistrationInputValidator.validate("123456", "123457")
 
-        assertEquals("Passwords do not match", result)
+        assertEquals("两次输入的密码不一致", result)
     }
 
     @Test

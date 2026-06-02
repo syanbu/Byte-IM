@@ -25,10 +25,10 @@ sealed class AvatarPutResult {
 
 object DisabledAvatarUploadApi : AvatarUploadApi {
     override suspend fun requestUploadTarget(accessToken: String, contentType: String): AvatarUploadResult {
-        return AvatarUploadResult.Failure("Avatar upload is not configured")
+        return AvatarUploadResult.Failure("头像上传未配置")
     }
 
     override suspend fun upload(uploadUrl: String, contentType: String, bytes: ByteArray): AvatarPutResult {
-        return AvatarPutResult.Failure("Avatar upload is not configured")
+        return AvatarPutResult.Failure("头像上传未配置")
     }
 }

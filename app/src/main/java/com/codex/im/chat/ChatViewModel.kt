@@ -372,7 +372,7 @@ class ChatViewModel(
             } catch (error: RuntimeException) {
                 mutableState.value = mutableState.value.copy(
                     isLoadingMore = false,
-                    errorMessage = error.message ?: "Failed to load history"
+                    errorMessage = error.message ?: "加载历史消息失败"
                 )
             }
         }

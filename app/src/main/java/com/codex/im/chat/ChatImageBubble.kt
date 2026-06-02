@@ -65,7 +65,7 @@ fun ChatImageBubble(
                 },
                 error = {
                     Text(
-                        text = "Load failed",
+                        text = "加载失败",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -87,7 +87,7 @@ fun ChatImageBubble(
                 }
             }
             MessageStatus.UPLOAD_FAILED -> Text(
-                text = "Upload failed",
+                text = "上传失败",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White,
                 modifier = Modifier
@@ -95,7 +95,7 @@ fun ChatImageBubble(
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             )
             MessageStatus.FAILED -> Text(
-                text = "Send failed",
+                text = "发送失败",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White,
                 modifier = Modifier

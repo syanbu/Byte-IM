@@ -55,12 +55,12 @@ class OkHttpAuthApi(
                 }
             } catch (error: IOException) {
                 AuthResult.Failure(
-                    message = error.message ?: "Network error",
+                    message = error.message ?: "网络异常",
                     kind = AuthFailureKind.NETWORK
                 )
             } catch (error: RuntimeException) {
                 AuthResult.Failure(
-                    message = error.message ?: "Network error",
+                    message = error.message ?: "网络异常",
                     kind = AuthFailureKind.NETWORK
                 )
             }
@@ -93,12 +93,12 @@ class OkHttpAuthApi(
                 }
             } catch (error: IOException) {
                 AuthResult.Failure(
-                    message = error.message ?: "Network error",
+                    message = error.message ?: "网络异常",
                     kind = AuthFailureKind.NETWORK
                 )
             } catch (error: RuntimeException) {
                 AuthResult.Failure(
-                    message = error.message ?: "Network error",
+                    message = error.message ?: "网络异常",
                     kind = AuthFailureKind.NETWORK
                 )
             }

@@ -12,15 +12,15 @@ class MeDisplayPolicyTest {
 
     @Test
     fun profileDetailRowsMatchPersonalInfoList() {
-        assertEquals("Avatar", MeDisplayPolicy.avatarRowLabel)
-        assertEquals("Name", MeDisplayPolicy.nameRowLabel)
+        assertEquals("头像", MeDisplayPolicy.avatarRowLabel)
+        assertEquals("昵称", MeDisplayPolicy.nameRowLabel)
         assertEquals("ID", MeDisplayPolicy.idRowLabel)
     }
 
     @Test
     fun nameEditorUsesDedicatedPageSaveAction() {
-        assertEquals("Name", MeDisplayPolicy.nameEditorTitle)
-        assertEquals("Save", MeDisplayPolicy.nameEditorSaveLabel)
+        assertEquals("昵称", MeDisplayPolicy.nameEditorTitle)
+        assertEquals("保存", MeDisplayPolicy.nameEditorSaveLabel)
     }
 
     @Test

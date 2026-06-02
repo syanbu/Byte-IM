@@ -22,7 +22,7 @@ class BottomNavigationSpecTest {
     @Test
     fun topLevelTabsAreOrderedMessagesContactsMe() {
         assertEquals(
-            listOf("Messages", "Contacts", "Me"),
+            listOf("消息", "通讯录", "我"),
             BottomNavigationSpec.topLevelItems.map { it.label }
         )
     }

@@ -9,7 +9,7 @@ object AvatarUploadJsonParser {
             val root = JsonParser.parseString(json).asJsonObject
             val code = root.optionalInt("code")
             if (code != null && code != 0) {
-                return AvatarUploadResult.Failure(root.optionalString("message") ?: "Avatar upload target request failed")
+                return AvatarUploadResult.Failure(root.optionalString("message") ?: "头像上传地址请求失败")
             }
             val payload = root.optionalObject("data") ?: root
             AvatarUploadResult.Success(
@@ -21,7 +21,7 @@ object AvatarUploadJsonParser {
                 )
             )
         } catch (error: RuntimeException) {
-            AvatarUploadResult.Failure(error.message ?: "Invalid avatar upload response")
+            AvatarUploadResult.Failure(error.message ?: "头像上传响应无效")
         }
     }
 
