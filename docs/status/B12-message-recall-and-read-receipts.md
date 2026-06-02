@@ -13,7 +13,7 @@ Design source: [`../B12-message-recall-and-read-receipts-design.md`](../B12-mess
 
 ## Status
 
-Implemented for first-pass single-chat scope.
+Implemented for first-pass single-chat scope, with group-chat recall copy now handled for recalled group member display names.
 
 The Android client now persists recall state and a conversation-level peer read cursor, sends `READ_ACK` when an open chat has incoming persisted `serverSeq` messages, processes inbound `READ_ACK`, sends recall requests, and marks local messages recalled from `RECALL_ACK` / `RECALL_NOTIFY`.
 
@@ -21,7 +21,9 @@ Conversation preview updates now preserve the existing peer read cursor, so late
 
 Long-press actions now render as a horizontal action bar. Text messages can show `复制 | 撤回`; image messages can show `撤回` only and never show `复制`. Tapping outside the action bar dismisses it without recalling the message. The action bar is outside the bubble alignment line: `ChatMessageContent` owns the action bar above the message, while `ChatBubbleLine` keeps the outgoing read/unread marker aligned with the message bubble itself. Manual verification confirmed the green read marker follows the bubble, not the action bar.
 
-Recalled messages now render as centered system notices (`你撤回了一条消息` / `对方撤回了一条消息`) in chronological position. They are not rendered as message bubbles, do not show the left/right avatar, and do not show outgoing read/unread markers.
+Recalled messages now render as centered system notices in chronological position. Single chat uses `你撤回了一条消息` / `对方撤回了一条消息`; group chat uses `你撤回了一条消息` for the current user and `{成员昵称}撤回了一条消息` for other group members. They are not rendered as message bubbles, do not show the left/right avatar, and do not show outgoing read/unread markers.
+
+Group conversation-list previews now also resolve recalled sender display names when the last message is a recalled group message, so the Messages tab shows `{成员昵称}撤回了一条消息` instead of the single-chat fallback `对方撤回了一条消息`.
 
 The mock server now routes `READ_ACK`, validates recall requests, enforces the 2-minute server-time recall window, returns `RECALL_ACK`, and sends `RECALL_NOTIFY` to the online peer. The durable accepted-message store includes recall columns and migrates older SQLite files that do not have those columns. Durable recall replay for offline peers is not part of this first pass.
 

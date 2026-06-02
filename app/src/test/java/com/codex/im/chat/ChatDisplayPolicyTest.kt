@@ -166,6 +166,27 @@ class ChatDisplayPolicyTest {
     }
 
     @Test
+    fun groupRecalledMessagePromptUsesSenderNickname() {
+        val groupPeer = message(
+            senderId = "13900113900",
+            direction = MessageDirection.INCOMING
+        ).copy(
+            isRecalled = true,
+            conversationId = "group:g_1001",
+            conversationType = com.codex.im.storage.ConversationType.GROUP
+        )
+
+        assertEquals(
+            "ByteDance2撤回了一条消息",
+            ChatDisplayPolicy.recalledMessageText(
+                message = groupPeer,
+                currentUserId = "13800113800",
+                senderDisplayName = "ByteDance2"
+            )
+        )
+    }
+
+    @Test
     fun recalledMessagesUseCenteredNoticeInsteadOfBubbleRow() {
         assertEquals(ChatMessageRowKind.CENTERED_NOTICE, ChatDisplayPolicy.rowKind(message().copy(isRecalled = true)))
         assertEquals(ChatMessageRowKind.BUBBLE, ChatDisplayPolicy.rowKind(message().copy(isRecalled = false)))

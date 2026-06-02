@@ -74,9 +74,15 @@ object ChatDisplayPolicy {
         }
     }
 
-    fun recalledMessageText(message: ChatMessage, currentUserId: String): String {
+    fun recalledMessageText(
+        message: ChatMessage,
+        currentUserId: String,
+        senderDisplayName: String? = null
+    ): String {
         return if (message.senderId == currentUserId) {
             "你撤回了一条消息"
+        } else if (message.conversationType == ConversationType.GROUP) {
+            "${senderDisplayName?.takeIf { it.isNotBlank() } ?: message.senderId}撤回了一条消息"
         } else {
             "对方撤回了一条消息"
         }
