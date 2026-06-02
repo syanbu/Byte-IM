@@ -57,6 +57,7 @@ Implemented for gallery image send with multi-select expansion into independent 
   - multi-image send that continues processing later images when one image upload fails
   - strict receiver-side thumbnail display: incoming image messages are hidden from chat until `localThumbnailPath` is available
   - receiver-side thumbnail compensation retry on chat open and active conversation updates
+  - receiver-side thumbnail downloads are routed through `ThumbnailDownloadScheduler` with `NORMAL` priority on message receive and `HIGH` priority for chat-open compensation
   - Coil preloading for the target chat's recent local thumbnails before navigation from the conversation list
 - Chat screen keyboard handling has been stabilized across tested Android devices:
   - `MainActivity` calls `WindowCompat.setDecorFitsSystemWindows(window, false)`
@@ -91,8 +92,8 @@ This is not a strict transaction across OSS and WebSocket. The first pass uses a
 
 Progressive display in this project means staged UI display, not byte-level progressive JPEG decode:
 
-- show placeholder immediately
-- show local thumbnail or remote `thumbnailUrl` as early preview
+- show a stable gray placeholder block immediately
+- show local thumbnail as the chat-bubble preview after receiver-side thumbnail caching completes
 - replace preview with full `imageUrl` when needed
 - keep failure state visible if thumbnail or original load fails
 
@@ -113,12 +114,13 @@ For image messages, the chat list/bubble must display the thumbnail resource, no
 
 The bubble size is now stable before the thumbnail finishes loading. The sender stores `imageWidth` and `imageHeight` when the local `UPLOADING` row is first created, so the client can compute a bounded display size and apply that same size to the placeholder, loading state, loaded thumbnail, and failure state. This prevents the previous visual jump where the bubble used a fallback size during upload and then expanded after upload metadata was written.
 
-Chat thumbnail loading no longer renders a `CircularProgressIndicator` inside the image bubble. The image bubble keeps its stable placeholder surface while Coil resolves the local or remote thumbnail. Image `UPLOADING`/`SENDING` statuses also must not render an overlay spinner inside the bubble. Upload/send progress remains represented only by the outgoing message status indicator beside the bubble, so a sending image message shows one spinner in the message row.
+Chat thumbnail loading no longer renders a `CircularProgressIndicator` inside the image bubble. The image bubble keeps a stable gray placeholder surface while Coil resolves the thumbnail. If no thumbnail model is available yet, the bubble remains a plain gray rounded rectangle instead of rendering inline text such as `[图片]`. Image `UPLOADING`/`SENDING` statuses also must not render an overlay spinner inside the bubble. Upload/send progress remains represented only by the outgoing message status indicator beside the bubble, so a sending image message shows one spinner in the message row.
 
 Receiver-side thumbnail caching is now strict for chat display:
 
 - on receive, the message row first persists URLs and metadata
-- the repository attempts to download the thumbnail into app cache and update `localThumbnailPath`
+- the repository enqueues a `NORMAL` priority thumbnail download task through `ThumbnailDownloadScheduler`
+- the scheduler downloads `thumbnailUrl` into app cache and writes `localThumbnailPath` through the repository callback
 - chat history display filters out incoming image messages whose `localThumbnailPath` is still missing
 - after thumbnail caching succeeds and `localThumbnailPath` is written, the repository emits an update and the message appears in chat
 - if thumbnail caching fails, the message remains persisted but temporarily hidden from chat while retry attempts continue
@@ -126,6 +128,7 @@ Receiver-side thumbnail caching is now strict for chat display:
 Receiver-side thumbnail retry strategy:
 
 - opening a chat triggers an immediate compensation scan for `INCOMING + IMAGE + localThumbnailPath IS NULL`
+- chat-open compensation enqueues missing thumbnail downloads with `HIGH` priority
 - active conversation updates also schedule lightweight retries for newly hidden incoming image messages
 - each message retries thumbnail caching at most three times in the current chat ViewModel lifecycle
 - retry delays are `2s -> 10s -> 30s`
@@ -148,6 +151,28 @@ Conversation-list-to-chat image preloading:
 - the preload scope is intentionally narrow: the most recent 5 image messages that already have `localThumbnailPath`
 - the preloader only enqueues local thumbnail files into Coil; it does not download remote `thumbnailUrl` resources
 - this reduces first visible thumbnail decode/loading delay after app restart while keeping navigation lightweight and avoiding broad app-start cache scans
+
+Current optimized receiver-side strategy:
+
+- incoming image messages enqueue thumbnail download work; they do not download originals
+- chat-open missing-thumbnail compensation uses higher priority than normal receive-time thumbnail work
+- `CoroutineThumbnailDownloadScheduler` drains one thumbnail job at a time and orders queued work by `HIGH -> NORMAL -> LOW`
+- original image loading remains user-triggered from image preview
+- Coil preloading is a decode/cache warm-up for local thumbnail files, not a network fetch mechanism
+
+Receiver-side end-to-end display flow:
+
+1. Sender uploads the generated thumbnail and original image to OSS.
+2. Sender sends an IM image message carrying `imageUrl`, `thumbnailUrl`, dimensions, MIME type, and file size.
+3. Receiver persists the message row and image metadata into SQLite with `localThumbnailPath = null`.
+4. Receiver enqueues a `NORMAL` priority thumbnail download task. This task downloads only `thumbnailUrl`, never `imageUrl`.
+5. When the scheduler caches the thumbnail file, the repository callback writes the local file path into `messages.local_thumbnail_path`.
+6. The repository emits a conversation update; chat history reloads and incoming image messages whose `localThumbnailPath` is now present become displayable.
+7. If thumbnail download fails, the image message remains persisted but hidden from chat history until a later retry succeeds.
+8. Opening the chat performs a compensation scan for `INCOMING + IMAGE + localThumbnailPath IS NULL` and enqueues those missing thumbnails with `HIGH` priority.
+9. When a `HIGH` compensation task succeeds, the same callback writes `localThumbnailPath`, emits an update, and the previously hidden image appears in chat.
+10. The image bubble uses a stable gray placeholder while Coil resolves the local thumbnail file.
+11. Tapping an image opens preview and loads the original on demand from `localOriginalPath` if available, otherwise from `imageUrl`.
 
 ## Data Model Changes
 

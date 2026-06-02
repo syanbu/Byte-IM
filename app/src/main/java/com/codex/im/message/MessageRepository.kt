@@ -31,7 +31,8 @@ class MessageRepository(
     private val seqGenerator: SeqGenerator,
     private val retryPolicy: MessageRetryPolicy = MessageRetryPolicy(),
     private val transactionRunner: TransactionRunner = TransactionRunner.immediate(),
-    private val thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache
+    thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache,
+    private val thumbnailDownloadScheduler: ThumbnailDownloadScheduler = ImmediateThumbnailDownloadScheduler(thumbnailCache)
 ) : MessagesTabUnreadBadgeSource {
     @Volatile
     private var activeConversationId: String? = null
@@ -338,7 +339,11 @@ class MessageRepository(
 
     fun retryIncomingImageThumbnail(messageId: String): Boolean {
         val message = messageDao.findByMessageId(messageId) ?: return false
-        return cacheIncomingThumbnailIfNeeded(inserted = true, message = message)
+        return enqueueIncomingThumbnailIfNeeded(
+            inserted = true,
+            message = message,
+            priority = ThumbnailDownloadPriority.HIGH
+        )
     }
 
     fun recentLocalThumbnailPaths(userId: String, peerId: String, limit: Int): List<String> {
@@ -628,7 +633,11 @@ class MessageRepository(
             val peerId = activePeerId ?: senderId
             sendReadAckIfAdvanced(message.conversationId, readerId, peerId, timestamp)
         }
-        cacheIncomingThumbnailIfNeeded(inserted, message)
+        enqueueIncomingThumbnailIfNeeded(
+            inserted = inserted,
+            message = message,
+            priority = ThumbnailDownloadPriority.NORMAL
+        )
     }
 
     private fun handleReadAck(json: String) {
@@ -702,17 +711,20 @@ class MessageRepository(
         )
     }
 
-    private fun cacheIncomingThumbnailIfNeeded(inserted: Boolean, message: ChatMessage): Boolean {
+    private fun enqueueIncomingThumbnailIfNeeded(
+        inserted: Boolean,
+        message: ChatMessage,
+        priority: ThumbnailDownloadPriority
+    ): Boolean {
         if (!inserted || message.type != MessageType.IMAGE || message.localThumbnailPath != null) {
             return false
         }
-        val thumbnailUrl = message.thumbnailUrl?.takeIf { it.isNotBlank() } ?: return false
-        val localPath = thumbnailCache.cacheThumbnail(message.messageId, thumbnailUrl) ?: return false
-        val changed = messageDao.updateLocalThumbnailPath(message.messageId, localPath, System.currentTimeMillis())
-        if (changed) {
-            notifyConversationChanged()
+        return thumbnailDownloadScheduler.enqueue(message, priority) { messageId, localPath ->
+            val changed = messageDao.updateLocalThumbnailPath(messageId, localPath, System.currentTimeMillis())
+            if (changed) {
+                notifyConversationChanged()
+            }
         }
-        return changed
     }
 
     private fun ChatMessage.isReadyForChatDisplay(): Boolean {

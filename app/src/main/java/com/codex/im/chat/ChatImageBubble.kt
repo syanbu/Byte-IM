@@ -71,12 +71,6 @@ fun ChatImageBubble(
                     )
                 }
             )
-        } else {
-            Text(
-                text = "[图片]",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
         when (message.status) {
             MessageStatus.UPLOADING,
