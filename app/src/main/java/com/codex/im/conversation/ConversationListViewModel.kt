@@ -140,6 +140,7 @@ class ConversationListViewModel(
                     .filterNot { it.type == ConversationType.GROUP || it.conversationId.startsWith("group:") }
                     .map { it.peerIdForCurrentSession() }
                     .plus(mentionedUserIdsFor(conversations))
+                    .plus(recalledUserIdsFor(conversations))
             )
             groupRepository?.syncGroups(validSession.accessToken)
         }
@@ -176,7 +177,7 @@ class ConversationListViewModel(
                 peerId = resolvedPeerId,
                 peerName = title.ifBlank { peerName },
                 peerAvatarUrl = avatarUrl,
-                lastMessagePreview = lastMessagePreview,
+                lastMessagePreview = groupRecallPreview() ?: lastMessagePreview,
                 lastMessageTime = lastMessageTime,
                 unreadCount = unreadCount,
                 mentionUnreadCount = mentionUnreadCount,
@@ -205,6 +206,42 @@ class ConversationListViewModel(
             .mapNotNull(repository::findMessageById)
             .flatMap { it.mentionedUserIds }
             .distinct()
+    }
+
+    private fun recalledUserIdsFor(conversations: List<Conversation>): List<String> {
+        return conversations
+            .filter { it.type == ConversationType.GROUP || it.conversationId.startsWith("group:") }
+            .mapNotNull { it.lastMessageId }
+            .mapNotNull(repository::findMessageById)
+            .filter { it.isRecalled }
+            .mapNotNull { it.recalledBy ?: it.senderId }
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
+    private fun Conversation.groupRecallPreview(): String? {
+        if (type != ConversationType.GROUP && !conversationId.startsWith("group:")) {
+            return null
+        }
+        val message = lastMessageId?.let(repository::findMessageById) ?: return null
+        if (!message.isRecalled) {
+            return null
+        }
+        if (message.senderId == session.userId) {
+            return "你撤回了一条消息"
+        }
+        val recalledBy = message.recalledBy?.takeIf { it.isNotBlank() } ?: message.senderId
+        val groupId = message.groupId ?: conversationId.removePrefix("group:")
+        val displayName = profileRepository.localProfile(recalledBy)
+            ?.nickname
+            ?.takeIf { it.isNotBlank() }
+            ?: groupRepository
+                ?.localMembers(groupId)
+                ?.firstOrNull { it.userId == recalledBy }
+                ?.displayName
+                ?.takeIf { it.isNotBlank() }
+            ?: recalledBy
+        return "${displayName}撤回了一条消息"
     }
 
     private fun mentionDisplayNamesByConversationId(conversations: List<Conversation>): Map<String, Map<String, String>> {

@@ -409,6 +409,64 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun groupRecallPreviewUsesRecalledSenderNickname() = runTest {
+        val fixture = Fixture(
+            this,
+            profileApi = FakeProfileApi(
+                profiles = listOf(
+                    UserProfile(
+                        userId = "13900113900",
+                        phone = "13900113900",
+                        nickname = "ByteDance2",
+                        avatarUrl = null,
+                        avatarUpdatedAt = 0L,
+                        updatedAt = 2_000L
+                    )
+                )
+            )
+        )
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 12,
+                body = """
+                    {
+                      "messageId":"group-recall-preview-1",
+                      "conversationId":"group:g_1001",
+                      "conversationType":"GROUP",
+                      "groupId":"g_1001",
+                      "groupName":"群聊(3)",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":1,
+                      "serverSeq":2,
+                      "content":"secret",
+                      "timestamp":2000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 17,
+                body = """
+                    {
+                      "messageId":"group-recall-preview-1",
+                      "conversationId":"group:g_1001",
+                      "recalledBy":"13900113900",
+                      "recalledAt":3000
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals("ByteDance2撤回了一条消息", fixture.viewModel.state.value.items.single().lastMessagePreview)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun openConversationNavigatesBeforePreloadingRecentLocalThumbnails() = runTest {
         val thumbnailPreloader = FakeThumbnailPreloader()
         val fixture = Fixture(this, thumbnailPreloader = thumbnailPreloader)

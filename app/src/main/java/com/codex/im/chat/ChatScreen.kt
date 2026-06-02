@@ -184,7 +184,11 @@ fun ChatScreen(
             items(state.messages, key = { it.messageId }) { message ->
                 when (ChatDisplayPolicy.rowKind(message)) {
                     ChatMessageRowKind.CENTERED_NOTICE -> RecalledMessageNotice(
-                        text = ChatDisplayPolicy.recalledMessageText(message, viewModel.currentUserId)
+                        text = ChatDisplayPolicy.recalledMessageText(
+                            message = message,
+                            currentUserId = viewModel.currentUserId,
+                            senderDisplayName = recalledSenderDisplayName(message, state)
+                        )
                     )
                     ChatMessageRowKind.BUBBLE -> ChatMessageRow(
                         message = message,
@@ -304,6 +308,16 @@ fun ChatScreen(
             }
         )
     }
+}
+
+private fun recalledSenderDisplayName(message: ChatMessage, state: ChatUiState): String? {
+    return state.senderProfiles[message.senderId]
+        ?.nickname
+        ?.takeIf { it.isNotBlank() }
+        ?: state.mentionMembers
+            .firstOrNull { it.userId == message.senderId }
+            ?.displayName
+            ?.takeIf { it.isNotBlank() }
 }
 
 @Composable
