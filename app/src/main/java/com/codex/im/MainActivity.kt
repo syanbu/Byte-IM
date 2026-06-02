@@ -71,6 +71,7 @@ import com.codex.im.group.DefaultGroupRepository
 import com.codex.im.group.OkHttpGroupApi
 import com.codex.im.message.AndroidChatThumbnailCache
 import com.codex.im.message.CoilChatThumbnailPreloader
+import com.codex.im.message.CoroutineThumbnailDownloadScheduler
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageOutboxWorker
 import com.codex.im.message.MessagePacketProcessor
@@ -78,6 +79,10 @@ import com.codex.im.message.MessageRepository
 import com.codex.im.message.ImageUploadApi
 import com.codex.im.message.OkHttpImageUploadApi
 import com.codex.im.message.SeqGenerator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import com.codex.im.profile.MeScreen
 import com.codex.im.profile.MeViewModel
 import com.codex.im.profile.OkHttpAvatarUploadApi
@@ -96,6 +101,7 @@ class MainActivity : ComponentActivity() {
     private var connectionLifecycleManager: ConnectionLifecycleManager? = null
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var thumbnailDownloadScope: CoroutineScope? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -113,6 +119,9 @@ class MainActivity : ComponentActivity() {
         )
         connectionLifecycleManager = connection
         registerNetworkRecoveryCallback(connection)
+        val thumbnailCache = AndroidChatThumbnailCache(this)
+        val thumbnailDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        this.thumbnailDownloadScope = thumbnailDownloadScope
         val messageRepository = MessageRepository(
             messageDao = AndroidMessageDao(database),
             conversationDao = AndroidConversationDao(database),
@@ -121,7 +130,11 @@ class MainActivity : ComponentActivity() {
             messageIdGenerator = MessageIdGenerator(),
             seqGenerator = SeqGenerator(),
             transactionRunner = AndroidTransactionRunner(database),
-            thumbnailCache = AndroidChatThumbnailCache(this)
+            thumbnailCache = thumbnailCache,
+            thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
+                thumbnailCache = thumbnailCache,
+                scope = thumbnailDownloadScope
+            )
         )
         val profileRepository = ProfileRepository(
             userProfileDao = AndroidUserProfileDao(database),
@@ -159,6 +172,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         unregisterNetworkRecoveryCallback()
+        thumbnailDownloadScope?.cancel()
+        thumbnailDownloadScope = null
         super.onDestroy()
     }
 

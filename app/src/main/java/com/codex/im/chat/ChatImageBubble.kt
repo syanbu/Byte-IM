@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
@@ -38,7 +39,7 @@ fun ChatImageBubble(
         modifier = modifier
             .size(width = bubbleSize.widthDp.dp, height = bubbleSize.heightDp.dp)
             .clip(bubbleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(Color(0xFFE5E2E1))
             .combinedClickable(
                 onClick = {
                     if (message.localOriginalPath != null || message.imageUrl != null) {
@@ -67,12 +68,6 @@ fun ChatImageBubble(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
-            )
-        } else {
-            Text(
-                text = "[图片]",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         when (message.status) {

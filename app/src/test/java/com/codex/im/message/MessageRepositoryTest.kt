@@ -714,6 +714,57 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun incomingImageMessageEnqueuesThumbnailDownloadWithNormalPriority() {
+        val scheduler = RecordingThumbnailDownloadScheduler()
+        val fixture = Fixture(thumbnailDownloadScheduler = scheduler)
+
+        fixture.repository.handlePacket(incomingImagePacket(messageId = "remote-image-normal-priority"))
+
+        assertEquals(
+            listOf(
+                ThumbnailDownloadRequest(
+                    messageId = "remote-image-normal-priority",
+                    thumbnailUrl = "https://oss.example.com/thumb.jpg",
+                    priority = ThumbnailDownloadPriority.NORMAL
+                )
+            ),
+            scheduler.requests
+        )
+        assertEquals(null, fixture.messageDao.findByMessageId("remote-image-normal-priority")?.localThumbnailPath)
+    }
+
+    @Test
+    fun retryIncomingImageThumbnailEnqueuesHighPriorityDownloadAndCallbackUpdatesLocalPath() {
+        val scheduler = RecordingThumbnailDownloadScheduler()
+        val fixture = Fixture(thumbnailDownloadScheduler = scheduler)
+        fixture.repository.handlePacket(incomingImagePacket(messageId = "remote-image-high-priority"))
+
+        val accepted = fixture.repository.retryIncomingImageThumbnail("remote-image-high-priority")
+        scheduler.complete("remote-image-high-priority", "cache/thumb-high-priority.jpg")
+
+        assertEquals(true, accepted)
+        assertEquals(
+            listOf(
+                ThumbnailDownloadRequest(
+                    messageId = "remote-image-high-priority",
+                    thumbnailUrl = "https://oss.example.com/thumb.jpg",
+                    priority = ThumbnailDownloadPriority.NORMAL
+                ),
+                ThumbnailDownloadRequest(
+                    messageId = "remote-image-high-priority",
+                    thumbnailUrl = "https://oss.example.com/thumb.jpg",
+                    priority = ThumbnailDownloadPriority.HIGH
+                )
+            ),
+            scheduler.requests
+        )
+        assertEquals(
+            "cache/thumb-high-priority.jpg",
+            fixture.messageDao.findByMessageId("remote-image-high-priority")?.localThumbnailPath
+        )
+    }
+
+    @Test
     fun historyPageHidesIncomingImageMessageUntilThumbnailIsCached() {
         val thumbnailCache = FakeThumbnailCache(localPath = null)
         val fixture = Fixture(thumbnailCache = thumbnailCache)
@@ -987,7 +1038,8 @@ class MessageRepositoryTest {
     private class Fixture(
         transactionRunner: TransactionRunner? = null,
         events: MutableList<String> = mutableListOf(),
-        thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache
+        thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache,
+        thumbnailDownloadScheduler: ThumbnailDownloadScheduler = ImmediateThumbnailDownloadScheduler(thumbnailCache)
     ) {
         val events = events
         val messageDao = InMemoryMessageDao()
@@ -1002,8 +1054,38 @@ class MessageRepositoryTest {
             messageIdGenerator = MessageIdGenerator(startCounter = 1),
             seqGenerator = SeqGenerator(),
             transactionRunner = transactionRunner ?: TransactionRunner.immediate(),
-            thumbnailCache = thumbnailCache
+            thumbnailCache = thumbnailCache,
+            thumbnailDownloadScheduler = thumbnailDownloadScheduler
         )
+    }
+
+    private data class ThumbnailDownloadRequest(
+        val messageId: String,
+        val thumbnailUrl: String,
+        val priority: ThumbnailDownloadPriority
+    )
+
+    private class RecordingThumbnailDownloadScheduler : ThumbnailDownloadScheduler {
+        val requests = mutableListOf<ThumbnailDownloadRequest>()
+        private val callbacks = mutableMapOf<String, (String, String) -> Unit>()
+
+        override fun enqueue(
+            message: ChatMessage,
+            priority: ThumbnailDownloadPriority,
+            onCached: (messageId: String, localThumbnailPath: String) -> Unit
+        ): Boolean {
+            requests += ThumbnailDownloadRequest(
+                messageId = message.messageId,
+                thumbnailUrl = message.thumbnailUrl.orEmpty(),
+                priority = priority
+            )
+            callbacks[message.messageId] = onCached
+            return true
+        }
+
+        fun complete(messageId: String, localThumbnailPath: String) {
+            callbacks.getValue(messageId).invoke(messageId, localThumbnailPath)
+        }
     }
 
     private class FakeConnection(
