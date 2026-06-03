@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -336,32 +337,7 @@ private fun AuthenticatedImNavHost(
     }
 
     Scaffold(
-        containerColor = ByteImColors.AppBackground,
-        bottomBar = {
-            if (BottomNavigationSpec.topLevelItems.any { it.route == currentRoute }) {
-                NavigationBar(
-                    containerColor = ByteImColors.Surface,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.height(ByteImDimensions.BottomBarHeight)
-                ) {
-                    BottomNavigationSpec.topLevelItems.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentRoute == tab.route,
-                            onClick = {
-                                navController.navigateToTopLevelTab(tab.route)
-                            },
-                            label = { Text(tab.label) },
-                            icon = {
-                                BottomNavigationIcon(
-                                    spec = tab,
-                                    unreadCount = if (tab.route == BottomNavigationSpec.messages.route) unreadMessagesCount else 0
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-        }
+        containerColor = ByteImColors.AppBackground
     ) { innerPadding ->
         NavHost(
             navController = navController,
@@ -388,19 +364,29 @@ private fun AuthenticatedImNavHost(
                     )
                 }
                 val conversationState by conversationListViewModel.state.collectAsState()
-                ConversationListScreen(
-                    viewModel = conversationListViewModel,
-                    state = conversationState,
-                    unreadCount = unreadMessagesCount,
-                    onStartGroupChat = {
-                        navController.navigate(SelfHostedImRoute.GroupCreate.route) {
-                            launchSingleTop = true
+                Column(modifier = Modifier.fillMaxSize()) {
+                    ConversationListScreen(
+                        viewModel = conversationListViewModel,
+                        state = conversationState,
+                        unreadCount = unreadMessagesCount,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        onStartGroupChat = {
+                            navController.navigate(SelfHostedImRoute.GroupCreate.route) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenConversation = { conversationId ->
+                            SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
                         }
-                    },
-                    onOpenConversation = { conversationId ->
-                        SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
-                    }
-                )
+                    )
+                    TopLevelBottomBar(
+                        currentRoute = currentRoute,
+                        unreadMessagesCount = unreadMessagesCount,
+                        onNavigateToTab = { tabRoute ->
+                            navController.navigateToTopLevelTab(tabRoute)
+                        }
+                    )
+                }
                 TopLevelRouteBackHandler(
                     route = SelfHostedImRoute.Conversations.route,
                     currentRoute = currentRoute,
@@ -418,18 +404,28 @@ private fun AuthenticatedImNavHost(
                     )
                 }
                 val contactState by contactListViewModel.state.collectAsState()
-                ContactListScreen(
-                    viewModel = contactListViewModel,
-                    state = contactState,
-                    onStartGroupChat = {
-                        navController.navigate(SelfHostedImRoute.GroupCreate.route) {
-                            launchSingleTop = true
+                Column(modifier = Modifier.fillMaxSize()) {
+                    ContactListScreen(
+                        viewModel = contactListViewModel,
+                        state = contactState,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        onStartGroupChat = {
+                            navController.navigate(SelfHostedImRoute.GroupCreate.route) {
+                                launchSingleTop = true
+                            }
+                        },
+                        onOpenContact = { peerUserId ->
+                            SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)?.let(navController::navigateToChat)
                         }
-                    },
-                    onOpenContact = { peerUserId ->
-                        SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)?.let(navController::navigateToChat)
-                    }
-                )
+                    )
+                    TopLevelBottomBar(
+                        currentRoute = currentRoute,
+                        unreadMessagesCount = unreadMessagesCount,
+                        onNavigateToTab = { tabRoute ->
+                            navController.navigateToTopLevelTab(tabRoute)
+                        }
+                    )
+                }
                 TopLevelRouteBackHandler(
                     route = SelfHostedImRoute.Contacts.route,
                     currentRoute = currentRoute,
@@ -469,14 +465,24 @@ private fun AuthenticatedImNavHost(
                     )
                 }
                 val meState by meViewModel.state.collectAsState()
-                MeScreen(
-                    viewModel = meViewModel,
-                    state = meState,
-                    onMoveTaskToBack = {
-                        activity?.moveTaskToBack(true)
-                    },
-                    onLogout = onLogout
-                )
+                Column(modifier = Modifier.fillMaxSize()) {
+                    MeScreen(
+                        viewModel = meViewModel,
+                        state = meState,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        onMoveTaskToBack = {
+                            activity?.moveTaskToBack(true)
+                        },
+                        onLogout = onLogout
+                    )
+                    TopLevelBottomBar(
+                        currentRoute = currentRoute,
+                        unreadMessagesCount = unreadMessagesCount,
+                        onNavigateToTab = { tabRoute ->
+                            navController.navigateToTopLevelTab(tabRoute)
+                        }
+                    )
+                }
             }
 
             composable(route = SelfHostedImRoute.Chat.pattern) { chatBackStackEntry ->
@@ -548,6 +554,33 @@ private fun TopLevelRouteBackHandler(
 ) {
     BackHandler(enabled = currentRoute == route && TopLevelBackPolicy.shouldMoveTaskToBack(route)) {
         activity?.moveTaskToBack(true)
+    }
+}
+
+@Composable
+private fun TopLevelBottomBar(
+    currentRoute: String?,
+    unreadMessagesCount: Int,
+    onNavigateToTab: (String) -> Unit
+) {
+    NavigationBar(
+        containerColor = ByteImColors.Surface,
+        tonalElevation = 0.dp,
+        modifier = Modifier.height(ByteImDimensions.BottomBarHeight)
+    ) {
+        BottomNavigationSpec.topLevelItems.forEach { tab ->
+            NavigationBarItem(
+                selected = currentRoute == tab.route,
+                onClick = { onNavigateToTab(tab.route) },
+                label = { Text(tab.label) },
+                icon = {
+                    BottomNavigationIcon(
+                        spec = tab,
+                        unreadCount = if (tab.route == BottomNavigationSpec.messages.route) unreadMessagesCount else 0
+                    )
+                }
+            )
+        }
     }
 }
 

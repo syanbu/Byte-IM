@@ -74,7 +74,12 @@ fun ContactListScreen(
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 item {
                     ContactEntryBlock()
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .background(ByteImColors.AppBackground)
+                    )
                 }
                 items(state.items, key = { it.userId }) { item ->
                     ContactRow(
