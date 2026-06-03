@@ -55,7 +55,7 @@ Two new files in `app/src/main/res/drawable/`, each `28×28 dp`, single-color st
 - `ic_contact_new_friend.xml` — a stylized person silhouette with a `+` mark, indicating "add a new contact".
 - `ic_contact_group_chat.xml` — a stylized group-of-three-people silhouette, indicating "group chat".
 
-Both use `android:width="28dp"`, `android:height="28dp"`, `android:viewportWidth="28"`, `android:viewportHeight="28"`, and `android:strokeColor="#000000"` with no fill (mirroring the existing icon style). Tints are applied at the Composable level via `Icon(painter = ..., tint = ByteImColors.TextPrimary)`.
+Both use `android:width="28dp"`, `android:height="28dp"`, `android:viewportWidth="28"`, `android:viewportHeight="28"`, and `android:fillColor="#000000"` filled paths (silhouettes rather than outlines, so they read cleanly at 28dp against the `SurfaceLow` tile). Tints are applied at the Composable level via `Icon(painter = ..., tint = ByteImColors.TextPrimary)`.
 
 ### `ContactEntryItem`
 
