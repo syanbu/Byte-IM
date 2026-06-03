@@ -72,12 +72,23 @@ fun ContactListScreen(
         ContactsTopBar(onStartGroupChat = onStartGroupChat)
         ByteImListSurface(modifier = Modifier.weight(1f)) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                item {
+                    ContactEntryBlock()
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
                 items(state.items, key = { it.userId }) { item ->
                     ContactRow(
                         item = item,
                         onClick = { viewModel.openContact(item.userId) }
                     )
-                    HorizontalDivider(color = ByteImColors.Divider)
+                    HorizontalDivider(
+                        color = ByteImColors.Divider,
+                        modifier = Modifier.padding(
+                            start = ByteImDimensions.EdgePadding +
+                                ByteImDimensions.ListAvatarSize +
+                                ByteImDimensions.Gutter
+                        )
+                    )
                 }
             }
         }
