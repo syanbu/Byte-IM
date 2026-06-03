@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,10 +32,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.codex.im.R
 import com.codex.im.ui.AvatarImage
 import com.codex.im.ui.ByteImColors
 import com.codex.im.ui.ByteImDimensions
 import com.codex.im.ui.ByteImListSurface
+import com.codex.im.ui.ByteImShapes
 import com.codex.im.ui.ByteImTopBar
 import com.codex.im.ui.ConversationCreateMenu
 
@@ -165,4 +168,66 @@ private fun ContactRow(
             )
         }
     }
+}
+
+@Composable
+private fun ContactEntryItem(
+    iconResId: Int,
+    title: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ByteImDimensions.ListItemHeight)
+            .clickable(onClick = onClick)
+            .padding(horizontal = ByteImDimensions.EdgePadding),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(ByteImDimensions.ListAvatarSize)
+                .background(ByteImColors.SurfaceLow, ByteImShapes.Avatar),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(id = iconResId),
+                contentDescription = title,
+                tint = ByteImColors.TextPrimary,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = ByteImColors.TextPrimary,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun ContactEntryBlock() {
+    ContactEntryItem(
+        iconResId = R.drawable.ic_contact_new_friend,
+        title = "新的朋友",
+        onClick = {}
+    )
+    HorizontalDivider(
+        color = ByteImColors.Divider,
+        modifier = Modifier.padding(
+            start = ByteImDimensions.EdgePadding +
+                ByteImDimensions.ListAvatarSize +
+                ByteImDimensions.Gutter
+        )
+    )
+    ContactEntryItem(
+        iconResId = R.drawable.ic_contact_group_chat,
+        title = "群聊",
+        onClick = {}
+    )
 }
