@@ -118,6 +118,7 @@ private fun MessagesTopBar(
     ByteImTopBar(
         title = MessageTopBarTitlePolicy.titleForUnreadCount(unreadCount),
         centerTitle = true,
+        containerColor = ByteImColors.AppBackground,
         actions = listOf(
             {
                 // 搜索图标：当前为视觉占位，后续接搜索路由

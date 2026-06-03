@@ -70,7 +70,8 @@ fun ByteImTopBar(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     actions: List<@Composable () -> Unit> = emptyList(),
-    centerTitle: Boolean = false
+    centerTitle: Boolean = false,
+    containerColor: Color = ByteImColors.Surface
 ) {
     // 微信风格：标题以全宽居中，back / actions 用 Modifier.align 叠加在两侧，
     // 这样无论 back 和 actions 宽度是否相等，标题都落在屏幕中线上。
@@ -78,7 +79,7 @@ fun ByteImTopBar(
         modifier = modifier
             .fillMaxWidth()
             .height(ByteImDimensions.TopBarHeight)
-            .background(ByteImColors.Surface)
+            .background(containerColor)
             .padding(horizontal = ByteImDimensions.EdgePadding),
         contentAlignment = Alignment.Center
     ) {

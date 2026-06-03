@@ -103,6 +103,7 @@ private fun ContactsTopBar(
     ByteImTopBar(
         title = "通讯录",
         centerTitle = true,
+        containerColor = ByteImColors.AppBackground,
         actions = listOf(
             {
                 // 搜索图标：当前为视觉占位
