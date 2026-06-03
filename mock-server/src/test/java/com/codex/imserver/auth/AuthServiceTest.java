@@ -55,7 +55,9 @@ public class AuthServiceTest {
                         "13800138005",
                         "Syan",
                         "https://im-byte.oss-cn-shenzhen.aliyuncs.com/avatars/13800138005/2000.jpg",
-                        "avatars/13800138005/2000.jpg"
+                        "avatars/13800138005/2000.jpg",
+                        null,
+                        null
                 )
         ).getAsJsonObject();
         JsonObject data = updated.getAsJsonObject("data");
@@ -71,7 +73,7 @@ public class AuthServiceTest {
         UserStore store = new UserStore(tempDb());
         AuthService service = new AuthService(store, new PasswordHasher(new FixedSaltGenerator("fixed-salt")), fixedTokenService());
         service.register("13900139000", "P@ssw0rd");
-        service.updateProfile("13900139000", "Megumi", null, null);
+        service.updateProfile("13900139000", "Megumi", null, null, null, null);
 
         JsonObject login = JsonParser.parseString(service.login("13900139000", "P@ssw0rd")).getAsJsonObject();
         JsonObject data = login.getAsJsonObject("data");
@@ -87,7 +89,7 @@ public class AuthServiceTest {
         AuthService service = new AuthService(store, new PasswordHasher(new FixedSaltGenerator("fixed-salt")), fixedTokenService());
         service.register("13800138006", "P@ssw0rd");
         service.register("13900139006", "P@ssw0rd");
-        service.updateProfile("13900139006", "Megumi", null, null);
+        service.updateProfile("13900139006", "Megumi", null, null, null, null);
 
         JsonObject result = JsonParser.parseString(service.profiles(java.util.List.of("13800138006", "13900139006", "13700137006"))).getAsJsonObject();
 

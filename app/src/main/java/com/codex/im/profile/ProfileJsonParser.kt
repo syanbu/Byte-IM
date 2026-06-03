@@ -1,5 +1,6 @@
 package com.codex.im.profile
 
+import com.codex.im.storage.Gender
 import com.codex.im.storage.UserProfile
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
@@ -46,7 +47,9 @@ object ProfileJsonParser {
             nickname = optionalString("nickname") ?: optionalString("username") ?: userId,
             avatarUrl = optionalString("avatarUrl") ?: optionalString("avatar_url"),
             avatarUpdatedAt = optionalLong("avatarUpdatedAt") ?: optionalLong("avatar_updated_at") ?: 0L,
-            updatedAt = optionalLong("updatedAt") ?: optionalLong("updated_at") ?: 0L
+            updatedAt = optionalLong("updatedAt") ?: optionalLong("updated_at") ?: 0L,
+            gender = optionalString("gender")?.let { runCatching { Gender.valueOf(it) }.getOrNull() },
+            signature = optionalString("signature")
         )
     }
 

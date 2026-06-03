@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -148,6 +149,25 @@ fun ChatScreen(
         }
     }
 
+    // Track which message is at the visual top of the LazyColumn and whether
+    // we've already scrolled as far up as possible. With reverseLayout = true,
+    // the LazyColumn lays out items in reverse data order, so the visually
+    // topmost item has the highest data index. The long-press action bar
+    // (复制 / 撤回) is normally rendered ABOVE the bubble, but if the bubble
+    // is at the very top of the chat area the action bar would overflow that
+    // edge. When that happens we render the action bar BELOW the bubble.
+    val topVisibleDataIndex by remember {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
+        }
+    }
+    val isAtLazyColumnTop by remember {
+        // With reverseLayout = true, canScrollForward means "can scroll up
+        // visually" (towards older messages). At the top of the LazyColumn
+        // the user can no longer scroll up, so canScrollForward = false.
+        derivedStateOf { !listState.canScrollForward }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -186,7 +206,16 @@ fun ChatScreen(
                 .padding(horizontal = ByteImDimensions.EdgePadding),
             reverseLayout = true
         ) {
-            items(state.messages, key = { it.messageId }) { message ->
+            itemsIndexed(state.messages, key = { _, msg -> msg.messageId }) { index, message ->
+                // A message is "near the top" if the LazyColumn has scrolled
+                // all the way up AND this message is the topmost visible item
+                // (or the one directly below it, with a 1-item tolerance for
+                // bubbles whose action bar would otherwise overlap the row
+                // above). For those messages ChatMessageContent flips the
+                // action bar to render BELOW the bubble instead of above.
+                val isNearTop = isAtLazyColumnTop &&
+                    topVisibleDataIndex >= 0 &&
+                    index >= topVisibleDataIndex - 1
                 when (ChatDisplayPolicy.rowKind(message)) {
                     ChatMessageRowKind.CENTERED_NOTICE -> RecalledMessageNotice(
                         text = ChatDisplayPolicy.recalledMessageText(
@@ -205,6 +234,7 @@ fun ChatScreen(
                         peerReadUpToServerSeq = state.peerReadUpToServerSeq,
                         mentionMembers = state.mentionMembers,
                         showActions = activeActionMessageId == message.messageId,
+                        isNearTop = isNearTop,
                         onOpenImagePreview = { previewMessage = it },
                         onOpenActions = { activeActionMessageId = message.messageId },
                         onDismissActions = { activeActionMessageId = null },
@@ -483,6 +513,7 @@ private fun ChatMessageRow(
     peerReadUpToServerSeq: Long?,
     mentionMembers: List<GroupMember>,
     showActions: Boolean,
+    isNearTop: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onOpenActions: () -> Unit,
     onDismissActions: () -> Unit,
@@ -500,12 +531,17 @@ private fun ChatMessageRow(
         currentUserId = currentUserId,
         senderProfile = senderProfile
     )
+    // Use Bottom alignment so the avatar stays glued to the bubble line.
+    // When the long-press action bar (复制 / 撤回) appears above the bubble,
+    // Top alignment would pull the avatar upward to match the action bar's top edge,
+    // breaking the avatar-bubble row layout. Bottom keeps the avatar on the
+    // same horizontal line as the bubble regardless of the action bar's height.
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
         horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Top
+        verticalAlignment = Alignment.Bottom
     ) {
         if (!outgoing) {
             AvatarImage(
@@ -521,6 +557,7 @@ private fun ChatMessageRow(
             peerReadUpToServerSeq = peerReadUpToServerSeq,
             mentionMembers = mentionMembers,
             showActions = showActions,
+            isNearTop = isNearTop,
             onOpenImagePreview = onOpenImagePreview,
             onOpenActions = onOpenActions,
             onDismissActions = onDismissActions,
@@ -548,6 +585,7 @@ private fun ChatMessageContent(
     peerReadUpToServerSeq: Long?,
     mentionMembers: List<GroupMember>,
     showActions: Boolean,
+    isNearTop: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onOpenActions: () -> Unit,
     onDismissActions: () -> Unit,
@@ -557,34 +595,66 @@ private fun ChatMessageContent(
     modifier: Modifier = Modifier
 ) {
     val actions = ChatDisplayPolicy.messageActions(message, currentUserId, now = System.currentTimeMillis())
+    val hasActions = showActions && actions.isNotEmpty()
     Column(
         modifier = modifier,
         horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start
     ) {
-        if (showActions && actions.isNotEmpty()) {
-            ChatMessageActionBar(
-                actions = actions,
-                onCopy = {
-                    onDismissActions()
-                    onCopyText(message.content)
-                },
-                onRecall = {
-                    onDismissActions()
-                    onRecall(message)
-                },
-                modifier = Modifier.padding(bottom = 4.dp)
+        // When the bubble is near the top of the chat area, the long-press
+        // action bar would otherwise overflow above the LazyColumn's top
+        // edge. Flip the order so the action bar appears BELOW the bubble
+        // in that case, keeping the avatar and bubble on the same row.
+        if (isNearTop) {
+            ChatBubbleLine(
+                message = message,
+                outgoing = outgoing,
+                peerReadUpToServerSeq = peerReadUpToServerSeq,
+                mentionMembers = mentionMembers,
+                onOpenImagePreview = onOpenImagePreview,
+                onRetryImage = onRetryImage,
+                onLongPressImage = onOpenActions,
+                onLongPressText = onOpenActions
+            )
+            if (hasActions) {
+                ChatMessageActionBar(
+                    actions = actions,
+                    onCopy = {
+                        onDismissActions()
+                        onCopyText(message.content)
+                    },
+                    onRecall = {
+                        onDismissActions()
+                        onRecall(message)
+                    },
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        } else {
+            if (hasActions) {
+                ChatMessageActionBar(
+                    actions = actions,
+                    onCopy = {
+                        onDismissActions()
+                        onCopyText(message.content)
+                    },
+                    onRecall = {
+                        onDismissActions()
+                        onRecall(message)
+                    },
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+            ChatBubbleLine(
+                message = message,
+                outgoing = outgoing,
+                peerReadUpToServerSeq = peerReadUpToServerSeq,
+                mentionMembers = mentionMembers,
+                onOpenImagePreview = onOpenImagePreview,
+                onRetryImage = onRetryImage,
+                onLongPressImage = onOpenActions,
+                onLongPressText = onOpenActions
             )
         }
-        ChatBubbleLine(
-            message = message,
-            outgoing = outgoing,
-            peerReadUpToServerSeq = peerReadUpToServerSeq,
-            mentionMembers = mentionMembers,
-            onOpenImagePreview = onOpenImagePreview,
-            onRetryImage = onRetryImage,
-            onLongPressImage = onOpenActions,
-            onLongPressText = onOpenActions
-        )
     }
 }
 

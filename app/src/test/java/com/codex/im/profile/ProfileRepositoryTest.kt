@@ -60,9 +60,11 @@ class ProfileRepositoryTest {
             accessToken: String,
             nickname: String,
             avatarUrl: String?,
-            avatarObjectKey: String?
+            avatarObjectKey: String?,
+            gender: com.codex.im.storage.Gender?,
+            signature: String?
         ): ProfileResult {
-            return ProfileResult.Success(profile.copy(nickname = nickname, avatarUrl = avatarUrl))
+            return ProfileResult.Success(profile.copy(nickname = nickname, avatarUrl = avatarUrl, gender = gender, signature = signature))
         }
     }
 }

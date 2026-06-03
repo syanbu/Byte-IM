@@ -145,7 +145,9 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
                             authenticatedPhone.get(),
                             readString(json, "nickname", ""),
                             readNullableString(json, "avatarUrl"),
-                            readNullableString(json, "avatarObjectKey")
+                            readNullableString(json, "avatarObjectKey"),
+                            readNullableString(json, "gender"),
+                            readNullableString(json, "signature")
                     );
                     writeJson(context, request, HttpResponseStatus.OK, response);
                     return;

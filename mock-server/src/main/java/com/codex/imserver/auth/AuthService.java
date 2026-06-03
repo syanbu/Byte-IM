@@ -63,7 +63,9 @@ public final class AuthService {
                 null,
                 0L,
                 now,
-                now
+                now,
+                null,
+                null
         ));
         if (!inserted) {
             return failure(409, "User already registered");
@@ -146,19 +148,23 @@ public final class AuthService {
         return root.toString();
     }
 
-    public String updateProfile(String phone, String nickname, String avatarUrl, String avatarObjectKey) {
+    public String updateProfile(String phone, String nickname, String avatarUrl, String avatarObjectKey, String gender, String signature) {
         ImServerLogger.log(
-                "[IM] PROFILE_UPDATE_REQUEST userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s",
+                "[IM] PROFILE_UPDATE_REQUEST userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s gender=%s signature=%s",
                 phone,
                 nickname,
                 avatarUrl,
-                avatarObjectKey
+                avatarObjectKey,
+                gender,
+                signature
         );
         Optional<UserRecord> record = userStore.updateProfile(
                 phone,
                 nickname,
                 blankToNull(avatarUrl),
                 blankToNull(avatarObjectKey),
+                blankToNull(gender),
+                blankToNull(signature),
                 tokenService.currentTimeMillis()
         );
         if (record.isEmpty()) {
@@ -167,11 +173,13 @@ public final class AuthService {
         }
         UserRecord updated = record.get();
         ImServerLogger.log(
-                "[IM] PROFILE_UPDATED userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s updatedAt=%d",
+                "[IM] PROFILE_UPDATED userId=%s nickname=%s avatarUrl=%s avatarObjectKey=%s gender=%s signature=%s updatedAt=%d",
                 updated.phone(),
                 updated.nickname(),
                 updated.avatarUrl(),
                 updated.avatarObjectKey(),
+                updated.gender(),
+                updated.signature(),
                 updated.updatedAt()
         );
         JsonObject root = new JsonObject();
@@ -191,7 +199,9 @@ public final class AuthService {
                 null,
                 0L,
                 tokenService.currentTimeMillis(),
-                tokenService.currentTimeMillis()
+                tokenService.currentTimeMillis(),
+                null,
+                null
         ));
         JsonObject data = new JsonObject();
         data.addProperty("accessToken", accessToken.token());
@@ -249,6 +259,16 @@ public final class AuthService {
         data.addProperty("avatarUpdatedAt", record.avatarUpdatedAt());
         data.addProperty("profileUpdatedAt", record.updatedAt());
         data.addProperty("updatedAt", record.updatedAt());
+        if (record.gender() == null) {
+            data.add("gender", com.google.gson.JsonNull.INSTANCE);
+        } else {
+            data.addProperty("gender", record.gender());
+        }
+        if (record.signature() == null) {
+            data.add("signature", com.google.gson.JsonNull.INSTANCE);
+        } else {
+            data.addProperty("signature", record.signature());
+        }
     }
 
     private String blankToNull(String value) {

@@ -1,6 +1,7 @@
 package com.codex.im.profile
 
 import com.codex.im.auth.AuthSession
+import com.codex.im.storage.Gender
 import com.codex.im.storage.InMemoryUserProfileDao
 import com.codex.im.storage.UserProfile
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -10,6 +11,8 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,6 +75,25 @@ class MeViewModelTest {
 
         assertFalse(fixture.viewModel.state.value.isEditing)
         assertEquals("Syan", fixture.viewModel.state.value.profile?.nickname)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun saveProfileIsNoOpWhenDraftEqualsCurrentNickname() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile("13800138000", "13800138000", "Syan", "https://example.com/me.jpg", 1L, 1L)
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditing()
+        // Don't change the draft; current profile.nickname is "Syan" and draft is also "Syan"
+        val before = api.updateCallCount
+
+        fixture.viewModel.saveProfile()
+        runCurrent()
+
+        assertEquals(before, api.updateCallCount)
     }
 
     @Test
@@ -175,6 +197,272 @@ class MeViewModelTest {
         assertEquals("fresh-token", api.lastUpdateAccessToken)
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startEditingGenderCopiesCurrentGenderIntoDraft() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = null,
+                avatarUpdatedAt = 1L,
+                updatedAt = 1L,
+                gender = Gender.MALE,
+                signature = null
+            )
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.startEditingGender()
+
+        assertEquals(Gender.MALE, fixture.viewModel.state.value.draftGender)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun updateDraftGenderChangesDraftOnly() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = null,
+                avatarUpdatedAt = 1L,
+                updatedAt = 1L,
+                gender = Gender.MALE,
+                signature = null
+            )
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditingGender()
+
+        fixture.viewModel.updateDraftGender(Gender.FEMALE)
+
+        assertEquals(Gender.FEMALE, fixture.viewModel.state.value.draftGender)
+        // Profile field stays unchanged until save
+        assertEquals(Gender.MALE, fixture.viewModel.state.value.profile?.gender)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun saveGenderUpdatesProfileAndClearsDraft() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = "https://example.com/me.jpg",
+                avatarUpdatedAt = 1L,
+                updatedAt = 1L,
+                gender = Gender.MALE,
+                signature = null
+            ),
+            updatedProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = "https://example.com/me.jpg",
+                avatarUpdatedAt = 1L,
+                updatedAt = 2L,
+                gender = Gender.FEMALE,
+                signature = null
+            )
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditingGender()
+        fixture.viewModel.updateDraftGender(Gender.FEMALE)
+
+        fixture.viewModel.saveGender()
+        runCurrent()
+
+        assertEquals(Gender.FEMALE, fixture.viewModel.state.value.profile?.gender)
+        assertNull(fixture.viewModel.state.value.draftGender)
+        assertEquals(Gender.FEMALE, api.lastGender)
+        assertEquals("Syan", api.lastNickname)
+        assertEquals("https://example.com/me.jpg", api.lastAvatarUrl)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun saveGenderIsNoOpWhenUnchanged() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = null,
+                avatarUpdatedAt = 1L,
+                updatedAt = 1L,
+                gender = null,
+                signature = null
+            )
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditingGender()
+        // Don't change the draft; current profile.gender is also null
+        val before = api.updateCallCount
+
+        fixture.viewModel.saveGender()
+        runCurrent()
+
+        assertEquals(before, api.updateCallCount)
+        assertNull(fixture.viewModel.state.value.draftGender)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startEditingSignatureCopiesCurrentSignatureIntoDraft() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = null,
+                avatarUpdatedAt = 1L,
+                updatedAt = 1L,
+                gender = null,
+                signature = "existing sig"
+            )
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.startEditingSignature()
+
+        assertEquals("existing sig", fixture.viewModel.state.value.draftSignature)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun updateDraftSignatureTruncatesAtMaxLength() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditingSignature()
+
+        fixture.viewModel.updateDraftSignature("a".repeat(50))
+
+        val max = MeDisplayPolicy.signatureMaxLength
+        assertEquals(max, fixture.viewModel.state.value.draftSignature.length)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun saveSignatureUpdatesProfileAndClearsDraft() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = "https://example.com/me.jpg",
+                avatarUpdatedAt = 1L,
+                updatedAt = 1L,
+                gender = null,
+                signature = "old"
+            ),
+            updatedProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = "https://example.com/me.jpg",
+                avatarUpdatedAt = 1L,
+                updatedAt = 2L,
+                gender = null,
+                signature = "new sig"
+            )
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditingSignature()
+        fixture.viewModel.updateDraftSignature("new sig")
+
+        fixture.viewModel.saveSignature()
+        runCurrent()
+
+        assertEquals("new sig", fixture.viewModel.state.value.profile?.signature)
+        assertEquals("", fixture.viewModel.state.value.draftSignature)
+        assertEquals("new sig", api.lastSignature)
+        assertEquals("Syan", api.lastNickname)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun saveSignatureIsNoOpWhenUnchanged() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = null,
+                avatarUpdatedAt = 1L,
+                updatedAt = 1L,
+                gender = null,
+                signature = "same"
+            )
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditingSignature()
+        // Don't change the draft
+        val before = api.updateCallCount
+
+        fixture.viewModel.saveSignature()
+        runCurrent()
+
+        assertEquals(before, api.updateCallCount)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun saveSignatureClearsServerSideWhenDraftIsBlank() = runTest {
+        val api = FakeProfileApi(
+            currentProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = null,
+                avatarUpdatedAt = 1L,
+                updatedAt = 1L,
+                gender = null,
+                signature = "old"
+            ),
+            updatedProfile = UserProfile(
+                userId = "13800138000",
+                phone = "13800138000",
+                nickname = "Syan",
+                avatarUrl = null,
+                avatarUpdatedAt = 1L,
+                updatedAt = 2L,
+                gender = null,
+                signature = null
+            )
+        )
+        val fixture = Fixture(this, profileApi = api)
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.startEditingSignature()
+        fixture.viewModel.updateDraftSignature("")
+
+        fixture.viewModel.saveSignature()
+        runCurrent()
+
+        assertNotNull(api.lastSignature)
+        assertEquals("", api.lastSignature)
+        assertNull(fixture.viewModel.state.value.profile?.signature)
+    }
+
     private class Fixture(
         scope: TestScope,
         profileApi: FakeProfileApi = FakeProfileApi(),
@@ -226,6 +514,9 @@ class MeViewModelTest {
         var lastAvatarUrl: String? = null
         var lastAvatarObjectKey: String? = null
         var lastUpdateAccessToken: String? = null
+        var lastGender: Gender? = null
+        var lastSignature: String? = null
+        var updateCallCount: Int = 0
 
         override suspend fun me(accessToken: String): ProfileResult {
             return ProfileResult.Success(currentProfile)
@@ -241,12 +532,17 @@ class MeViewModelTest {
             accessToken: String,
             nickname: String,
             avatarUrl: String?,
-            avatarObjectKey: String?
+            avatarObjectKey: String?,
+            gender: Gender?,
+            signature: String?
         ): ProfileResult {
+            updateCallCount++
             lastUpdateAccessToken = accessToken
             lastNickname = nickname
             lastAvatarUrl = avatarUrl
             lastAvatarObjectKey = avatarObjectKey
+            lastGender = gender
+            lastSignature = signature
             return ProfileResult.Success(updatedProfile)
         }
     }

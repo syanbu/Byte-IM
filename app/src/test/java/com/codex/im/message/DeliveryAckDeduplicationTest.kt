@@ -125,7 +125,9 @@ class DeliveryAckDeduplicationTest {
             accessToken: String,
             nickname: String,
             avatarUrl: String?,
-            avatarObjectKey: String?
+            avatarObjectKey: String?,
+            gender: com.codex.im.storage.Gender?,
+            signature: String?
         ): ProfileResult = ProfileResult.Failure("unused")
     }
 

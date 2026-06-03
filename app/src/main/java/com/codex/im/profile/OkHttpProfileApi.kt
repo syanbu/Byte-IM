@@ -1,5 +1,6 @@
 package com.codex.im.profile
 
+import com.codex.im.storage.Gender
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -48,17 +49,21 @@ class OkHttpProfileApi(
         accessToken: String,
         nickname: String,
         avatarUrl: String?,
-        avatarObjectKey: String?
+        avatarObjectKey: String?,
+        gender: Gender?,
+        signature: String?
     ): ProfileResult {
         return withContext(Dispatchers.IO) {
             val avatarUrlJson = avatarUrl?.let { "\"${it.escapeJson()}\"" } ?: "null"
             val avatarObjectKeyJson = avatarObjectKey?.let { "\"${it.escapeJson()}\"" } ?: "null"
+            val genderJson = gender?.let { "\"${it.name.escapeJson()}\"" } ?: "null"
+            val signatureJson = signature?.let { "\"${it.escapeJson()}\"" } ?: "null"
             val request = Request.Builder()
                 .url(baseUrl.trimEnd('/') + "/users/me")
                 .header("Authorization", "Bearer $accessToken")
                 .put(
                     """
-                    {"nickname":"${nickname.escapeJson()}","avatarUrl":$avatarUrlJson,"avatarObjectKey":$avatarObjectKeyJson}
+                    {"nickname":"${nickname.escapeJson()}","avatarUrl":$avatarUrlJson,"avatarObjectKey":$avatarObjectKeyJson,"gender":$genderJson,"signature":$signatureJson}
                     """.trimIndent().toRequestBody(JSON)
                 )
                 .build()

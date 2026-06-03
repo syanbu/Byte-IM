@@ -2,6 +2,7 @@ package com.codex.im.profile
 
 import com.codex.im.auth.AuthSession
 import com.codex.im.auth.ValidSessionProvider
+import com.codex.im.storage.Gender
 import com.codex.im.storage.UserProfile
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +20,8 @@ data class MeUiState(
     val isEditing: Boolean = false,
     val isSaving: Boolean = false,
     val draftNickname: String = "",
+    val draftGender: Gender? = null,
+    val draftSignature: String = "",
     val errorMessage: String? = null
 )
 
@@ -89,15 +92,125 @@ class MeViewModel(
             isEditing = false,
             isSaving = false,
             draftNickname = "",
+            draftGender = null,
+            draftSignature = "",
             errorMessage = null
         )
     }
 
+    fun startEditingGender() {
+        val profile = mutableState.value.profile ?: profileRepository.bootstrapSession(session)
+        mutableState.value = mutableState.value.copy(
+            profile = profile,
+            draftGender = profile.gender,
+            errorMessage = null
+        )
+    }
+
+    fun updateDraftGender(gender: Gender) {
+        mutableState.value = mutableState.value.copy(draftGender = gender)
+    }
+
+    fun saveGender() {
+        val current = mutableState.value
+        val profile = current.profile ?: return
+        val gender = current.draftGender
+        if (gender == profile.gender) {
+            // No-op when unchanged; UI treats as success
+            return
+        }
+        mutableState.value = current.copy(isSaving = true, errorMessage = null)
+        scope.launch(dispatcher) {
+            val validSession = validSessionProvider()
+            if (validSession == null) {
+                mutableState.value = mutableState.value.copy(
+                    isSaving = false,
+                    errorMessage = "登录已过期，请重新登录"
+                )
+                return@launch
+            }
+            val updated = profileRepository.updateMe(
+                session = validSession,
+                nickname = profile.nickname,
+                avatarUrl = profile.avatarUrl,
+                avatarObjectKey = null,
+                gender = gender
+            )
+            handleUpdateResult(updated)
+        }
+    }
+
+    fun startEditingSignature() {
+        val profile = mutableState.value.profile ?: profileRepository.bootstrapSession(session)
+        mutableState.value = mutableState.value.copy(
+            profile = profile,
+            draftSignature = profile.signature.orEmpty(),
+            errorMessage = null
+        )
+    }
+
+    fun updateDraftSignature(value: String) {
+        val maxLength = MeDisplayPolicy.signatureMaxLength
+        val truncated = if (value.length > maxLength) value.substring(0, maxLength) else value
+        mutableState.value = mutableState.value.copy(draftSignature = truncated)
+    }
+
+    fun saveSignature() {
+        val current = mutableState.value
+        val profile = current.profile ?: return
+        val signature = current.draftSignature
+        val currentSignature = profile.signature.orEmpty()
+        if (signature == currentSignature) {
+            return
+        }
+        mutableState.value = current.copy(isSaving = true, errorMessage = null)
+        scope.launch(dispatcher) {
+            val validSession = validSessionProvider()
+            if (validSession == null) {
+                mutableState.value = mutableState.value.copy(
+                    isSaving = false,
+                    errorMessage = "登录已过期，请重新登录"
+                )
+                return@launch
+            }
+            val updated = profileRepository.updateMe(
+                session = validSession,
+                nickname = profile.nickname,
+                avatarUrl = profile.avatarUrl,
+                avatarObjectKey = null,
+                signature = signature.ifBlank { "" }
+            )
+            handleUpdateResult(updated)
+        }
+    }
+
+    private fun handleUpdateResult(updated: UserProfile?) {
+        if (updated == null) {
+            mutableState.value = mutableState.value.copy(
+                isSaving = false,
+                errorMessage = "更新资料失败"
+            )
+        } else {
+            mutableState.value = mutableState.value.copy(
+                profile = updated,
+                isSaving = false,
+                draftGender = null,
+                draftSignature = "",
+                errorMessage = null
+            )
+        }
+    }
+
     fun saveProfile() {
         val current = mutableState.value
+        val profile = current.profile
         val nickname = current.draftNickname.trim()
         if (nickname.isEmpty()) {
             mutableState.value = current.copy(errorMessage = "昵称不能为空")
+            return
+        }
+        if (profile != null && nickname == profile.nickname && selectedAvatarBytes == null) {
+            // No-op when nickname and avatar are both unchanged
             return
         }
         saveProfile(nickname)

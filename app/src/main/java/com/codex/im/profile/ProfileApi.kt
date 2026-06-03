@@ -1,5 +1,6 @@
 package com.codex.im.profile
 
+import com.codex.im.storage.Gender
 import com.codex.im.storage.UserProfile
 
 interface ProfileApi {
@@ -13,7 +14,9 @@ interface ProfileApi {
         accessToken: String,
         nickname: String,
         avatarUrl: String?,
-        avatarObjectKey: String?
+        avatarObjectKey: String?,
+        gender: Gender?,
+        signature: String?
     ): ProfileResult
 }
 

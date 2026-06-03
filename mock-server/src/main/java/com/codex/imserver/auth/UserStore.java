@@ -35,8 +35,8 @@ public final class UserStore {
                      """
                      INSERT OR IGNORE INTO users(
                        phone, salt, password_hash, nickname, avatar_url, avatar_object_key,
-                       avatar_updated_at, updated_at, created_at
-                     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       avatar_updated_at, updated_at, created_at, gender, signature
+                     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      """
              )) {
             statement.setString(1, record.phone());
@@ -48,6 +48,8 @@ public final class UserStore {
             statement.setLong(7, record.avatarUpdatedAt());
             statement.setLong(8, record.updatedAt());
             statement.setLong(9, record.createdAt());
+            statement.setString(10, record.gender());
+            statement.setString(11, record.signature());
             return statement.executeUpdate() == 1;
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to insert user", error);
@@ -59,7 +61,7 @@ public final class UserStore {
              PreparedStatement statement = connection.prepareStatement(
                      """
                      SELECT phone, salt, password_hash, nickname, avatar_url, avatar_object_key,
-                            avatar_updated_at, updated_at, created_at
+                            avatar_updated_at, updated_at, created_at, gender, signature
                      FROM users
                      WHERE phone = ?
                      """
@@ -84,12 +86,14 @@ public final class UserStore {
         return records;
     }
 
-    public synchronized Optional<UserRecord> updateProfile(String phone, String nickname, String avatarUrl, String avatarObjectKey, long nowMillis) {
+    public synchronized Optional<UserRecord> updateProfile(String phone, String nickname, String avatarUrl, String avatarObjectKey, String gender, String signature, long nowMillis) {
         Optional<UserRecord> current = findByPhone(phone);
         if (current.isEmpty()) {
             return Optional.empty();
         }
         String nextNickname = nickname == null || nickname.isBlank() ? current.get().nickname() : nickname.trim();
+        String nextGender = gender == null ? current.get().gender() : gender;
+        String nextSignature = signature == null ? current.get().signature() : signature;
         long avatarUpdatedAt = avatarUrl == null || avatarUrl.equals(current.get().avatarUrl())
                 ? current.get().avatarUpdatedAt()
                 : nowMillis;
@@ -97,7 +101,8 @@ public final class UserStore {
              PreparedStatement statement = connection.prepareStatement(
                      """
                      UPDATE users
-                     SET nickname = ?, avatar_url = ?, avatar_object_key = ?, avatar_updated_at = ?, updated_at = ?
+                     SET nickname = ?, avatar_url = ?, avatar_object_key = ?, avatar_updated_at = ?, updated_at = ?,
+                         gender = ?, signature = ?
                      WHERE phone = ?
                      """
              )) {
@@ -106,7 +111,9 @@ public final class UserStore {
             statement.setString(3, avatarObjectKey);
             statement.setLong(4, avatarUpdatedAt);
             statement.setLong(5, nowMillis);
-            statement.setString(6, phone);
+            statement.setString(6, nextGender);
+            statement.setString(7, nextSignature);
+            statement.setString(8, phone);
             statement.executeUpdate();
             return findByPhone(phone);
         } catch (SQLException error) {
@@ -219,7 +226,9 @@ public final class UserStore {
                        avatar_object_key TEXT,
                        avatar_updated_at BIGINT NOT NULL DEFAULT 0,
                        updated_at BIGINT NOT NULL DEFAULT 0,
-                       created_at BIGINT NOT NULL
+                       created_at BIGINT NOT NULL,
+                       gender TEXT,
+                       signature TEXT
                      )
                      """
              )) {
@@ -264,7 +273,9 @@ public final class UserStore {
                 resultSet.getString("avatar_object_key"),
                 resultSet.getLong("avatar_updated_at"),
                 updatedAt == 0L ? createdAt : updatedAt,
-                createdAt
+                createdAt,
+                resultSet.getString("gender"),
+                resultSet.getString("signature")
         );
     }
 
@@ -281,6 +292,8 @@ public final class UserStore {
         addColumnIfMissing(connection, columns, "avatar_object_key", "ALTER TABLE users ADD COLUMN avatar_object_key TEXT");
         addColumnIfMissing(connection, columns, "avatar_updated_at", "ALTER TABLE users ADD COLUMN avatar_updated_at BIGINT NOT NULL DEFAULT 0");
         addColumnIfMissing(connection, columns, "updated_at", "ALTER TABLE users ADD COLUMN updated_at BIGINT NOT NULL DEFAULT 0");
+        addColumnIfMissing(connection, columns, "gender", "ALTER TABLE users ADD COLUMN gender TEXT");
+        addColumnIfMissing(connection, columns, "signature", "ALTER TABLE users ADD COLUMN signature TEXT");
         try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE users SET nickname = phone WHERE nickname IS NULL OR nickname = ''"
         )) {

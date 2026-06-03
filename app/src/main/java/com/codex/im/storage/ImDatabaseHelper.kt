@@ -101,7 +101,9 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
               nickname TEXT NOT NULL,
               avatar_url TEXT,
               avatar_updated_at INTEGER NOT NULL,
-              updated_at INTEGER NOT NULL
+              updated_at INTEGER NOT NULL,
+              gender TEXT,
+              signature TEXT
             )
             """.trimIndent()
         )
@@ -155,6 +157,6 @@ class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NA
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 6
+        const val DATABASE_VERSION = 7
     }
 }

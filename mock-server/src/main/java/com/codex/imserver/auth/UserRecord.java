@@ -9,9 +9,11 @@ public record UserRecord(
         String avatarObjectKey,
         long avatarUpdatedAt,
         long updatedAt,
-        long createdAt
+        long createdAt,
+        String gender,
+        String signature
 ) {
     public UserRecord(String phone, String salt, String passwordHash, long createdAt) {
-        this(phone, salt, passwordHash, phone, null, null, 0L, createdAt, createdAt);
+        this(phone, salt, passwordHash, phone, null, null, 0L, createdAt, createdAt, null, null);
     }
 }

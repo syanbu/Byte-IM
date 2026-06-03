@@ -49,18 +49,24 @@ class AndroidUserProfileDao(private val database: SQLiteDatabase) : UserProfileD
             if (avatarUrl == null) putNull("avatar_url") else put("avatar_url", avatarUrl)
             put("avatar_updated_at", avatarUpdatedAt)
             put("updated_at", updatedAt)
+            if (gender == null) putNull("gender") else put("gender", gender.name)
+            if (signature == null) putNull("signature") else put("signature", signature)
         }
     }
 
     private fun Cursor.toUserProfile(): UserProfile {
         val avatarUrlIndex = getColumnIndexOrThrow("avatar_url")
+        val genderIndex = getColumnIndexOrThrow("gender")
+        val signatureIndex = getColumnIndexOrThrow("signature")
         return UserProfile(
             userId = getString(getColumnIndexOrThrow("user_id")),
             phone = getString(getColumnIndexOrThrow("phone")),
             nickname = getString(getColumnIndexOrThrow("nickname")),
             avatarUrl = if (isNull(avatarUrlIndex)) null else getString(avatarUrlIndex),
             avatarUpdatedAt = getLong(getColumnIndexOrThrow("avatar_updated_at")),
-            updatedAt = getLong(getColumnIndexOrThrow("updated_at"))
+            updatedAt = getLong(getColumnIndexOrThrow("updated_at")),
+            gender = if (isNull(genderIndex)) null else runCatching { Gender.valueOf(getString(genderIndex)) }.getOrNull(),
+            signature = if (isNull(signatureIndex)) null else getString(signatureIndex)
         )
     }
 }

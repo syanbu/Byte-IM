@@ -1,6 +1,7 @@
 package com.codex.im.profile
 
 import com.codex.im.auth.AuthSession
+import com.codex.im.storage.Gender
 import com.codex.im.storage.UserProfile
 import com.codex.im.storage.UserProfileDao
 
@@ -57,9 +58,11 @@ class ProfileRepository(
         session: AuthSession,
         nickname: String,
         avatarUrl: String?,
-        avatarObjectKey: String?
+        avatarObjectKey: String?,
+        gender: Gender? = null,
+        signature: String? = null
     ): UserProfile? {
-        return when (val result = profileApi.updateMe(session.accessToken, nickname, avatarUrl, avatarObjectKey)) {
+        return when (val result = profileApi.updateMe(session.accessToken, nickname, avatarUrl, avatarObjectKey, gender, signature)) {
             is ProfileResult.Success -> {
                 userProfileDao.upsert(result.profile)
                 result.profile
@@ -75,7 +78,9 @@ class ProfileRepository(
             nickname = nickname,
             avatarUrl = avatarUrl,
             avatarUpdatedAt = avatarUpdatedAt,
-            updatedAt = profileUpdatedAt
+            updatedAt = profileUpdatedAt,
+            gender = null,
+            signature = null
         )
     }
 }

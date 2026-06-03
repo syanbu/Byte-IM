@@ -62,7 +62,9 @@ data class UserProfile(
     val nickname: String,
     val avatarUrl: String?,
     val avatarUpdatedAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val gender: Gender? = null,
+    val signature: String? = null
 )
 
 data class GroupInfo(
@@ -111,4 +113,9 @@ enum class GroupMemberRole {
 enum class MessageType {
     TEXT,
     IMAGE
+}
+
+enum class Gender {
+    MALE,
+    FEMALE
 }
