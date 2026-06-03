@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.codex.im.R
 import com.codex.im.ui.AvatarImage
@@ -335,6 +336,7 @@ private fun ProfileNameRow(
             text = state.profile?.nickname.orEmpty(),
             style = MaterialTheme.typography.bodyLarge,
             color = ByteImColors.TextSecondary,
+            textAlign = TextAlign.End,
             modifier = Modifier.weight(0.65f)
         )
         ChevronRightIcon()
@@ -356,7 +358,7 @@ private fun ProfileNameEditorScreen(
         ByteImTopBar(
             title = MeDisplayPolicy.nameEditorTitle,
             onBack = onBack,
-            action = {
+            actions = listOf {
                 TextButton(
                     enabled = !state.isSaving,
                     onClick = onSave
@@ -445,6 +447,7 @@ private fun ProfileReadOnlyRow(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
             color = ByteImColors.TextSecondary,
+            textAlign = TextAlign.End,
             modifier = Modifier.weight(0.65f)
         )
     }

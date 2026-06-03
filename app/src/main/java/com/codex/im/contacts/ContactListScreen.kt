@@ -99,7 +99,7 @@ private fun ContactsTopBar(
                     Icon(
                         painter = painterResource(id = ContactTopBarActionPolicy.searchIconResId),
                         contentDescription = "搜索",
-                        tint = ByteImColors.PrimaryGreen,
+                        tint = ByteImColors.TextPrimary,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -113,7 +113,7 @@ private fun ContactsTopBar(
                         Icon(
                             painter = painterResource(id = ContactTopBarActionPolicy.addIconResId),
                             contentDescription = "更多操作",
-                            tint = ByteImColors.PrimaryGreen,
+                            tint = ByteImColors.TextPrimary,
                             modifier = Modifier.size(28.dp)
                         )
                     }

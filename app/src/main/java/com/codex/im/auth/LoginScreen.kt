@@ -18,10 +18,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +54,20 @@ fun LoginScreen(
     val scrollState = rememberScrollState()
     val canLogin = phone.isNotBlank() && password.isNotBlank() && !state.isLoading
     val canRegister = phone.isNotBlank() && password.isNotBlank() && confirmPassword.isNotBlank() && !state.isLoading
+    val fieldFill = Color(0xFFF2F2F2)
+    val fieldShape = RoundedCornerShape(12.dp)
+    val fieldColors = TextFieldDefaults.colors(
+        focusedContainerColor = fieldFill,
+        unfocusedContainerColor = fieldFill,
+        disabledContainerColor = fieldFill,
+        focusedIndicatorColor = ByteImColors.PrimaryGreen,
+        unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+        focusedLabelColor = ByteImColors.PrimaryGreen,
+        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        cursorColor = ByteImColors.PrimaryGreen,
+        focusedTextColor = ByteImColors.TextPrimary,
+        unfocusedTextColor = ByteImColors.TextPrimary
+    )
 
     Box(
         modifier = modifier
@@ -88,20 +102,17 @@ fun LoginScreen(
                 color = ByteImColors.TextSecondary
             )
             Spacer(modifier = Modifier.height(24.dp))
-            OutlinedTextField(
+            TextField(
                 value = phone,
                 onValueChange = { phone = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("手机号") },
                 singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ByteImColors.PrimaryGreen,
-                    focusedLabelColor = ByteImColors.PrimaryGreen,
-                    cursorColor = ByteImColors.PrimaryGreen
-                )
+                shape = fieldShape,
+                colors = fieldColors
             )
             Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
+            TextField(
                 value = password,
                 onValueChange = {
                     password = it
@@ -111,15 +122,12 @@ fun LoginScreen(
                 label = { Text("密码") },
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ByteImColors.PrimaryGreen,
-                    focusedLabelColor = ByteImColors.PrimaryGreen,
-                    cursorColor = ByteImColors.PrimaryGreen
-                )
+                shape = fieldShape,
+                colors = fieldColors
             )
             if (isRegisterMode) {
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
+                TextField(
                     value = confirmPassword,
                     onValueChange = {
                         confirmPassword = it
@@ -129,11 +137,8 @@ fun LoginScreen(
                     label = { Text("确认密码") },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = ByteImColors.PrimaryGreen,
-                        focusedLabelColor = ByteImColors.PrimaryGreen,
-                        cursorColor = ByteImColors.PrimaryGreen
-                    )
+                    shape = fieldShape,
+                    colors = fieldColors
                 )
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -157,7 +162,7 @@ fun LoginScreen(
                     Text("注册")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
+                TextButton(
                     enabled = !state.isLoading,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
@@ -166,7 +171,7 @@ fun LoginScreen(
                         localErrorMessage = null
                     }
                 ) {
-                    Text("返回登录")
+                    Text("返回登录", color = ByteImColors.PrimaryGreen)
                 }
             } else {
                 Button(
@@ -181,7 +186,7 @@ fun LoginScreen(
                     Text("登录")
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
+                TextButton(
                     enabled = !state.isLoading,
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
@@ -189,7 +194,7 @@ fun LoginScreen(
                         localErrorMessage = null
                     }
                 ) {
-                    Text("创建账号")
+                    Text("创建账号", color = ByteImColors.PrimaryGreen)
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))

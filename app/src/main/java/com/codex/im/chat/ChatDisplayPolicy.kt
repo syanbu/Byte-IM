@@ -13,16 +13,8 @@ object ChatDisplayPolicy {
     val backButtonIconRes: Int = R.drawable.ic_chevron_left
     val composerLabel: String? = null
 
-    fun composerAction(draft: String): ChatComposerAction {
-        return if (draft.trim().isEmpty()) {
-            ChatComposerAction.PICK_IMAGE
-        } else {
-            ChatComposerAction.SEND_TEXT
-        }
-    }
-
     fun shouldShowSendButton(draft: String): Boolean {
-        return composerAction(draft) == ChatComposerAction.SEND_TEXT
+        return draft.trim().isNotEmpty()
     }
 
     fun messageLine(message: ChatMessage): String {
@@ -108,11 +100,6 @@ object ChatDisplayPolicy {
     }
 
     private const val RECALL_WINDOW_MS = 2 * 60 * 1000L
-}
-
-enum class ChatComposerAction {
-    PICK_IMAGE,
-    SEND_TEXT
 }
 
 data class BubbleAvatar(

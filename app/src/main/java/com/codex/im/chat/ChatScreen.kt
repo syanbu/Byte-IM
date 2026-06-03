@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,6 +46,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -52,6 +54,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.codex.im.R
 import com.codex.im.message.ChatImageCompressor
 import com.codex.im.storage.ChatMessage
 import com.codex.im.storage.GroupMember
@@ -78,6 +81,7 @@ fun ChatScreen(
     var previewMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var activeActionMessageId by remember { mutableStateOf<String?>(null) }
     var showGroupRename by remember { mutableStateOf(false) }
+    var showMoreActions by remember { mutableStateOf(false) }
     var groupNameDraft by remember { mutableStateOf(state.peerName) }
     var selectedMentions by remember { mutableStateOf(emptyList<ChatMention>()) }
     val scope = rememberCoroutineScope()
@@ -158,8 +162,9 @@ fun ChatScreen(
         ByteImTopBar(
             title = state.peerName,
             onBack = onBack,
-            action = if (state.peerId.startsWith("group:")) {
-                {
+            centerTitle = true,
+            actions = if (state.peerId.startsWith("group:")) {
+                listOf {
                     IconButton(onClick = { showGroupRename = true }) {
                         Text(
                             text = "...",
@@ -169,7 +174,7 @@ fun ChatScreen(
                     }
                 }
             } else {
-                null
+                emptyList()
             }
         )
         LazyColumn(
@@ -257,9 +262,7 @@ fun ChatScreen(
                 selectedMentions = result.selectedMentions
             },
             canSend = ChatDisplayPolicy.shouldShowSendButton(draft.text) && state.peerId.isNotBlank(),
-            onPickImage = {
-                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            },
+            onMoreActionsClick = { showMoreActions = true },
             onSend = {
                 val content = draft.text
                 val mentionIds = ChatMentionPolicy.activeMentionIds(content, selectedMentions)
@@ -275,6 +278,15 @@ fun ChatScreen(
         ChatImagePreviewScreen(
             message = message,
             onDismiss = { previewMessage = null }
+        )
+    }
+    if (showMoreActions) {
+        ChatMoreActionsSheet(
+            onPickImage = {
+                showMoreActions = false
+                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onDismiss = { showMoreActions = false }
         )
     }
     if (showGroupRename) {
@@ -333,12 +345,13 @@ private fun ChatComposerBar(
     mentionMembers: List<GroupMember>,
     onMentionSelected: (GroupMember) -> Unit,
     canSend: Boolean,
-    onPickImage: () -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    onMoreActionsClick: () -> Unit,
+    onEmojiClick: () -> Unit = {}
 ) {
     val barColor = ByteImColors.Surface
     val inputShape = RoundedCornerShape(18.dp)
-    val action = ChatDisplayPolicy.composerAction(draft.text)
+    val hasText = draft.text.isNotEmpty()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -392,7 +405,7 @@ private fun ChatComposerBar(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(MaterialTheme.colorScheme.surface, inputShape)
+                    .background(ByteImColors.AppBackground, inputShape)
                     .border(
                         width = 1.dp,
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
@@ -417,18 +430,9 @@ private fun ChatComposerBar(
                     )
                 )
             }
-            when (action) {
-                ChatComposerAction.PICK_IMAGE -> Button(
-                    onClick = onPickImage,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ByteImColors.SurfaceLow,
-                        contentColor = ByteImColors.PrimaryGreen
-                    ),
-                    contentPadding = ButtonDefaults.ContentPadding
-                ) {
-                    Text("图片")
-                }
-                ChatComposerAction.SEND_TEXT -> Button(
+            if (hasText) {
+                // 有内容时，绿色"发送"按钮占据表情/加号的位置
+                Button(
                     onClick = onSend,
                     enabled = canSend,
                     colors = ButtonDefaults.buttonColors(
@@ -438,6 +442,30 @@ private fun ChatComposerBar(
                     contentPadding = ButtonDefaults.ContentPadding
                 ) {
                     Text("发送")
+                }
+            } else {
+                // 空草稿：表情占位 + 加号（复用顶部"更多"同款矢量图）
+                IconButton(
+                    onClick = onEmojiClick,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_emoji),
+                        contentDescription = "表情",
+                        tint = ByteImColors.TextPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                IconButton(
+                    onClick = onMoreActionsClick,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_add_circle),
+                        contentDescription = "更多操作",
+                        tint = ByteImColors.TextPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
         }
@@ -728,10 +756,11 @@ private fun OutgoingMessageStatus(
                 val isRead = message.serverSeq != null &&
                     peerReadUpToServerSeq != null &&
                     message.serverSeq <= peerReadUpToServerSeq
-                Text(
-                    text = if (isRead) "✓" else "○",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isRead) ByteImColors.PrimaryGreen else ByteImColors.TextSecondary
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_msg_check),
+                    contentDescription = if (isRead) "已读" else "已送达",
+                    tint = if (isRead) ByteImColors.PrimaryGreen else ByteImColors.TextSecondary,
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }

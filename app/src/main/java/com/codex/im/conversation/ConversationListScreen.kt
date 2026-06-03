@@ -128,7 +128,7 @@ private fun MessagesTopBar(
                     Icon(
                         painter = painterResource(id = MessageTopBarActionPolicy.searchIconResId),
                         contentDescription = "搜索",
-                        tint = ByteImColors.PrimaryGreen,
+                        tint = ByteImColors.TextPrimary,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -142,7 +142,7 @@ private fun MessagesTopBar(
                         Icon(
                             painter = painterResource(id = MessageTopBarActionPolicy.addIconResId),
                             contentDescription = "更多操作",
-                            tint = ByteImColors.PrimaryGreen,
+                            tint = ByteImColors.TextPrimary,
                             modifier = Modifier.size(28.dp)
                         )
                     }

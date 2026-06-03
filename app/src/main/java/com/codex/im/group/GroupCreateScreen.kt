@@ -65,7 +65,7 @@ fun GroupCreateScreen(
         ByteImTopBar(
             title = "发起群聊",
             onBack = onBack,
-            action = {
+            actions = listOf {
                 Button(
                     enabled = state.canCreate && !state.isCreating,
                     onClick = { viewModel.createGroup() },

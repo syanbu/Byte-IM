@@ -72,55 +72,53 @@ fun ByteImTopBar(
     actions: List<@Composable () -> Unit> = emptyList(),
     centerTitle: Boolean = false
 ) {
-    Row(
+    // 微信风格：标题以全宽居中，back / actions 用 Modifier.align 叠加在两侧，
+    // 这样无论 back 和 actions 宽度是否相等，标题都落在屏幕中线上。
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .height(ByteImDimensions.TopBarHeight)
             .background(ByteImColors.Surface)
             .padding(horizontal = ByteImDimensions.EdgePadding),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        contentAlignment = Alignment.Center
     ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = ByteImColors.TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = if (centerTitle) TextAlign.Center else TextAlign.Start,
+            modifier = Modifier
+                .fillMaxWidth()
+                .let {
+                    // 非居中模式下，给标题加一个与 back 按钮等宽的起始内边距，
+                    // 避免文字落在 back 按钮底下。
+                    if (!centerTitle && onBack != null) {
+                        it.padding(start = 48.dp)
+                    } else {
+                        it
+                    }
+                }
+        )
         if (onBack != null) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(40.dp)
+                    .align(Alignment.CenterStart)
+            ) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_chevron_left),
                     contentDescription = "返回",
-                    tint = ByteImColors.PrimaryGreen
+                    tint = ByteImColors.TextPrimary
                 )
             }
-        }
-        if (centerTitle) {
-            // 微信风格：标题居中，左右两侧由返回 / actions 撑开
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ByteImColors.TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center
-                )
-            }
-        } else {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = ByteImColors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
         }
         if (actions.isNotEmpty()) {
             Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
                 horizontalArrangement = Arrangement.spacedBy(0.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
