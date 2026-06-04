@@ -105,7 +105,16 @@ fun ChatScreen(
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(9)) { uris ->
         if (uris.isNotEmpty()) {
             scope.launch {
-                val preparedImages = uris.mapNotNull { uri ->
+                // AndroidX `PickMultipleVisualMedia` does not guarantee that the returned URI
+                // list follows the user's tap order. Empirically, on this device's Photo Picker
+                // build the URIs come back in reverse selection order (last tapped at index 0),
+                // which makes the first selected photo end up as the newest message after
+                // `forEachIndexed` + `now + index` apply ascending `createdAt` values. Reverse
+                // the list here so the user's tap order is preserved end-to-end. If we ever
+                // switch to a self-built album UI (see status doc), this `.reversed()` should be
+                // removed because the custom picker can guarantee tap order directly.
+                val orderedUris = uris.reversed()
+                val preparedImages = orderedUris.mapNotNull { uri ->
                     ChatImageCompressor.prepareSelectedImage(context, context.contentResolver, uri)
                 }
                 if (preparedImages.isNotEmpty()) {

@@ -1,8 +1,11 @@
 package com.codex.im.message
 
 import com.codex.im.MessagesTabUnreadBadgeSource
+import com.codex.im.alert.IncomingMessageAlert
+import com.codex.im.alert.MessageAlertPolicy
 import com.codex.im.connection.ImConnection
 import com.codex.im.group.GroupCreateResult
+import com.codex.im.profile.ProfileRepository
 import com.codex.im.protocol.ImCommand
 import com.codex.im.protocol.ImPacket
 import com.codex.im.storage.ChatMessage
@@ -31,6 +34,7 @@ class MessageRepository(
     private val seqGenerator: SeqGenerator,
     private val retryPolicy: MessageRetryPolicy = MessageRetryPolicy(),
     private val transactionRunner: TransactionRunner = TransactionRunner.immediate(),
+    private val profileRepository: ProfileRepository? = null,
     thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache,
     private val thumbnailDownloadScheduler: ThumbnailDownloadScheduler = ImmediateThumbnailDownloadScheduler(thumbnailCache)
 ) : MessagesTabUnreadBadgeSource {
@@ -43,6 +47,8 @@ class MessageRepository(
     private val lastSentReadCursorByConversation = mutableMapOf<String, Long>()
     private val mutableConversationUpdates = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
     override val conversationUpdates: SharedFlow<Unit> = mutableConversationUpdates.asSharedFlow()
+    private val mutableMessageAlerts = MutableSharedFlow<IncomingMessageAlert>(extraBufferCapacity = 64)
+    val messageAlerts: SharedFlow<IncomingMessageAlert> = mutableMessageAlerts.asSharedFlow()
 
     fun sendText(senderId: String, receiverId: String, content: String, now: Long): ChatMessage {
         val conversationId = conversationIdFor(senderId, receiverId)
@@ -627,6 +633,7 @@ class MessageRepository(
                 incrementUnread = incrementUnread,
                 incrementMentionUnread = incrementUnread && receiverId in mentionedUserIds
             )
+            emitIncomingAlertIfNeeded(message = message, shouldAlert = incrementUnread)
             notifyConversationChanged()
         }
         if (serverSeq != null) {
@@ -654,6 +661,55 @@ class MessageRepository(
             inserted = inserted,
             message = message,
             priority = ThumbnailDownloadPriority.NORMAL
+        )
+    }
+
+    private fun emitIncomingAlertIfNeeded(message: ChatMessage, shouldAlert: Boolean) {
+        if (!shouldAlert || message.type !in listOf(MessageType.TEXT, MessageType.IMAGE)) {
+            return
+        }
+        val alert = when (message.conversationType) {
+            ConversationType.GROUP -> groupIncomingAlert(message)
+            ConversationType.SINGLE -> singleIncomingAlert(message)
+        }
+        mutableMessageAlerts.tryEmit(alert)
+    }
+
+    private fun singleIncomingAlert(message: ChatMessage): IncomingMessageAlert {
+        val senderProfile = profileRepository?.localProfile(message.senderId)
+        val title = senderProfile?.nickname?.takeIf { it.isNotBlank() } ?: message.senderId
+        val preview = when (message.type) {
+            MessageType.IMAGE -> MessageAlertPolicy.previewForImage()
+            MessageType.TEXT -> MessageAlertPolicy.previewForText(message.content)
+        }
+        return IncomingMessageAlert(
+            conversationId = message.conversationId,
+            isGroup = false,
+            title = title,
+            avatarUrl = senderProfile?.avatarUrl,
+            preview = preview,
+            rawTimestamp = message.createdAt
+        )
+    }
+
+    private fun groupIncomingAlert(message: ChatMessage): IncomingMessageAlert {
+        val conversation = conversationDao.findConversation(message.conversationId)
+        val senderProfile = profileRepository?.localProfile(message.senderId)
+        val title = conversation?.title?.takeIf { it.isNotBlank() }
+            ?: message.groupName?.takeIf { it.isNotBlank() }
+            ?: message.conversationId
+        return IncomingMessageAlert(
+            conversationId = message.conversationId,
+            isGroup = true,
+            title = title,
+            avatarUrl = conversation?.avatarUrl,
+            preview = MessageAlertPolicy.groupPreview(
+                senderDisplayName = senderProfile?.nickname,
+                senderId = message.senderId,
+                content = message.content,
+                type = message.type
+            ),
+            rawTimestamp = message.createdAt
         )
     }
 

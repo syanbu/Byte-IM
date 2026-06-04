@@ -10,7 +10,7 @@ Partial.
 
 Done for the current local SQLite-backed chat history path. Server-backed history fetch is still deferred and must use `HISTORY_QUERY` / `HISTORY_RESULT` when implemented.
 
-Design notes for review: [`../B4-history-pagination-design-notes.md`](../B4-history-pagination-design-notes.md).
+Design notes for review: [`../feature-notes/B4-history-pagination-design-notes.md`](../feature-notes/B4-history-pagination-design-notes.md).
 
 ## Existing Foundation
 

@@ -618,7 +618,7 @@ Bug note:
 ### Task 10: Documentation And Verification
 
 - Update `docs/DEVELOPMENT_STATUS.md`.
-- Update `docs/WEBSOCKET_PROTOCOL_AND_STATES.md` with group message JSON.
+- Update `docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md` with group message JSON.
 - Add tests for Android storage, repository, ViewModels, and mock-server router.
 
 ## Expected Files To Change

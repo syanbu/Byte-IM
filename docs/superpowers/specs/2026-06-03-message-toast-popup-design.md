@@ -2,7 +2,7 @@
 
 > 状态：设计稿，待用户 review
 > 日期：2026-06-03
-> 关联：`docs/DEVELOPMENT_STATUS.md`（Messages Tab Unread 体系）、`docs/messages-conversation-summary-and-unread.md`（会话摘要与未读设计）
+> 关联：`docs/bg/DEVELOPMENT_STATUS.md`（Messages Tab Unread 体系）、`docs/feature-notes/messages-conversation-summary-and-unread.md`（会话摘要与未读设计）
 
 ## 1. 背景与目标
 

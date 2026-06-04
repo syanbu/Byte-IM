@@ -556,7 +556,7 @@ RECALL_ACK(16)
 RECALL_NOTIFY(17)
 ```
 
-更新 `docs/WEBSOCKET_PROTOCOL_AND_STATES.md`，补充 `READ_ACK`、`RECALL_MESSAGE`、`RECALL_ACK`、`RECALL_NOTIFY` 的方向和语义。
+更新 `docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md`，补充 `READ_ACK`、`RECALL_MESSAGE`、`RECALL_ACK`、`RECALL_NOTIFY` 的方向和语义。
 
 ### 第 3 步：扩展 Android 本地存储
 
@@ -747,7 +747,7 @@ Mock-server 测试建议覆盖：
 修改：
 
 - `docs/DEVELOPMENT_STATUS.md`
-- `docs/WEBSOCKET_PROTOCOL_AND_STATES.md`
+- `docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md`
 - 可新增 `docs/status/B12-message-recall-and-read-receipts.md`
 
 验收点：

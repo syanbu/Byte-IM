@@ -621,3 +621,12 @@ Likely new mock-server tests:
   - `UPLOAD_FAILED` retries OSS upload first, then sends the message.
   - `FAILED` retries the lightweight IM message send only and reuses existing OSS URLs.
   - The UI intentionally keeps one visual affordance while the repository/ViewModel preserve distinct internal states.
+- Multi-image send order currently relies on a `.reversed()` workaround in the `ChatScreen` picker callback because the Android system Photo Picker does not consistently return URIs in user tap order across Android versions and Photo Picker builds. The durable fix is a self-built album preview page that records an explicit `selectionOrder` on each `SelectedChatImage` and lets the user drag-reorder before sending.
+
+## Bug Fix Log
+
+### Multi-Image Send Order Reversed
+
+- Status: Workaround applied (long-term fix is a self-built album + preview page).
+- Detailed bug doc: [`docs/bug/Fix-MultiImageSendOrder.md`](../bug/Fix-MultiImageSendOrder.md).
+- One-line summary: `ActivityResultContracts.PickMultipleVisualMedia` returned the URIs in reverse selection order on the tested device, so `forEachIndexed { sendImage(img, now + index) }` produced `createdAt` in reverse tap order. Workaround is `.reversed()` on the URI list in the `ChatScreen` picker callback, with a comment explaining why it must not be deleted.

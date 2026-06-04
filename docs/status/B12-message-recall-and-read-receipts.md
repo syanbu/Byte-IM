@@ -9,7 +9,7 @@ B12 covers two single-chat message state synchronization features:
 
 This feature must stay on the existing self-built WebSocket binary protocol, local SQLite persistence, and Jetpack Compose chat UI path. It must not introduce a third-party IM SDK or bypass the existing protocol/state architecture.
 
-Design source: [`../B12-message-recall-and-read-receipts-design.md`](../B12-message-recall-and-read-receipts-design.md).
+Design source: [`../feature-notes/B12-message-recall-and-read-receipts-design.md`](../feature-notes/B12-message-recall-and-read-receipts-design.md).
 
 ## Status
 
@@ -51,7 +51,7 @@ Current development priorities have already completed the core IM foundation tha
 
 ## Current Foundation To Reuse
 
-Protocol commands currently documented in `docs/WEBSOCKET_PROTOCOL_AND_STATES.md`:
+Protocol commands currently documented in `docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md`:
 
 - `SEND_MESSAGE`: sender sends a normal chat message.
 - `MESSAGE_ACK`: server accepted the message and assigned `serverSeq`.
@@ -186,7 +186,7 @@ Command meanings:
 - `RECALL_ACK`: server returns recall success or failure to the requester.
 - `RECALL_NOTIFY`: server notifies the peer that the message was recalled.
 
-`docs/WEBSOCKET_PROTOCOL_AND_STATES.md` must be updated in the same implementation pass so protocol documentation does not drift from code.
+`docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md` must be updated in the same implementation pass so protocol documentation does not drift from code.
 
 ## Android Implementation Plan
 
@@ -329,6 +329,6 @@ Manual/emulator checks:
 ## Documentation Updated
 
 - [`../DEVELOPMENT_STATUS.md`](../DEVELOPMENT_STATUS.md) lists B12 as implemented for first-pass single-chat scope and points to this status file.
-- [`../WEBSOCKET_PROTOCOL_AND_STATES.md`](../WEBSOCKET_PROTOCOL_AND_STATES.md) documents final `READ_ACK`, `RECALL_MESSAGE`, `RECALL_ACK`, and `RECALL_NOTIFY` semantics.
+- [`../feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md`](../feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md) documents final `READ_ACK`, `RECALL_MESSAGE`, `RECALL_ACK`, and `RECALL_NOTIFY` semantics.
 - [`../bug/Fix-ChatOldestMessageActionBarOverlay.md`](../bug/Fix-ChatOldestMessageActionBarOverlay.md) records the 2026-06-04 oldest-message floating action menu fix and manual verification.
 - This file records the B12 verification commands that passed on 2026-05-30 and the action-menu regression verification from 2026-06-04.

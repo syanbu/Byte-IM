@@ -166,7 +166,7 @@ Run the same command. Expected: pass.
 
 **Files:**
 - Modify: `docs/DEVELOPMENT_STATUS.md`
-- Modify: `docs/WEBSOCKET_PROTOCOL_AND_STATES.md`
+- Modify: `docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md`
 - Modify: `docs/status/B10-group-chat-and-mention.md`
 
 - [ ] **Step 1: Update docs**

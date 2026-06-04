@@ -17,6 +17,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +52,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.codex.im.alert.MessageAlertController
+import com.codex.im.alert.MessageAlertHost
 import com.codex.im.app.AppInfo
 import com.codex.im.app.MockServerConfig
 import com.codex.im.auth.AuthRepository
@@ -303,6 +310,10 @@ private class AccountScopedRepositories private constructor(
             val database = helper.writableDatabase
             val conversationDao = AndroidConversationDao(database)
             val thumbnailDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val profileRepository = ProfileRepository(
+                userProfileDao = AndroidUserProfileDao(database),
+                profileApi = OkHttpProfileApi(baseUrl = httpBaseUrl)
+            )
             val messageRepository = MessageRepository(
                 messageDao = AndroidMessageDao(database),
                 conversationDao = conversationDao,
@@ -311,15 +322,12 @@ private class AccountScopedRepositories private constructor(
                 messageIdGenerator = MessageIdGenerator(),
                 seqGenerator = SeqGenerator(),
                 transactionRunner = AndroidTransactionRunner(database),
+                profileRepository = profileRepository,
                 thumbnailCache = thumbnailCache,
                 thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
                     thumbnailCache = thumbnailCache,
                     scope = thumbnailDownloadScope
                 )
-            )
-            val profileRepository = ProfileRepository(
-                userProfileDao = AndroidUserProfileDao(database),
-                profileApi = OkHttpProfileApi(baseUrl = httpBaseUrl)
             )
             val groupRepository = DefaultGroupRepository(
                 groupApi = OkHttpGroupApi(baseUrl = httpBaseUrl),
@@ -357,6 +365,11 @@ private fun AuthenticatedImNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val activity = LocalContext.current.findActivity()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val alertScope = rememberCoroutineScope()
+    val messageAlertController = remember(session.userId) {
+        MessageAlertController(scope = alertScope)
+    }
     val unreadBadgeController = remember(session.userId) {
         MessagesTabUnreadBadgeController(
             repository = messageRepository,
@@ -388,21 +401,38 @@ private fun AuthenticatedImNavHost(
         }
     }
 
+    LaunchedEffect(messageRepository, messageAlertController) {
+        messageRepository.messageAlerts.collect(messageAlertController::show)
+    }
+
+    DisposableEffect(lifecycleOwner, messageAlertController) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                messageAlertController.dismiss()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     Scaffold(
         containerColor = ByteImColors.AppBackground
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = SelfHostedImRoute.Conversations.route,
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None },
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(innerPadding)
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            NavHost(
+                navController = navController,
+                startDestination = SelfHostedImRoute.Conversations.route,
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(innerPadding)
+            ) {
             composable(SelfHostedImRoute.Conversations.route) {
                 val conversationListViewModel = remember(session.userId) {
                     ConversationListViewModel(
@@ -601,6 +631,15 @@ private fun AuthenticatedImNavHost(
                     }
                 )
             }
+            }
+            MessageAlertHost(
+                controller = messageAlertController,
+                onOpenConversation = { conversationId ->
+                    SelfHostedImRoute.Chat.createRoute(conversationId)
+                        ?.let(navController::navigateToChat)
+                },
+                modifier = Modifier.padding(innerPadding)
+            )
         }
     }
 }
