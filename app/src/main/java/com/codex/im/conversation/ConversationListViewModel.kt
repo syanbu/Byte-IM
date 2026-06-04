@@ -128,6 +128,17 @@ class ConversationListViewModel(
         )
     }
 
+    fun deleteConversation(conversationId: String) {
+        val trimmedConversationId = conversationId.trim()
+        if (trimmedConversationId.isEmpty()) {
+            return
+        }
+        scope.launch(dispatcher) {
+            repository.deleteLocalConversation(trimmedConversationId)
+            refresh()
+        }
+    }
+
     private suspend fun refresh() {
         val conversations = repository.conversations(limit = 50)
         profileRepository.bootstrapSession(session)

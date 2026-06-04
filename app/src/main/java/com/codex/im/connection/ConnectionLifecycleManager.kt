@@ -227,6 +227,7 @@ class ConnectionLifecycleManager(
             connection.disconnect()
             delay(delayMillis)
             if (started) {
+                reconnectJob = null
                 attemptConnect(tokenHint)
             }
         }
@@ -245,6 +246,7 @@ class ConnectionLifecycleManager(
             }
             delay(delayMillis)
             if (started) {
+                reconnectJob = null
                 attemptConnect(tokenHint)
             }
         }
@@ -272,8 +274,7 @@ class ConnectionLifecycleManager(
                 return@launch
             }
             if (resolvedToken.isNullOrBlank()) {
-                requestedToken = null
-                mutableStates.value = ConnectionState.Disconnected
+                scheduleReconnect("token unavailable")
                 return@launch
             }
             requestedToken = resolvedToken

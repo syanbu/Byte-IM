@@ -11,6 +11,8 @@ interface MessageDao {
 
     fun findByMessageId(messageId: String): ChatMessage?
 
+    fun deleteByConversationId(conversationId: String): Int
+
     fun updateImageUploadResult(
         messageId: String,
         imageUrl: String,
@@ -81,6 +83,14 @@ class InMemoryMessageDao : MessageDao {
     }
 
     override fun findByMessageId(messageId: String): ChatMessage? = messagesById[messageId]
+
+    override fun deleteByConversationId(conversationId: String): Int {
+        val targetIds = messagesById.values
+            .filter { it.conversationId == conversationId }
+            .map { it.messageId }
+        targetIds.forEach(messagesById::remove)
+        return targetIds.size
+    }
 
     override fun updateImageUploadResult(
         messageId: String,

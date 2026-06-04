@@ -39,6 +39,33 @@ class ConversationRowLayoutTest {
         )
     }
 
+    @Test
+    fun longPressDeleteMenuUsesPopupWithBlackText() {
+        val conversationScreen =
+            sourceFile("src/main/java/com/codex/im/conversation/ConversationListScreen.kt").readText()
+        val rowBody = extractFunctionBody(
+            source = conversationScreen,
+            signature = "private fun ConversationRow("
+        ) ?: error("ConversationRow declaration not found")
+
+        assertTrue(
+            "ConversationRow long-press actions should render with Popup instead of Material DropdownMenu.",
+            rowBody.contains("Popup(")
+        )
+        assertFalse(
+            "ConversationRow delete action should not use DropdownMenu; it needs a custom floating menu.",
+            rowBody.contains("DropdownMenu(")
+        )
+        assertTrue(
+            "The delete action label should match the requested copy.",
+            rowBody.contains("删除该聊天")
+        )
+        assertTrue(
+            "The delete action text should use the primary black text color.",
+            rowBody.contains("color = ByteImColors.TextPrimary")
+        )
+    }
+
     private fun sourceFile(path: String): File {
         val userDir = File(System.getProperty("user.dir"))
         val candidates = listOf(

@@ -357,6 +357,23 @@ class MessageRepository(
 
     fun conversation(conversationId: String): Conversation? = conversationDao.findConversation(conversationId)
 
+    fun deleteLocalConversation(conversationId: String): Boolean {
+        var conversationDeleted = false
+        var deletedMessageCount = 0
+        transactionRunner.runInTransaction {
+            conversationDeleted = conversationDao.deleteConversation(conversationId)
+            deletedMessageCount = messageDao.deleteByConversationId(conversationId)
+        }
+        val changed = conversationDeleted || deletedMessageCount > 0
+        if (changed) {
+            if (activeConversationId == conversationId) {
+                closeConversation()
+            }
+            notifyConversationChanged()
+        }
+        return changed
+    }
+
     fun createLocalGroupConversation(
         creatorUserId: String,
         memberUserIds: List<String>,

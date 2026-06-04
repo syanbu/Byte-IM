@@ -270,6 +270,29 @@ class ConversationListViewModelTest {
     }
 
     @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun deleteConversationRemovesRowAndLocalHistoryOnly() = runTest {
+        val fixture = Fixture(this)
+        fixture.repository.sendText("13800113800", "13900113900", "delete me", now = 1_000L)
+        fixture.repository.sendText("13800113800", "13700113700", "keep me", now = 2_000L)
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.deleteConversation("single:13800113800:13900113900")
+        runCurrent()
+
+        assertEquals(listOf("13700113700"), fixture.viewModel.state.value.items.map { it.peerId })
+        assertEquals(
+            emptyList<String>(),
+            fixture.repository.messagesWith("13800113800", "13900113900").map { it.content }
+        )
+        assertEquals(
+            listOf("keep me"),
+            fixture.repository.messagesWith("13800113800", "13700113700").map { it.content }
+        )
+    }
+
+    @Test
     fun mentionPreviewUsesMentionNicknameAndReminderLabel() {
         val item = ConversationListItem(
             conversationId = "group:g_1001",

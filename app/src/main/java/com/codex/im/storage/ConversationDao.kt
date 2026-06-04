@@ -11,6 +11,8 @@ interface ConversationDao {
 
     fun clearUnread(conversationId: String)
 
+    fun deleteConversation(conversationId: String): Boolean
+
     fun totalUnreadCount(): Int
 
     fun updatePeerReadCursor(conversationId: String, readUpToServerSeq: Long, readAt: Long): Boolean
@@ -82,6 +84,10 @@ class InMemoryConversationDao : ConversationDao {
     override fun clearUnread(conversationId: String) {
         val current = conversations[conversationId] ?: return
         conversations[conversationId] = current.copy(unreadCount = 0, mentionUnreadCount = 0)
+    }
+
+    override fun deleteConversation(conversationId: String): Boolean {
+        return conversations.remove(conversationId) != null
     }
 
     override fun totalUnreadCount(): Int = conversations.values.sumOf { it.unreadCount }

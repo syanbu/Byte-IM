@@ -28,6 +28,9 @@ Done for the current local single-chat scope.
 - Entering a conversation clears that conversation's unread count.
 - Incoming messages for the currently open conversation do not increment unread.
 - Conversation list rows refresh from `MessageRepository.conversationUpdates`, so messages handled by the chat screen update the list preview without requiring the user to re-enter the list.
+- Long-pressing a conversation row opens a floating action menu with a delete action.
+- Deleting a conversation removes that row from the local conversation list and deletes local message history for that conversation.
+- Conversation deletion is local-only and does not send any network packet, so it does not affect the other participant's client.
 - Connection/auth status and logout are only displayed on the conversation list; chat detail keeps only back navigation.
 - Empty conversation lists no longer show a fixed mock peer; demo contacts live in the separate `Contacts` tab and do not create conversation rows until a real message exists.
 - The demo Contacts tab now uses four mutual demo accounts:
@@ -47,7 +50,8 @@ Done for the current local single-chat scope.
 | 2026-05-23 | B3 Android build | `gradle-9.0.0\bin\gradle.bat :app:assembleDebug --console=plain` | Passed: debug APK assembles with the conversation list route and chat navigation flow. |
 | 2026-05-23 | B3 refresh fix | `gradle-9.0.0\bin\gradle.bat :app:testDebugUnitTest --console=plain`; `gradle-9.0.0\bin\gradle.bat :app:assembleDebug --console=plain` | Passed: conversation list refreshes from Repository conversation update events, including messages processed outside the list VM. |
 | 2026-05-23 | B3 manual acceptance | User two-client manual test | Passed: conversation list preview refreshes correctly, chat detail hides connection status, and logout is only available from the conversation list. |
+| 2026-06-04 | B3 local conversation deletion | `./gradlew :app:testDebugUnitTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.storage.MessageDaoContractTest --tests com.codex.im.conversation.ConversationListViewModelTest --console=plain` | Passed: local-only conversation deletion removes the list row and target chat history while preserving other conversations. |
 
 ## Next Implementation Slice
 
-Move to B4 history message pagination. B3 can later be enhanced with search or richer display names, but the required conversation list flow is in place.
+Move to B4 history message pagination. B3 can later be enhanced with search, richer display names, or a deletion confirmation affordance, but the required conversation list flow is in place.

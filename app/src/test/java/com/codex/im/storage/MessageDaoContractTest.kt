@@ -242,6 +242,19 @@ class MessageDaoContractTest {
     }
 
     @Test
+    fun deleteConversationMessagesRemovesOnlyTargetConversationHistory() {
+        val dao = InMemoryMessageDao()
+        dao.insertOrIgnore(sampleMessage(messageId = "target-1", createdAt = 100))
+        dao.insertOrIgnore(sampleMessage(messageId = "target-2", createdAt = 200))
+        dao.insertOrIgnore(sampleMessage(messageId = "other-1", createdAt = 300).copy(conversationId = "single:u1:u3"))
+
+        assertEquals(2, dao.deleteByConversationId("single:u1:u2"))
+
+        assertEquals(emptyList<String>(), dao.queryPage("single:u1:u2", beforeTime = null, limit = 20).map { it.messageId })
+        assertEquals(listOf("other-1"), dao.queryPage("single:u1:u3", beforeTime = null, limit = 20).map { it.messageId })
+    }
+
+    @Test
     fun maxIncomingServerSeqIgnoresOutgoingAndLocalMessages() {
         val dao = InMemoryMessageDao()
         dao.insertOrIgnore(sampleMessage(messageId = "incoming-7", createdAt = 100, serverSeq = 7, direction = MessageDirection.INCOMING))

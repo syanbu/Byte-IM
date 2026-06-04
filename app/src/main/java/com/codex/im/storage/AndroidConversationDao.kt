@@ -83,6 +83,10 @@ class AndroidConversationDao(private val database: SQLiteDatabase) : Conversatio
         database.update("conversations", values, "conversation_id = ?", arrayOf(conversationId))
     }
 
+    override fun deleteConversation(conversationId: String): Boolean {
+        return database.delete("conversations", "conversation_id = ?", arrayOf(conversationId)) > 0
+    }
+
     override fun totalUnreadCount(): Int {
         return database.rawQuery(
             "SELECT COALESCE(SUM(unread_count), 0) AS total_unread_count FROM conversations",

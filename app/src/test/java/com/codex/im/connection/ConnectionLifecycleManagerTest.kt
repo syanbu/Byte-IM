@@ -216,16 +216,39 @@ class ConnectionLifecycleManagerTest {
     }
 
     @Test
-    fun reconnectStopsWhenProviderCannotReturnValidToken() = runTest {
-        var providerAttempted = false
+    fun initialConnectRetriesWhenTokenProviderIsTemporarilyUnavailable() = runTest {
+        var tokenProviderCalls = 0
         val fixture = Fixture(
             scope = this,
             tokenProvider = { _ ->
-                if (providerAttempted) {
-                    null
-                } else {
-                    providerAttempted = true
-                    TOKEN
+                tokenProviderCalls += 1
+                if (tokenProviderCalls == 1) null else "fresh-token"
+            }
+        )
+
+        fixture.manager.connect(TOKEN)
+        runCurrent()
+
+        assertEquals(ConnectionState.Reconnecting(1_000L, "token unavailable"), fixture.manager.states.value)
+        assertEquals(emptyList<String>(), fixture.raw.connectTokens)
+
+        advanceTimeBy(1_000L)
+        runCurrent()
+
+        assertEquals(listOf("fresh-token"), fixture.raw.connectTokens)
+    }
+
+    @Test
+    fun reconnectKeepsRetryingWhenTokenProviderIsTemporarilyUnavailable() = runTest {
+        var tokenProviderCalls = 0
+        val fixture = Fixture(
+            scope = this,
+            tokenProvider = { _ ->
+                tokenProviderCalls += 1
+                when (tokenProviderCalls) {
+                    1 -> TOKEN
+                    2 -> null
+                    else -> "fresh-token"
                 }
             }
         )
@@ -241,7 +264,12 @@ class ConnectionLifecycleManagerTest {
         runCurrent()
 
         assertEquals(listOf(TOKEN), fixture.raw.connectTokens)
-        assertEquals(ConnectionState.Disconnected, fixture.manager.states.value)
+        assertEquals(ConnectionState.Reconnecting(2_000L, "token unavailable"), fixture.manager.states.value)
+
+        advanceTimeBy(2_000L)
+        runCurrent()
+
+        assertEquals(listOf(TOKEN, "fresh-token"), fixture.raw.connectTokens)
     }
 
     @Test

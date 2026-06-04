@@ -119,6 +119,10 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
         }
     }
 
+    override fun deleteByConversationId(conversationId: String): Int {
+        return database.delete("messages", "conversation_id = ?", arrayOf(conversationId))
+    }
+
     override fun updateImageUploadResult(
         messageId: String,
         imageUrl: String,

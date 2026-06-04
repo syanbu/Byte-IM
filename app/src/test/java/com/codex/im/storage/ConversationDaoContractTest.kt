@@ -59,6 +59,18 @@ class ConversationDaoContractTest {
     }
 
     @Test
+    fun deleteConversationRemovesOnlyTargetConversation() {
+        val dao = InMemoryConversationDao()
+        dao.upsertFromMessage(message("c1", "u2", "one", createdAt = 100), incrementUnread = true)
+        dao.upsertFromMessage(message("c2", "u3", "two", createdAt = 200), incrementUnread = true)
+
+        assertEquals(true, dao.deleteConversation("c1"))
+
+        val conversations = dao.listConversations(limit = 20)
+        assertEquals(listOf("c2"), conversations.map { it.conversationId })
+    }
+
+    @Test
     fun upsertConversationPersistsGroupConversationFields() {
         val dao = InMemoryConversationDao()
         val conversation = Conversation(
