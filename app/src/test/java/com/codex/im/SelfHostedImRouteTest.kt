@@ -42,4 +42,25 @@ class SelfHostedImRouteTest {
             SelfHostedImRoute.Chat.createSingleRoute(currentUserId = "13900113900", peerUserId = "13800113800")
         )
     }
+
+    @Test
+    fun contactProfileRouteIsUnderContactProfilePath() {
+        assertEquals("contact-profile/{userId}", SelfHostedImRoute.ContactProfile.pattern)
+    }
+
+    @Test
+    fun contactProfileRouteEncodesUserIdFromCreateRoute() {
+        assertEquals("contact-profile/13900113900", SelfHostedImRoute.ContactProfile.createRoute("13900113900"))
+    }
+
+    @Test
+    fun contactProfileRouteTrimsUserIdFromCreateRoute() {
+        assertEquals("contact-profile/13900113900", SelfHostedImRoute.ContactProfile.createRoute(" 13900113900 "))
+    }
+
+    @Test
+    fun contactProfileRouteIgnoresBlankUserId() {
+        assertNull(SelfHostedImRoute.ContactProfile.createRoute(""))
+        assertNull(SelfHostedImRoute.ContactProfile.createRoute("   "))
+    }
 }

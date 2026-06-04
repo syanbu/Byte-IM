@@ -21,22 +21,21 @@ class ChatMessageRowLayoutTest {
     fun chatMessageRowAlignsAvatarToBubbleNotToActionBarColumn() {
         val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
 
-        val rowCallArgs = extractFirstCallArgs(
+        val rowBlock = extractFunctionBody(
             source = chatScreen,
-            functionSignature = "private fun ChatMessageRow(",
-            callName = "Row"
-        ) ?: error("Row call inside ChatMessageRow not found")
+            signature = "private fun ChatMessageRow("
+        ) ?: error("ChatMessageRow declaration not found")
 
         assertTrue(
             "ChatMessageRow Row must use verticalAlignment = Alignment.Bottom " +
                 "so the avatar stays on the bubble's line when the action bar is shown.",
-            rowCallArgs.contains("verticalAlignment = Alignment.Bottom")
+            rowBlock.contains("verticalAlignment = Alignment.Bottom")
         )
         assertFalse(
             "ChatMessageRow Row must not use verticalAlignment = Alignment.Top; " +
                 "Top alignment drags the avatar up to the action bar instead of " +
                 "keeping it on the bubble's row.",
-            rowCallArgs.contains("verticalAlignment = Alignment.Top")
+            rowBlock.contains("verticalAlignment = Alignment.Top")
         )
     }
 
@@ -177,6 +176,37 @@ class ChatMessageRowLayoutTest {
         assertTrue(
             "ChatMessageRow call site must pass isNearTop = isNearTop",
             Regex("isNearTop\\s*=\\s*isNearTop").containsMatchIn(chatScreen)
+        )
+    }
+
+    @Test
+    fun chatMessageRowAvatarsOpenUserProfile() {
+        val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
+
+        val rowBlock = extractFunctionBody(
+            source = chatScreen,
+            signature = "private fun ChatMessageRow("
+        ) ?: error("ChatMessageRow declaration not found")
+
+        assertTrue(
+            "ChatScreen must expose an onOpenUserProfile callback for avatar taps.",
+            chatScreen.contains("onOpenUserProfile: (String) -> Unit = {}")
+        )
+        assertTrue(
+            "ChatScreen must pass the onOpenUserProfile callback to each ChatMessageRow.",
+            chatScreen.contains("onOpenUserProfile = onOpenUserProfile")
+        )
+        assertTrue(
+            "ChatMessageRow must resolve the avatar's user id before invoking navigation.",
+            rowBlock.contains("ChatDisplayPolicy.bubbleAvatarUserId(message, currentUserId)")
+        )
+        assertTrue(
+            "Both incoming and outgoing AvatarImage modifiers must be clickable.",
+            Regex("\\.clickable\\(enabled = avatarUserId != null\\)").findAll(rowBlock).count() >= 2
+        )
+        assertTrue(
+            "Avatar clicks must invoke the user-profile callback with the resolved user id.",
+            rowBlock.contains("avatarUserId?.let(onOpenUserProfile)")
         )
     }
 

@@ -65,6 +65,8 @@ import com.codex.im.connection.ConnectionLifecycleManager
 import com.codex.im.connection.ImConnection
 import com.codex.im.contacts.ContactListScreen
 import com.codex.im.contacts.ContactListViewModel
+import com.codex.im.contacts.ContactProfileScreen
+import com.codex.im.contacts.ContactProfileViewModel
 import com.codex.im.contacts.DemoContactResolver
 import com.codex.im.conversation.ConversationListScreen
 import com.codex.im.conversation.ConversationListViewModel
@@ -415,7 +417,7 @@ private fun AuthenticatedImNavHost(
                             }
                         },
                         onOpenContact = { peerUserId ->
-                            SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)?.let(navController::navigateToChat)
+                            SelfHostedImRoute.ContactProfile.createRoute(peerUserId)?.let { navController.navigate(it) }
                         }
                     )
                     TopLevelBottomBar(
@@ -485,6 +487,34 @@ private fun AuthenticatedImNavHost(
                 }
             }
 
+            composable(route = SelfHostedImRoute.ContactProfile.pattern) { entry ->
+                val userId = entry.arguments
+                    ?.getString(SelfHostedImRoute.ContactProfile.USER_ID_ARG)
+                    .orEmpty()
+                if (userId.isBlank()) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                    return@composable
+                }
+                val contactProfileViewModel = remember(session.userId, userId) {
+                    ContactProfileViewModel(
+                        userId = userId,
+                        session = session,
+                        profileRepository = profileRepository,
+                        validSessionProvider = validSessionProvider
+                    )
+                }
+                val contactProfileState by contactProfileViewModel.state.collectAsState()
+                ContactProfileScreen(
+                    viewModel = contactProfileViewModel,
+                    state = contactProfileState,
+                    onBack = { navController.popBackStack() },
+                    onSendMessage = { peerUserId ->
+                        SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)
+                            ?.let { navController.navigateToChat(it) }
+                    }
+                )
+            }
+
             composable(route = SelfHostedImRoute.Chat.pattern) { chatBackStackEntry ->
                 val conversationId = chatBackStackEntry.arguments
                     ?.getString(SelfHostedImRoute.Chat.CONVERSATION_ID_ARG)
@@ -508,6 +538,16 @@ private fun AuthenticatedImNavHost(
                     state = chatState,
                     onBack = {
                         ChatBackPolicy.run(navigateBack = { navController.popBackStack() })
+                    },
+                    onOpenUserProfile = { userId ->
+                        if (userId == session.userId) {
+                            navController.navigate(SelfHostedImRoute.Me.route) {
+                                launchSingleTop = true
+                            }
+                        } else {
+                            SelfHostedImRoute.ContactProfile.createRoute(userId)
+                                ?.let(navController::navigate)
+                        }
                     }
                 )
             }

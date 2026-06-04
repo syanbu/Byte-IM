@@ -5,6 +5,7 @@ import com.codex.im.storage.InMemoryUserProfileDao
 import com.codex.im.storage.UserProfile
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ProfileRepositoryTest {
@@ -43,6 +44,28 @@ class ProfileRepositoryTest {
 
         assertEquals(remoteProfile, profile)
         assertEquals(remoteProfile, dao.findByUserId("13900139000"))
+    }
+
+    @Test
+    fun refreshProfileFetchesRemoteEvenWhenLocalCacheExists() = runTest {
+        val dao = InMemoryUserProfileDao()
+        dao.upsert(UserProfile("13900139000", "13900139000", "Cached", null, 1L, 1L))
+        val remoteProfile = UserProfile("13900139000", "13900139000", "Fresh", null, 2L, 2L)
+        val api = FakeProfileApi(profile = remoteProfile)
+        val repository = ProfileRepository(dao, api)
+
+        val profile = repository.refreshProfile("token", "13900139000")
+
+        assertEquals(remoteProfile, profile)
+        assertEquals(remoteProfile, dao.findByUserId("13900139000"))
+    }
+
+    @Test
+    fun refreshProfileIgnoresBlankUserId() = runTest {
+        val dao = InMemoryUserProfileDao()
+        val repository = ProfileRepository(dao, FakeProfileApi())
+
+        assertNull(repository.refreshProfile("token", " "))
     }
 
     private class FakeProfileApi(

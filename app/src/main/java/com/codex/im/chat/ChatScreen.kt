@@ -79,7 +79,8 @@ fun ChatScreen(
     viewModel: ChatViewModel,
     state: ChatUiState,
     modifier: Modifier = Modifier,
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
+    onOpenUserProfile: (String) -> Unit = {}
 ) {
     var draft by remember { mutableStateOf(TextFieldValue("")) }
     var previewMessage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -258,7 +259,8 @@ fun ChatScreen(
                             scope.launch {
                                 viewModel.recallMessage(message.messageId)
                             }
-                        }
+                        },
+                        onOpenUserProfile = onOpenUserProfile
                     )
                 }
             }
@@ -546,7 +548,8 @@ private fun ChatMessageRow(
     onDismissActions: () -> Unit,
     onRetryImage: (ChatMessage) -> Unit,
     onCopyText: (String) -> Unit,
-    onRecall: (ChatMessage) -> Unit
+    onRecall: (ChatMessage) -> Unit,
+    onOpenUserProfile: (String) -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
     val avatar = ChatDisplayPolicy.bubbleAvatar(
@@ -558,6 +561,7 @@ private fun ChatMessageRow(
         currentUserId = currentUserId,
         senderProfile = senderProfile
     )
+    val avatarUserId = ChatDisplayPolicy.bubbleAvatarUserId(message, currentUserId)
     // Use Bottom alignment so the avatar stays glued to the bubble line.
     // When the long-press action bar (复制 / 撤回) appears above the bubble,
     // Top alignment would pull the avatar upward to match the action bar's top edge,
@@ -574,7 +578,11 @@ private fun ChatMessageRow(
             AvatarImage(
                 avatarUrl = avatar.avatarUrl,
                 displayName = avatar.displayName,
-                modifier = Modifier.size(ByteImDimensions.ChatAvatarSize)
+                modifier = Modifier
+                    .size(ByteImDimensions.ChatAvatarSize)
+                    .clickable(enabled = avatarUserId != null) {
+                        avatarUserId?.let(onOpenUserProfile)
+                    }
             )
         }
         ChatMessageContent(
@@ -597,7 +605,11 @@ private fun ChatMessageRow(
             AvatarImage(
                 avatarUrl = avatar.avatarUrl,
                 displayName = avatar.displayName,
-                modifier = Modifier.size(ByteImDimensions.ChatAvatarSize)
+                modifier = Modifier
+                    .size(ByteImDimensions.ChatAvatarSize)
+                    .clickable(enabled = avatarUserId != null) {
+                        avatarUserId?.let(onOpenUserProfile)
+                    }
             )
         }
     }

@@ -220,6 +220,56 @@ class ChatDisplayPolicyTest {
         assertEquals("https://example.com/a.jpg", avatar.avatarUrl)
     }
 
+    @Test
+    fun outgoingBubbleAvatarUserIdUsesCurrentUser() {
+        val userId = ChatDisplayPolicy.bubbleAvatarUserId(
+            message = message(
+                senderId = "13800113800",
+                direction = MessageDirection.OUTGOING
+            ),
+            currentUserId = "13800113800"
+        )
+
+        assertEquals("13800113800", userId)
+    }
+
+    @Test
+    fun incomingBubbleAvatarUserIdUsesSenderForSingleAndGroupMessages() {
+        val singleUserId = ChatDisplayPolicy.bubbleAvatarUserId(
+            message = message(
+                senderId = "13900113900",
+                direction = MessageDirection.INCOMING
+            ),
+            currentUserId = "13800113800"
+        )
+        val groupUserId = ChatDisplayPolicy.bubbleAvatarUserId(
+            message = message(
+                senderId = "17724734511",
+                direction = MessageDirection.INCOMING
+            ).copy(
+                conversationId = "group:g_1001",
+                conversationType = com.codex.im.storage.ConversationType.GROUP
+            ),
+            currentUserId = "13800113800"
+        )
+
+        assertEquals("13900113900", singleUserId)
+        assertEquals("17724734511", groupUserId)
+    }
+
+    @Test
+    fun bubbleAvatarUserIdReturnsNullForBlankResolvedUserId() {
+        val userId = ChatDisplayPolicy.bubbleAvatarUserId(
+            message = message(
+                senderId = "   ",
+                direction = MessageDirection.INCOMING
+            ),
+            currentUserId = "13800113800"
+        )
+
+        assertNull(userId)
+    }
+
     private fun message(
         senderId: String = "13800113800",
         content: String = "hello",

@@ -30,9 +30,11 @@ Done for the current local single-chat scope.
 - Conversation list rows refresh from `MessageRepository.conversationUpdates`, so messages handled by the chat screen update the list preview without requiring the user to re-enter the list.
 - Connection/auth status and logout are only displayed on the conversation list; chat detail keeps only back navigation.
 - Empty conversation lists no longer show a fixed mock peer; demo contacts live in the separate `Contacts` tab and do not create conversation rows until a real message exists.
-- The existing two demo accounts remain compatible:
+- The demo Contacts tab now uses four mutual demo accounts:
+  - `13267100423 / 123456`
   - `13800113800 / 123456`
   - `13900113900 / 123456`
+  - `17724734511 / 123456`
 
 ## Verification
 

@@ -7,7 +7,7 @@ Branch: `redesign-ui`
 
 Insert a new **Contact Profile** page between the ByteIM Contacts tab and the single-chat screen. Tapping a contact row no longer jumps straight into chat; it first opens a read-only profile page that shows the peer's avatar, nickname, gender, and signature (everything from `UserProfile` except `userId` / `phone`). A sticky bottom "发送消息" button on that page is the only way to enter the chat screen for that peer.
 
-This slice does not edit any profile data, does not introduce any new feature for adding friends, and does not change the Messages tab, group chat, or the chat screen itself.
+This slice does not edit any profile data and does not introduce any new feature for adding friends. A follow-up increment wires chat avatar taps into the same Contact Profile route: tapping a peer/member avatar from single chat or group chat opens that user's profile, while tapping the current user's own avatar opens the Me profile.
 
 ## Scope
 
@@ -18,15 +18,16 @@ In scope:
 - New Composable `ContactProfileScreen` rendering avatar, nickname, gender, and signature rows plus a sticky bottom "发送消息" button.
 - New display policy `ContactProfileDisplayPolicy` for testable labels.
 - Wire the new route into `MainActivity`'s `NavHost` and switch the Contacts tap handler to navigate to it.
+- Wire chat message avatar taps to user-profile navigation: peer/member avatars open `ContactProfile`, and the current user's avatar opens `Me`.
 - Unit tests for `ContactProfileViewModel` and `ContactProfileDisplayPolicy`.
 
 Out of scope:
 
 - Editing the peer's profile (read-only page; the contact is not the current user).
-- Group member profile, mention-list profile, or any non-Contacts entry point. (See "Planned Reuse" below — these are not built now but the design leaves room for them.)
+- Mention-list profile entry points.
 - Showing the peer's `userId` / `phone` (explicitly excluded by the requirement).
 - New mock-server endpoints, schema, or seed data — `GET /users/{userId}` already returns the required fields, and the design degrades gracefully when `gender` / `signature` are null.
-- Changes to chat list, conversation list, `ChatScreen`, or `ChatViewModel`.
+- Changes to chat list, conversation list, or `ChatViewModel`.
 
 ## Source Context
 
@@ -35,8 +36,10 @@ Files relevant to the change:
 - `app/src/main/java/com/codex/im/SelfHostedImRoute.kt` — sealed route definitions; `Chat` already shows the `{conversationId}` path-arg pattern.
 - `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt` — current `onOpenContact` callback navigates straight to chat.
 - `app/src/main/java/com/codex/im/contacts/ContactListViewModel.kt` — `openContact(userId)` sets `navigationTargetPeerId`.
-- `app/src/main/java/com/codex/im/MainActivity.kt` — composes the `NavHost`, builds `ContactListViewModel`, wires `onOpenContact` to `SelfHostedImRoute.Chat.createSingleRoute(...)`.
-- `app/src/main/java/com/codex/im/profile/ProfileRepository.kt` — `getProfile(accessToken, userId)` already returns a `UserProfile` with `nickname`, `avatarUrl`, `gender`, `signature` and persists it to `user_profiles`; `localProfile(userId)` reads from the same DAO.
+- `app/src/main/java/com/codex/im/MainActivity.kt` — composes the `NavHost`, builds `ContactListViewModel`, wires `onOpenContact` and chat avatar taps to profile navigation, and keeps "发送消息" routing to `SelfHostedImRoute.Chat.createSingleRoute(...)`.
+- `app/src/main/java/com/codex/im/chat/ChatScreen.kt` — renders message avatars and forwards avatar-tap user IDs to `MainActivity`.
+- `app/src/main/java/com/codex/im/chat/ChatDisplayPolicy.kt` — resolves which user ID belongs to a rendered message avatar.
+- `app/src/main/java/com/codex/im/profile/ProfileRepository.kt` — `localProfile(userId)` reads cached profiles from `user_profiles`; add/use a force-refresh path (`refreshProfile(accessToken, userId)`) that always calls `GET /users/{userId}`, persists the returned `UserProfile`, and returns it for UI replacement. Do not use `getProfile(accessToken, userId)` as the background-refresh path because it returns cached data immediately when the DAO already has a row.
 - `app/src/main/java/com/codex/im/storage/StorageModels.kt` — `UserProfile` already carries `gender: Gender?` and `signature: String?`.
 - `app/src/main/java/com/codex/im/ui/ByteImUi.kt` — `ByteImTopBar`, `ByteImListSurface`, `ByteImColors`, `ByteImDimensions`, `ByteImShapes`.
 - `app/src/main/java/com/codex/im/ui/AvatarImage.kt` — existing avatar composable with byte and decoded-bitmap caching.
@@ -153,7 +156,7 @@ class ContactProfileViewModel(
         val cached = profileRepository.localProfile(userId)
         mutableState.value = mutableState.value.copy(profile = cached)
         if (refreshJob?.isActive == true) return
-        // 2. Background refresh.
+        // 2. Background force-refresh.
         refreshJob = scope.launch(dispatcher) {
             val validSession = validSessionProvider()
             if (validSession == null) {
@@ -164,7 +167,7 @@ class ContactProfileViewModel(
                 return@launch
             }
             mutableState.value = mutableState.value.copy(isRefreshing = true, errorMessage = null)
-            val remote = profileRepository.getProfile(validSession.accessToken, userId)
+            val remote = profileRepository.refreshProfile(validSession.accessToken, userId)
             if (remote != null) {
                 mutableState.value = mutableState.value.copy(profile = remote, isRefreshing = false)
             } else {
@@ -193,6 +196,7 @@ Notes:
 
 - `start()` is idempotent and reentrant-safe: a second call while a refresh is in flight is a no-op; a second call after the refresh finished but before `stop()` will trigger another refresh.
 - The `cached` variable is captured before the launch and re-used inside the coroutine to decide whether the failure should surface as an error (no cache → show retry; cache exists → stay silent).
+- The remote step must force-fetch. A cached row is rendered immediately for perceived speed, but it must not prevent the background network request; if the peer changed nickname, avatar, gender, or signature after the last contact-list refresh, the detail page should overwrite both cache and UI with the fresh remote value.
 - The constructor takes the `userId` directly so the ViewModel does not need to read it from `SavedStateHandle`; the route argument is read once in `MainActivity` and passed in. This is consistent with how `ChatViewModel` is built in `MainActivity` today.
 
 ### New Composable (`contacts/ContactProfileScreen.kt`)
@@ -312,9 +316,9 @@ onOpenContact = { peerUserId ->
 }
 ```
 
-The bottom-bar policy (`BottomNavigationSpec.topLevelItems.any { it.route == currentRoute }`) already hides the bottom bar on non-top-level routes. `ContactProfile` is a non-top-level route, so the chat-style `bottomBar = null` behavior continues to work without any change to `TopLevelBackPolicy` or `BackHandler` — the profile page just gets no bottom navigation, and the system Back / TopBar Back both pop to the Contacts tab.
+The authenticated app currently renders the bottom bar only from top-level route composables. `ContactProfile` is a non-top-level route, so it gets no bottom navigation without any change to `BottomNavigationSpec`, `TopLevelBackPolicy`, or `BackHandler`.
 
-The chat destination is still reached through the same `navigateToChat(...)` extension as before, so `ChatBackPolicy` and the chat → conversation back transition remain unchanged.
+The profile page's own Back behavior is source-relative: top-bar Back and Android system Back both call the normal navigation pop. If the user opened the profile from Contacts, Back returns to Contacts. If the user opened it from a group-chat or single-chat message avatar, Back returns to that chat. The chat destination from the "发送消息" button can still use the existing `navigateToChat(...)` extension unless a later product decision changes chat Back behavior for this entry point; `ChatBackPolicy` and the current chat → conversation-list transition remain unchanged in this slice.
 
 ## Behavior
 
@@ -323,7 +327,7 @@ The chat destination is still reached through the same `navigateToChat(...)` ext
 1. `ContactProfileScreen` mounts → `viewModel.start()` runs.
 2. `start()` synchronously reads `profileRepository.localProfile(userId)` and pushes it into `state.profile`. If the cache has a row from a prior `refreshProfiles(...)` call (e.g. when the user was on the Contacts tab and we already batch-fetched all contact profiles), the page renders fully and immediately.
 3. `start()` then launches a coroutine on the IO dispatcher. Inside the coroutine, `validSessionProvider()` is consulted; if null, the page either shows the session-expired error (no cache) or stays silent (cache present) — depending on `cached != null`.
-4. With a valid session, `state.isRefreshing = true` is published (no UI element reads this today; it is left in the state for the test surface and for a future inline progress affordance) and `profileRepository.getProfile(accessToken, userId)` is called. This is a `GET /users/{userId}` HTTP request that already exists in the mock-server and returns `{ userId, phone, nickname, avatarUrl, avatarUpdatedAt, updatedAt, gender, signature }` per the B1 status doc.
+4. With a valid session, `state.isRefreshing = true` is published (no UI element reads this today; it is left in the state for the test surface and for a future inline progress affordance) and `profileRepository.refreshProfile(accessToken, userId)` is called. This method must always perform the `GET /users/{userId}` HTTP request even when a cached row exists, then persist and return the fresh `UserProfile`. The mock-server endpoint already returns `{ userId, phone, nickname, avatarUrl, avatarUpdatedAt, updatedAt, gender, signature }`.
 5. On success, the result is persisted by `ProfileRepository` and pushed into `state.profile`. UI re-renders with fresh values (typically identical to the cache; only visible when the peer has changed their nickname, avatar, gender, or signature since the last contact list refresh).
 6. On failure, `state.errorMessage` is set only when there is no cached profile to fall back on. When the cache is present, the page stays unchanged and the error is suppressed — the user can see the data they already have.
 
@@ -331,12 +335,12 @@ The chat destination is still reached through the same `navigateToChat(...)` ext
 
 - Always rendered in `Scaffold.bottomBar`. Enabled only when `state.profile != null`.
 - Tapping the button calls `onSendMessage(peerUserId)`, which is the `peerUserId` from the route arg, not from `state.profile` — this is intentional so a stale cache (where the user is not in the local DB yet) still routes correctly to chat via `SelfHostedImRoute.Chat.createSingleRoute(currentUserId, peerUserId)`.
-- The navigation uses the existing `navigateToChat(...)` extension, which `popUpTo(graph.findStartDestination().id) { saveState = false }` so the back stack is reset and the chat page becomes the top destination. Pressing system Back from chat returns to Contacts (not to the profile page), preserving the "tapping contact opens profile; tapping send message commits to chat" intent.
+- The navigation can use the existing `navigateToChat(...)` extension for this slice. That preserves the current chat Back behavior (returning to the conversation list). Profile-page Back is independent from chat-page Back: the profile route itself always pops to the route that opened it.
 
 ### Back behavior
 
-- `ByteImTopBar(onBack = onBack)` calls `navController.popBackStack()`, which returns to the Contacts tab (the previous entry in the back stack).
-- The Contacts tab is a top-level route registered in `TopLevelBackPolicy`, so further system Back from Contacts is handled by `TopLevelRouteBackHandler` (`moveTaskToBack`).
+- `ByteImTopBar(onBack = onBack)` calls `navController.popBackStack()`, which returns to the previous route in the stack. From Contacts that is the Contacts tab; from a chat-avatar entry that is the chat route that opened the profile.
+- The Contacts tab is a top-level route registered in `TopLevelBackPolicy`, so further system Back from Contacts is handled by `TopLevelRouteBackHandler` (`moveTaskToBack`). Chat routes keep their existing `ChatBackPolicy`.
 - The system back from the ContactProfile page itself is not intercepted — `BackHandler` is not registered in `ContactProfileScreen` because the default back behavior (pop the route) is exactly what we want.
 
 ### Failure / empty states
@@ -351,49 +355,51 @@ The chat destination is still reached through the same `navigateToChat(...)` ext
 | No cache, session expired | Centered "登录已过期，请重新登录" + "重试" button (which will not help; the user needs to log in again, but retry at least re-checks the session). Send button disabled. |
 | Profile fetched but is the current user | Unreachable in practice (DemoContactResolver never returns `session.userId`); even if it did, the page would render and the Send button would route to a self-chat conversation with the same `userId` on both sides. No additional guard is added; this is consistent with the contact → chat flow's existing behavior. |
 
-## Planned Reuse (Out of Scope for This Slice)
+## Reuse Entry Points
 
-The same read-only profile surface is intended to be reachable from a few more entry points in future slices:
+The same read-only profile surface is reachable from:
 
-- **Single-chat message row** — tapping a peer avatar in `ChatScreen` (the avatar at the side of an incoming bubble, and the avatar on the chat top bar near the peer name) should open the same page.
-- **Group-chat message row** — tapping a peer avatar in a group chat should open the same page for that member.
-- **Group member list** — tapping a member row in a future group detail screen should open the same page.
+- **Contacts tab rows** — tapping a contact row opens `ContactProfile`.
+- **Single-chat message rows** — tapping a message avatar opens that user's profile route.
+- **Group-chat message rows** — tapping a member's message avatar opens that member's profile route.
 
-This slice does NOT implement any of those entry points. The Contacts tab is the only entry point right now. The points below describe the design choices already made to keep that reuse cheap when we get to it — they are not work for this slice.
+Still deferred:
+
+- **Chat top bar peer avatar/name** — the current top bar renders text/title actions only.
+- **Mention picker rows** — mention rows remain selection controls, not profile entry points.
+- **Group member list** — this requires a future group detail screen.
 
 ### Design choices that already support reuse
 
 - **The Composable is named `ContactProfileScreen` and lives in the `contacts/` package.** The page itself is just a read-only view of any `UserProfile` keyed by `userId`; nothing in the Composable, ViewModel, or DisplayPolicy is specific to the Contacts tab.
 - **`ContactProfileViewModel` takes `userId: String` directly** (not as a `SavedStateHandle` key, not as a path through the Contacts list). Any caller that knows a `userId` can build one.
-- **The data source is `ProfileRepository.getProfile(accessToken, userId)`**, which is the same call used by `MeViewModel.currentUserProfile(...)` today. It works for any user — the current user, a single-chat peer, a group member, or an unrelated user.
+- **The data source is split into cache and force refresh.** `ProfileRepository.localProfile(userId)` renders the first frame from cache; `ProfileRepository.refreshProfile(accessToken, userId)` then force-fetches the remote profile and overwrites both DAO cache and UI if anything changed. This works for any user — the current user, a single-chat peer, a group member, or an unrelated user.
 - **The "Send Message" action takes `peerUserId: String`** (from the route arg, not from `state.profile`). This means future entry points that don't have a single-chat context (e.g. group member profile) can disable the button or replace it with another action without rewriting the Composable.
 - **The bottom bar uses `Scaffold.bottomBar`**, not a hard-coded `Column` at the end of the body. The slot can be hidden (no bottom bar) for non-chat entry points, or replaced with a different CTA (e.g. "Mention" in a group member profile, or "View Group" for the current user's own profile if it ever lands here).
 - **The page has no affiliation with the Contacts tab in its title or chrome.** The top bar reads "详细资料", which is generic.
 
-### What will need to change to support those entry points later
+### What will need to change for remaining entry points later
 
 These are NOT this slice's work; they are listed so the next design can pick them up cheaply.
 
-- **Route name:** `contact-profile/{userId}` is Contacts-specific. A more generic `user-profile/{userId}` (or `peer-profile/{userId}`) would fit the chat entry points better. The renaming can be done in a follow-up that also adds the chat wiring.
-- **Chat screen wiring:** the peer avatar and the chat top bar peer name need an `onClick` that builds the new route and navigates. `ChatScreen` and `ChatTopBar` are not modified in this slice.
-- **Group member entry point:** requires a group member list screen and a way to surface a peer's `userId` from a group message row. Not in this slice.
-- **"Send Message" semantics in group member context:** if a user opens a group member's profile from a group, the button should still open a single chat with that member (or it could be replaced with a "Send Mention" or "View Group" action). The decision is deferred to the future slice.
-
-If a future slice needs the page to be reachable from chat, the implementation should re-evaluate the route name and the bottom-bar CTA at that time, then design a follow-up spec.
+- **Route name:** `contact-profile/{userId}` is Contacts-specific. A more generic `user-profile/{userId}` (or `peer-profile/{userId}`) would fit all entry points better. Renaming is deferred because the existing route already works and is covered by tests.
+- **Top-bar entry point:** if the chat top bar later exposes a peer avatar/name click target, it should reuse the same `onOpenUserProfile(userId)` navigation callback.
+- **Group member list:** requires a group detail screen and member rows. Message rows already surface sender IDs; a member list would use the selected member's `userId`.
 
 ## File-Level Change List
 
 | File | Change |
 |---|---|
 | `app/src/main/java/com/codex/im/SelfHostedImRoute.kt` | Add `data object ContactProfile` with `userId` path arg. |
-| `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt` | **New** — read-only ViewModel, cached-first + background refresh. |
+| `app/src/main/java/com/codex/im/profile/ProfileRepository.kt` | **Modify** — add `refreshProfile(accessToken, userId)` for force-refreshing a single user's profile even when local cache exists. |
+| `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt` | **New** — read-only ViewModel, cached-first + background force-refresh. |
 | `app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt` | **New** — public `ContactProfileScreen(...)` + private `ContactProfileScreenContent`, `ContactProfileHeader`, `ContactProfileDataRows`, `ContactProfileSendMessageBar`. |
 | `app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt` | **New** — pure-Kotlin label constants and `genderLabel(...)`. |
 | `app/src/main/java/com/codex/im/MainActivity.kt` | Add `composable(SelfHostedImRoute.ContactProfile.pattern)` block; change `onOpenContact` in the `Contacts` block to navigate to `ContactProfile.createRoute(...)` instead of `Chat.createSingleRoute(...)`. |
 | `app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt` | **New** — testable labels and `genderLabel`. |
 | `app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt` | **New** — see "Testing" below. |
 
-No changes to: `ProfileRepository`, `ProfileApi`, `ProfileJsonParser`, `UserProfile`, `UserProfileDao`, `ChatScreen`, `ChatViewModel`, `ConversationListScreen`, `ContactListScreen` (besides the wire-up change), `MeScreen`, `MeViewModel`, the mock-server, the SQLite schema, the WebSocket protocol, or any other route.
+No changes to: `ProfileApi`, `ProfileJsonParser`, `UserProfile`, `UserProfileDao`, `ChatViewModel`, `ConversationListScreen`, `ContactListScreen` (besides the wire-up change), `MeScreen`, `MeViewModel`, the mock-server, the SQLite schema, the WebSocket protocol, or any other route.
 
 ## Testing
 
@@ -409,8 +415,11 @@ All tests use the existing fakes pattern (`InMemoryUserProfileDao`, `FakeProfile
 2. `startRefreshesProfileInBackground`
    - Seed cache with a stale profile.
    - Use a `FakeProfileApi` that returns a fresh `UserProfile` (different `nickname`).
-   - Call `start()`, await idle.
+   - Call `start()`.
+   - Assert the immediate state is the cached stale profile.
+   - Await idle.
    - Assert `state.profile?.nickname == fresh.nickname`.
+   - Assert the fake API's single-user endpoint was called exactly once even though cache existed.
 
 3. `startSurfacesErrorWhenNoCacheAndRemoteFails`
    - Empty `userProfileDao`.
@@ -423,6 +432,7 @@ All tests use the existing fakes pattern (`InMemoryUserProfileDao`, `FakeProfile
    - `FakeProfileApi.user(...)` returns `ProfileResult.Failure`.
    - Call `start()`, await idle.
    - Assert `state.profile == cached` and `state.errorMessage == null`.
+   - Assert the fake API's single-user endpoint was still called once; cached fallback must not skip the attempted refresh.
 
 5. `startHandlesExpiredSessionWhenNoCache`
    - `validSessionProvider` returns `null`.
@@ -474,7 +484,7 @@ All tests use the existing fakes pattern (`InMemoryUserProfileDao`, `FakeProfile
 - **Risk:** A peer who has not yet been batch-fetched in the contacts refresh has no cache, and the page would briefly show an empty state.
   - **Mitigation:** The current `ContactListViewModel.refresh()` already calls `profileRepository.refreshProfiles(validSession.accessToken, contactIds)` before populating `state.items`, so by the time the user can tap a contact row, that peer's profile is already in the local cache in `user_profiles`. The empty state is a theoretical fallback only.
 
-- **Risk:** `profileRepository.getProfile(accessToken, userId)` writes to the DAO. If the peer is unknown, the API returns failure and the DAO is untouched. The repository contract already handles this; no extra guard is needed in the ViewModel.
+- **Risk:** `profileRepository.refreshProfile(accessToken, userId)` writes to the DAO. If the peer is unknown, the API returns failure and the DAO is untouched. The repository contract should keep this behavior covered by unit tests; no extra guard is needed in the ViewModel beyond the no-cache error state.
 
 - **Risk:** `MeDisplayPolicy` already provides the gender/signature fallbacks. Using a separate `ContactProfileDisplayPolicy` duplicates those labels.
   - **Mitigation:** The duplication is intentional. The peer profile page is read-only, the Me profile page is editable, and the labels are user-visible product text. If product text changes, both policies would be updated in lockstep. A future refactor could extract a `ProfileLabels` shared object; that refactor is not part of this slice.
@@ -494,7 +504,7 @@ All tests use the existing fakes pattern (`InMemoryUserProfileDao`, `FakeProfile
 - The page uses the existing ByteIM UI constants for colors, dimensions, and shapes.
 - A sticky bottom "发送消息" button is always present, and is enabled only when a profile has been loaded.
 - Tapping "发送消息" navigates to the existing single-chat screen for that peer.
-- Tapping the top-bar Back returns to the Contacts tab.
+- Tapping the top-bar Back returns to the previous route: Contacts when opened from Contacts, chat when opened from a chat-avatar entry.
 - The page renders cached profile data immediately and refreshes from `GET /users/{userId}` in the background.
 - The page does not block the user on a loading screen when cache is present.
 - All unit tests in the new `ContactProfileViewModelTest` and `ContactProfileDisplayPolicyTest` pass.

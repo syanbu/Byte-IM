@@ -41,6 +41,20 @@ class ProfileRepository(
         }
     }
 
+    suspend fun refreshProfile(accessToken: String, userId: String): UserProfile? {
+        val trimmedUserId = userId.trim()
+        if (trimmedUserId.isEmpty()) {
+            return null
+        }
+        return when (val result = profileApi.user(accessToken, trimmedUserId)) {
+            is ProfileResult.Success -> {
+                userProfileDao.upsert(result.profile)
+                result.profile
+            }
+            is ProfileResult.Failure -> null
+        }
+    }
+
     suspend fun refreshProfiles(accessToken: String, userIds: List<String>): List<UserProfile> {
         val distinctUserIds = userIds.distinct().filter { it.isNotBlank() }
         if (distinctUserIds.isEmpty()) {

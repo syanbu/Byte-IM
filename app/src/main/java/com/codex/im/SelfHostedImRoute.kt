@@ -9,6 +9,19 @@ sealed class SelfHostedImRoute(val route: String) {
 
     data object Me : SelfHostedImRoute("me")
 
+    data object ContactProfile : SelfHostedImRoute("contact-profile/{userId}") {
+        const val USER_ID_ARG = "userId"
+        val pattern: String = route
+
+        fun createRoute(userId: String): String? {
+            val trimmedUserId = userId.trim()
+            if (trimmedUserId.isEmpty()) {
+                return null
+            }
+            return "contact-profile/$trimmedUserId"
+        }
+    }
+
     data object Chat : SelfHostedImRoute("chat/{conversationId}") {
         const val CONVERSATION_ID_ARG = "conversationId"
         const val PEER_USER_ID_ARG = CONVERSATION_ID_ARG

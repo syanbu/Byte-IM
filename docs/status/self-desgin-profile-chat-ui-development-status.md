@@ -349,8 +349,8 @@ This session found and fixed the following product/UI issues:
    - Goal: Stop showing a fixed demo peer in `Messages` before any real chat message exists, and add a separate `Contacts` tab for demo friend discovery.
    - Conversation list behavior: `ConversationListViewModel` now renders only rows returned from persisted conversation state. It no longer adds a default peer fallback row when `ConversationDao` is empty.
    - Contacts tab: Added `Contacts` as a top-level bottom navigation item between `Messages` and `Me`.
-   - Demo contact rule: `13800113800` sees `13900113900`; `13900113900` sees `13800113800`; other accounts see no demo contacts.
-   - Chat entry behavior: Tapping a contact navigates to `chat/{peerUserId}`. Entering chat clears/marks the active conversation but does not create a conversation row; only `MessageRepository.sendText` or an incoming `RECEIVE_MESSAGE` upserts conversation state.
+   - Demo contact rule: the four demo accounts `13267100423`, `13800113800`, `13900113900`, and `17724734511` are mutual demo contacts; each account sees the other three.
+   - Chat entry behavior: in this implemented slice, tapping a contact navigates directly to `chat/{peerUserId}`. The follow-up Contact Profile slice changes the Contacts entry point to `contact-profile/{userId}` first, then uses "发送消息" to enter chat. Entering chat clears/marks the active conversation but does not create a conversation row; only `MessageRepository.sendText` or an incoming `RECEIVE_MESSAGE` upserts conversation state.
    - Files changed: `MainActivity.kt`, `SelfHostedImRoute.kt`, `BottomNavigationSpec.kt`, `TopLevelBackPolicy.kt`, `ConversationListViewModel.kt`, `ChatViewModel.kt`, `contacts/ContactListViewModel.kt`, `contacts/ContactListScreen.kt`, `contacts/DemoContactResolver.kt`, `ic_nav_contacts.xml`, and related unit tests.
    - Current status: Implemented.
    - Verified: targeted JVM tests cover empty `Messages`, demo contact resolution, Contacts navigation target, three-tab order, top-level Back policy, and removal of the hard-coded chat default peer.

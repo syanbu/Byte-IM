@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Insert a read-only Contact Profile page between the ByteIM Contacts tab and the single-chat screen, showing the peer's avatar, nickname, gender, and signature (everything from `UserProfile` except `userId` / `phone`) with a sticky bottom "发送消息" button that enters the chat.
+**Goal:** Insert a read-only Contact Profile page between the ByteIM Contacts tab and the single-chat screen, showing the peer's avatar, nickname, gender, and signature (everything from `UserProfile` except `userId` / `phone`) with a sticky bottom "发送消息" button that enters the chat. A follow-up increment also lets users open the same profile from single-chat and group-chat message avatars.
 
-**Architecture:** New `SelfHostedImRoute.ContactProfile` route → new `ContactProfileViewModel` (read-only state machine, cached-first + background refresh) → new `ContactProfileScreen` Composable (header avatar + nickname, three data rows, sticky bottom button). Reuses existing `ProfileRepository.getProfile(accessToken, userId)` and the ByteIM UI constants (`ByteImTopBar`, `ByteImListSurface`, `ByteImColors`, `ByteImDimensions`, `AvatarImage`).
+**Architecture:** New `SelfHostedImRoute.ContactProfile` route → `ProfileRepository.refreshProfile(accessToken, userId)` force-refresh path → new `ContactProfileViewModel` (read-only state machine, cached-first + background force-refresh) → new `ContactProfileScreen` Composable (header avatar + nickname, three data rows, sticky bottom button). Reuses `ProfileRepository.localProfile(userId)` for first-frame cache rendering and existing ByteIM UI constants (`ByteImTopBar`, `ByteImListSurface`, `ByteImColors`, `ByteImDimensions`, `AvatarImage`).
 
-**Tech Stack:** Kotlin, Jetpack Compose, Kotlin Coroutines + `StateFlow`, JUnit 4, `kotlinx.coroutines.test` (`runTest`, `StandardTestDispatcher`, `runCurrent`). Gradle wrapper (`./gradlew.bat`).
+**Tech Stack:** Kotlin, Jetpack Compose, Kotlin Coroutines + `StateFlow`, JUnit 4, `kotlinx.coroutines.test` (`runTest`, `StandardTestDispatcher`, `runCurrent`). Gradle wrapper (`bash ./gradlew` in this Linux workspace).
 
 **Reference spec:** [docs/superpowers/specs/2026-06-03-contact-profile-display-design.md](../specs/2026-06-03-contact-profile-display-design.md)
 
-**Working directory:** `d:/Desktop/engine/IM`
+**Working directory:** `/home/buyansong/IM`
 
 ---
 
@@ -19,13 +19,19 @@
 | File | Responsibility |
 |---|---|
 | `app/src/main/java/com/codex/im/SelfHostedImRoute.kt` (modify) | Add `ContactProfile` data object with `userId` path arg. |
+| `app/src/main/java/com/codex/im/profile/ProfileRepository.kt` (modify) | Add `refreshProfile(accessToken, userId)` that always calls `GET /users/{userId}` and persists the result even when local cache exists. |
 | `app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt` (new) | Pure-Kotlin label constants and `genderLabel(gender)` helper. |
-| `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt` (new) | Read-only state machine: cached-first render, background refresh, error handling, retry. |
+| `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt` (new) | Read-only state machine: cached-first render, background force-refresh, error handling, retry. |
 | `app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt` (new) | `ContactProfileScreen(...)` + `ContactProfileHeader`, `ContactProfileDataRows`, `ContactProfileSendMessageBar`, `ContactProfileFailureBlock`. |
-| `app/src/main/java/com/codex/im/MainActivity.kt` (modify) | Add `composable(SelfHostedImRoute.ContactProfile.pattern)` block. Change Contacts block's `onOpenContact` to navigate to `ContactProfile` instead of `Chat`. |
+| `app/src/main/java/com/codex/im/MainActivity.kt` (modify) | Add `composable(SelfHostedImRoute.ContactProfile.pattern)` block. Change Contacts block's `onOpenContact` to navigate to `ContactProfile` instead of `Chat`. Route chat avatar taps to `ContactProfile` or `Me`. |
+| `app/src/main/java/com/codex/im/chat/ChatScreen.kt` (modify) | Make incoming/outgoing message avatars clickable and emit the tapped user ID. |
+| `app/src/main/java/com/codex/im/chat/ChatDisplayPolicy.kt` (modify) | Resolve which user ID belongs to a rendered message avatar. |
 | `app/src/test/java/com/codex/im/SelfHostedImRouteTest.kt` (modify) | Add 4 tests for `ContactProfile.createRoute`. |
+| `app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt` (modify) | Add tests for `refreshProfile` forcing remote fetch and persisting fresh data. |
 | `app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt` (new) | Testable label constants and `genderLabel`. |
 | `app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt` (new) | ViewModel state machine tests (8 tests). |
+| `app/src/test/java/com/codex/im/chat/ChatDisplayPolicyTest.kt` (modify) | Cover avatar-to-user-id resolution. |
+| `app/src/test/java/com/codex/im/chat/ChatMessageRowLayoutTest.kt` (modify) | Guard chat avatar click wiring. |
 
 ---
 
@@ -64,7 +70,7 @@ fun contactProfileRouteIgnoresBlankUserId() {
 
 - [ ] **Step 2: Run the new tests to verify they fail**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --console=plain`
 
 Expected: FAIL with compile error `Unresolved reference: ContactProfile` (the data object does not exist yet).
 
@@ -89,14 +95,14 @@ Open `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`. After the existing `
 
 - [ ] **Step 4: Run the new tests to verify they pass**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --console=plain`
 
-Expected: PASS (all 9 tests in the file pass — 5 pre-existing + 4 new).
+Expected: PASS (all 11 tests in the file pass — 7 pre-existing + 4 new).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:/Desktop/engine/IM && git add app/src/main/java/com/codex/im/SelfHostedImRoute.kt app/src/test/java/com/codex/im/SelfHostedImRouteTest.kt && git commit -m "feat(contacts): add ContactProfile route with userId path arg"
+git add app/src/main/java/com/codex/im/SelfHostedImRoute.kt app/src/test/java/com/codex/im/SelfHostedImRouteTest.kt && git commit -m "feat(contacts): add ContactProfile route with userId path arg"
 ```
 
 ---
@@ -164,7 +170,7 @@ class ContactProfileDisplayPolicyTest {
 
 - [ ] **Step 2: Run the test file to verify it fails**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileDisplayPolicyTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileDisplayPolicyTest --console=plain`
 
 Expected: FAIL with compile error `Unresolved reference: ContactProfileDisplayPolicy`.
 
@@ -199,14 +205,14 @@ object ContactProfileDisplayPolicy {
 
 - [ ] **Step 4: Run the test file to verify it passes**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileDisplayPolicyTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileDisplayPolicyTest --console=plain`
 
 Expected: PASS (7 tests, all green).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:/Desktop/engine/IM && git add app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt && git commit -m "feat(contacts): add ContactProfileDisplayPolicy with testable labels"
+git add app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt && git commit -m "feat(contacts): add ContactProfileDisplayPolicy with testable labels"
 ```
 
 ---
@@ -214,8 +220,60 @@ cd d:/Desktop/engine/IM && git add app/src/main/java/com/codex/im/contacts/Conta
 ## Task 3: Create `ContactProfileViewModel` (TDD)
 
 **Files:**
+- Modify: `app/src/main/java/com/codex/im/profile/ProfileRepository.kt`
+- Modify: `app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt`
 - Create: `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt`
 - Create: `app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt`
+
+- [ ] **Step 0: Add the force-refresh repository path (TDD)**
+
+Open `app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt`, add `import org.junit.Assert.assertNull`, and add tests proving:
+
+```kotlin
+@Test
+fun refreshProfileFetchesRemoteEvenWhenLocalCacheExists() = runTest {
+    val dao = InMemoryUserProfileDao()
+    dao.upsert(UserProfile("13900139000", "13900139000", "Cached", null, 1L, 1L))
+    val remoteProfile = UserProfile("13900139000", "13900139000", "Fresh", null, 2L, 2L)
+    val api = FakeProfileApi(profile = remoteProfile)
+    val repository = ProfileRepository(dao, api)
+
+    val profile = repository.refreshProfile("token", "13900139000")
+
+    assertEquals(remoteProfile, profile)
+    assertEquals(remoteProfile, dao.findByUserId("13900139000"))
+}
+
+@Test
+fun refreshProfileIgnoresBlankUserId() = runTest {
+    val dao = InMemoryUserProfileDao()
+    val repository = ProfileRepository(dao, FakeProfileApi())
+
+    assertNull(repository.refreshProfile("token", " "))
+}
+```
+
+Then modify `ProfileRepository`:
+
+```kotlin
+suspend fun refreshProfile(accessToken: String, userId: String): UserProfile? {
+    val trimmedUserId = userId.trim()
+    if (trimmedUserId.isEmpty()) {
+        return null
+    }
+    return when (val result = profileApi.user(accessToken, trimmedUserId)) {
+        is ProfileResult.Success -> {
+            userProfileDao.upsert(result.profile)
+            result.profile
+        }
+        is ProfileResult.Failure -> null
+    }
+}
+```
+
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.profile.ProfileRepositoryTest --console=plain`
+
+Expected: PASS after the implementation. This method is intentionally different from `getProfile(...)`: `getProfile(...)` may return local cache without network; `refreshProfile(...)` always attempts the remote single-user endpoint.
 
 - [ ] **Step 1: Write the failing test file**
 
@@ -260,8 +318,10 @@ class ContactProfileViewModelTest {
     fun startRefreshesProfileInBackground() = runTest {
         val api = RecordingProfileApi().apply { nextUserResult = ProfileResult.Success(freshProfile("13900113900", nickname = "FreshNick")) }
         val fixture = Fixture(this, api = api)
+        fixture.profileDao.upsert(cachedProfile("13900113900", nickname = "CachedNick"))
 
         fixture.viewModel.start()
+        assertEquals("CachedNick", fixture.viewModel.state.value.profile?.nickname)
         runCurrent()
 
         assertEquals("FreshNick", fixture.viewModel.state.value.profile?.nickname)
@@ -293,6 +353,7 @@ class ContactProfileViewModelTest {
 
         assertEquals("CachedNick", fixture.viewModel.state.value.profile?.nickname)
         assertNull(fixture.viewModel.state.value.errorMessage)
+        assertEquals(1, api.userCallCount)
     }
 
     @Test
@@ -452,9 +513,9 @@ class ContactProfileViewModelTest {
 
 - [ ] **Step 2: Run the test file to verify it fails**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileViewModelTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileViewModelTest --console=plain`
 
-Expected: FAIL with compile error `Unresolved reference: ContactProfileViewModel` (and the `ContactProfileUiState` / `ContactProfileDisplayPolicy` references will also fail until Step 3).
+Expected: FAIL with compile error `Unresolved reference: ContactProfileViewModel` / `ContactProfileUiState` (the display policy already exists from Task 2).
 
 - [ ] **Step 3: Create the ViewModel file**
 
@@ -513,7 +574,7 @@ class ContactProfileViewModel(
                 return@launch
             }
             mutableState.value = mutableState.value.copy(isRefreshing = true, errorMessage = null)
-            val remote = profileRepository.getProfile(validSession.accessToken, userId)
+            val remote = profileRepository.refreshProfile(validSession.accessToken, userId)
             if (remote != null) {
                 mutableState.value = mutableState.value.copy(profile = remote, isRefreshing = false)
             } else {
@@ -539,14 +600,14 @@ class ContactProfileViewModel(
 
 - [ ] **Step 4: Run the test file to verify it passes**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileViewModelTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileViewModelTest --console=plain`
 
 Expected: PASS (8 tests, all green).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd d:/Desktop/engine/IM && git add app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt && git commit -m "feat(contacts): add ContactProfileViewModel with cached-first refresh"
+git add app/src/main/java/com/codex/im/profile/ProfileRepository.kt app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt && git commit -m "feat(contacts): add ContactProfileViewModel with cached-first refresh"
 ```
 
 ---
@@ -836,7 +897,7 @@ private fun ContactProfileSendMessageBar(
 
 - [ ] **Step 2: Verify the file compiles**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:assembleDebug --console=plain`
+Run: `bash ./gradlew :app:assembleDebug --console=plain`
 
 Expected: BUILD SUCCESSFUL. The `ContactProfileScreen` file references `ContactProfileViewModel`, `ContactProfileUiState`, `ContactProfileDisplayPolicy` (all created in Tasks 1-3), and existing `AvatarImage`, `ByteImTopBar`, `ByteImListSurface`, `ByteImColors`, `ByteImDimensions`. No new import surprises — every import is to a symbol that already exists in the codebase or was created in earlier tasks.
 
@@ -845,7 +906,7 @@ If the build fails with "Unresolved reference" for `ByteImColors.PrimaryGreen`, 
 - [ ] **Step 3: Commit**
 
 ```bash
-cd d:/Desktop/engine/IM && git add app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt && git commit -m "feat(contacts): add ContactProfileScreen with read-only profile and sticky send-message bar"
+git add app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt && git commit -m "feat(contacts): add ContactProfileScreen with read-only profile and sticky send-message bar"
 ```
 
 ---
@@ -855,7 +916,7 @@ cd d:/Desktop/engine/IM && git add app/src/main/java/com/codex/im/contacts/Conta
 **Files:**
 - Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
 
-This task does not have unit tests. The wiring is verified by `./gradlew.bat :app:assembleDebug` (compile) and `./gradlew.bat :app:testDebugUnitTest` (no regression on existing tests).
+This task does not have unit tests. The wiring is verified by `bash ./gradlew :app:assembleDebug` (compile) and `bash ./gradlew :app:testDebugUnitTest` (no regression on existing tests).
 
 - [ ] **Step 1: Add the import for `ContactProfileScreen` and `ContactProfileViewModel`**
 
@@ -923,7 +984,7 @@ Find the `composable(SelfHostedImRoute.Me.route) { ... }` block in the `NavHost`
 
 - [ ] **Step 4: Verify the build**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:assembleDebug --console=plain`
+Run: `bash ./gradlew :app:assembleDebug --console=plain`
 
 Expected: BUILD SUCCESSFUL.
 
@@ -931,14 +992,14 @@ If the build fails with `Unresolved reference: ContactProfileScreen` or `Unresol
 
 - [ ] **Step 5: Re-run existing tests to confirm no regression**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --tests com.codex.im.contacts.ContactListViewModelTest --tests com.codex.im.BottomNavigationSpecTest --tests com.codex.im.TopLevelBackPolicyTest --tests com.codex.im.ChatBackPolicyTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --tests com.codex.im.contacts.ContactListViewModelTest --tests com.codex.im.BottomNavigationSpecTest --tests com.codex.im.TopLevelBackPolicyTest --tests com.codex.im.ChatBackPolicyTest --console=plain`
 
 Expected: PASS. The change in Step 2 only altered the `onOpenContact` lambda body; the lambda signature is unchanged, so `ContactListScreen` accepts it without recompilation issues. The change in Step 3 added a new `composable` block without removing any existing one, so the chat back policy and top-level back policy tests stay green.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd d:/Desktop/engine/IM && git add app/src/main/java/com/codex/im/MainActivity.kt && git commit -m "feat(contacts): wire ContactProfileScreen into MainActivity NavHost"
+git add app/src/main/java/com/codex/im/MainActivity.kt && git commit -m "feat(contacts): wire ContactProfileScreen into MainActivity NavHost"
 ```
 
 ---
@@ -947,11 +1008,13 @@ cd d:/Desktop/engine/IM && git add app/src/main/java/com/codex/im/MainActivity.k
 
 **Files:** none modified.
 
+> Current workspace note: as of the latest review, `:app:testDebugUnitTest` compilation is already blocked by unrelated `ChatDisplayPolicyTest.kt` unresolved references to `ChatComposerAction` / `composerAction`. If that remains true when this plan is executed, record the blocker explicitly and use `:app:compileDebugKotlin` plus any test subset that can compile after the blocker is fixed. Do not treat that pre-existing compile failure as a ContactProfile regression.
+
 - [ ] **Step 1: Run the full Android JVM unit test suite**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:testDebugUnitTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --console=plain`
 
-Expected: BUILD SUCCESSFUL with all unit tests passing — including the 4 new `SelfHostedImRouteTest` cases, 7 new `ContactProfileDisplayPolicyTest` cases, 8 new `ContactProfileViewModelTest` cases, plus all pre-existing tests in `ContactListViewModelTest`, `MeViewModelTest`, `ProfileRepositoryTest`, `ChatBackPolicyTest`, `TopLevelBackPolicyTest`, `BottomNavigationSpecTest`, `MessagesTabUnreadBadge*Test`, `UserProfileDaoContractTest`, `ProfileJsonParserTest`, `MeBackPolicyTest`, `MeDisplayPolicyTest`, `AvatarUploadJsonParserTest`, and the conversation/group/connection/message Dao contract tests.
+Expected after any pre-existing test-source compile blockers are fixed: BUILD SUCCESSFUL with all unit tests passing — including the 4 new `SelfHostedImRouteTest` cases, 2 new `ProfileRepositoryTest` cases for `refreshProfile`, 7 new `ContactProfileDisplayPolicyTest` cases, 8 new `ContactProfileViewModelTest` cases, plus all pre-existing tests in `ContactListViewModelTest`, `MeViewModelTest`, `ProfileRepositoryTest`, `ChatBackPolicyTest`, `TopLevelBackPolicyTest`, `BottomNavigationSpecTest`, `MessagesTabUnreadBadge*Test`, `UserProfileDaoContractTest`, `ProfileJsonParserTest`, `MeBackPolicyTest`, `MeDisplayPolicyTest`, `AvatarUploadJsonParserTest`, and the conversation/group/connection/message Dao contract tests.
 
 If any test fails, fix the underlying code (NOT the test) and re-run. Common failure patterns to watch for:
 
@@ -960,7 +1023,7 @@ If any test fails, fix the underlying code (NOT the test) and re-run. Common fai
 
 - [ ] **Step 2: Run the debug build one more time**
 
-Run: `cd d:/Desktop/engine/IM && ./gradlew.bat :app:assembleDebug --console=plain`
+Run: `bash ./gradlew :app:assembleDebug --console=plain`
 
 Expected: BUILD SUCCESSFUL.
 
@@ -972,11 +1035,12 @@ This step is out of scope for the test suite but matches the spec's Acceptance C
 2. Open the Contacts tab.
 3. Tap the `13900113900` contact row.
 4. The Contact Profile page appears within 1 frame, showing the cached avatar, nickname, "未设置" gender, "未填写" signature.
-5. Tap "发送消息" — the chat screen opens with the single-chat conversation.
-6. Tap system Back from the chat — returns to the Contacts tab (not to the profile page).
-7. Re-open the profile from the Contacts tab. The page renders identically because the cache is already populated.
-8. Kill the app, restart, login again, and re-tap the contact. The page should still render instantly (the cache from `user_profiles` is persisted to SQLite).
-9. Repeat with a fresh install (no local cache): the page shows a centered spinner for ~200ms, then the profile appears.
+5. Tap top-bar Back from the profile page — returns to the Contacts tab.
+6. Re-open the profile from the Contacts tab and tap "发送消息" — the chat screen opens with the single-chat conversation.
+7. Tap system Back from the chat — follows the current chat Back policy and returns to the conversation list, not to the profile page.
+8. Re-open the profile from the Contacts tab. The page renders cached data immediately, then silently refreshes in the background.
+9. Kill the app, restart, login again, and re-tap the contact. The page should still render instantly when the cache from `user_profiles` is present, then refresh remotely.
+10. Repeat with a fresh install (no local cache): the page shows a centered spinner for ~200ms, then the profile appears.
 
 If any of these steps fail, file a follow-up issue rather than patching in this slice.
 
@@ -993,7 +1057,7 @@ And create a new status file `docs/status/contact-profile-display-development-st
 - [ ] **Step 5: Final commit (if Step 4 was performed)**
 
 ```bash
-cd d:/Desktop/engine/IM && git add docs/DEVELOPMENT_STATUS.md docs/status/contact-profile-display-development-status.md && git commit -m "docs: add contact profile display status entry"
+git add docs/DEVELOPMENT_STATUS.md docs/status/contact-profile-display-development-status.md && git commit -m "docs: add contact profile display status entry"
 ```
 
 ---
@@ -1010,7 +1074,7 @@ This plan was self-reviewed against the spec before saving:
    - Page uses existing ByteIM UI constants → Task 4 (all imports from `com.codex.im.ui.*`).
    - Sticky bottom "发送消息" button, enabled only when profile loaded → Task 4 (`ContactProfileSendMessageBar` + `enabled = state.profile != null`).
    - Tapping "发送消息" navigates to single-chat → Task 5 Step 3 (`onSendMessage` callback).
-   - Tapping top-bar Back returns to Contacts → Task 5 Step 3 (`onBack = { navController.popBackStack() }`).
+   - Tapping top-bar Back returns to the previous route (Contacts for the Contacts entry point; chat for chat-avatar entry points) → Task 5 Step 3 (`onBack = { navController.popBackStack() }`).
    - Cache-first render, background refresh, no loading screen on cache hit → Task 3 (`start()` synchronous cache read) + Task 4 (`ContactProfileBody` only shows progress when `profile == null && errorMessage == null`).
    - All listed unit tests pass → Task 6 Step 1.
    - `./gradlew :app:assembleDebug` passes → Task 6 Step 2.

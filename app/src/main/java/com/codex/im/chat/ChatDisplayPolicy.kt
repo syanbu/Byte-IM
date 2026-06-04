@@ -17,6 +17,14 @@ object ChatDisplayPolicy {
         return draft.trim().isNotEmpty()
     }
 
+    fun composerAction(draft: String): ChatComposerAction {
+        return if (shouldShowSendButton(draft)) {
+            ChatComposerAction.SEND_TEXT
+        } else {
+            ChatComposerAction.PICK_IMAGE
+        }
+    }
+
     fun messageLine(message: ChatMessage): String {
         val prefix = if (message.direction == MessageDirection.OUTGOING) "我" else message.senderId
         return "$prefix: ${message.content}"
@@ -41,6 +49,15 @@ object ChatDisplayPolicy {
             )
         }
         return BubbleAvatar(displayName = peerName, avatarUrl = peerAvatarUrl)
+    }
+
+    fun bubbleAvatarUserId(message: ChatMessage, currentUserId: String): String? {
+        val userId = if (message.direction == MessageDirection.OUTGOING) {
+            currentUserId
+        } else {
+            message.senderId
+        }
+        return userId.trim().takeIf { it.isNotEmpty() }
     }
 
     fun canCopy(message: ChatMessage): Boolean {
@@ -110,6 +127,11 @@ data class BubbleAvatar(
 enum class ChatMessageAction {
     COPY,
     RECALL
+}
+
+enum class ChatComposerAction {
+    PICK_IMAGE,
+    SEND_TEXT
 }
 
 enum class ChatMessageRowKind {
