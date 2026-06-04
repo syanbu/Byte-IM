@@ -13,13 +13,15 @@ Design source: [`../B12-message-recall-and-read-receipts-design.md`](../B12-mess
 
 ## Status
 
-Implemented for first-pass single-chat scope, with group-chat recall copy now handled for recalled group member display names.
+Implemented for first-pass single-chat read receipts, with message recall and long-press copy/recall interactions handled on the shared single-chat and group-chat UI path. Group-chat recall copy now resolves recalled group member display names.
 
 The Android client now persists recall state and a conversation-level peer read cursor, sends `READ_ACK` when an open chat has incoming persisted `serverSeq` messages, processes inbound `READ_ACK`, sends recall requests, and marks local messages recalled from `RECALL_ACK` / `RECALL_NOTIFY`.
 
 Conversation preview updates now preserve the existing peer read cursor, so later unread incoming messages do not make older already-read outgoing messages lose their read marker.
 
-Long-press actions now render as a horizontal action bar. Text messages can show `复制 | 撤回`; image messages can show `撤回` only and never show `复制`. Tapping outside the action bar dismisses it without recalling the message. The action bar is outside the bubble alignment line: `ChatMessageContent` owns the action bar above the message, while `ChatBubbleLine` keeps the outgoing read/unread marker aligned with the message bubble itself. Manual verification confirmed the green read marker follows the bubble, not the action bar.
+Long-press actions now render as a WeChat-style floating operation menu. Text messages can show `复制 | 撤回`; image messages can show `撤回` only and never show `复制`. Tapping outside the action menu dismisses it without recalling the message. `ChatMessageContent` keeps `ChatBubbleLine` as the measured message-row content and renders `ChatMessageActionBar` in a Compose `Popup`, so opening the menu does not change row height, push the bubble, move the avatar, or disturb the outgoing read/unread marker. Manual verification confirmed the green read marker follows the bubble, not the action menu.
+
+The oldest loaded end of the reversed chat `LazyColumn` now reserves a small timeline area above the first visual message. It displays a centered gray time marker based on the oldest loaded message time, such as `15:30`, giving the floating action menu room at the top of single-chat and group-chat histories.
 
 Recalled messages now render as centered system notices in chronological position. Single chat uses `你撤回了一条消息` / `对方撤回了一条消息`; group chat uses `你撤回了一条消息` for the current user and `{成员昵称}撤回了一条消息` for other group members. They are not rendered as message bubbles, do not show the left/right avatar, and do not show outgoing read/unread markers.
 
@@ -68,7 +70,13 @@ Important existing rules:
 
 ## Agreed First Scope
 
-Single chat only.
+Read receipts are first-pass single-chat only.
+
+Message recall is implemented on the shared chat UI and storage/protocol path
+used by both single chat and group chat. The current group-chat support covers
+the long-press recall/copy action surface, recalled-message rendering, and
+member-name display in chat rows and conversation previews. Group read-member
+state remains out of scope.
 
 Read receipts:
 
@@ -94,13 +102,13 @@ Message recall:
 Chat interaction foundation:
 
 - Text messages should move from bare `Text(message.content)` rendering toward message bubbles.
-- Long-press action menu should start with `Copy` and later expose `Recall` once storage/protocol support is present.
-- Image bubbles should eventually reuse the same recall policy, but first implementation may focus on text bubbles and then generalize.
+- Long-press action menu should use a floating operation menu, not measured row content.
+- Text messages show copy actions and eligible current-user messages expose recall.
+- Image bubbles reuse the same recall action policy and never show copy.
 
 ## Explicit Non-Scope
 
 - Group read-member list.
-- Group recall UI naming beyond future design notes.
 - Push notifications for recall/read events.
 - A new HTTP API for first-pass read receipts.
 - Treating `DELIVERY_ACK` as read.
@@ -229,9 +237,11 @@ Recommended order:
 
 - Text messages are displayed as left/right chat bubbles, not bare text rows.
 - Long-pressing an unrecalled text message shows `复制`.
-- Long-pressing the current user's sent message within 2 minutes shows `撤回` to the right of `复制` in the horizontal action bar.
+- Long-pressing the current user's sent message within 2 minutes shows `撤回` to the right of `复制` in the horizontal floating action menu.
 - Long-pressing the current user's sent image message within 2 minutes shows `撤回` only.
-- Tapping outside the action bar closes it without triggering copy or recall.
+- Tapping outside the action menu closes it without triggering copy or recall.
+- Opening the action menu does not change message row height and does not push the bubble or avatar.
+- The oldest loaded end of the chat shows a centered gray time marker above the first visual message, reserving top space for the floating action menu.
 - If the message is older than 2 minutes, the `撤回` action is hidden instead of disabled.
 - Long-pressing a peer message does not show `撤回`.
 - Long-pressing a recalled message does not show `复制`.
@@ -262,6 +272,8 @@ Android unit tests should cover:
 - recall failure surfaces a user-visible error
 - recalled messages render centered prompt text instead of original text/image
 - recalled messages use the centered-notice row kind rather than the normal bubble row
+- long-press action menu renders as a `Popup` overlay rather than measured row content
+- oldest loaded history renders a centered top timeline time marker
 
 Mock-server tests should cover:
 
@@ -283,6 +295,9 @@ Manual/emulator checks:
 - A recalls within 2 minutes; A sees own recall prompt and B sees peer recall prompt.
 - Recalled prompts are centered notices with no avatar and no read/unread marker.
 - A cannot recall after 2 minutes.
+- Scroll to the oldest loaded single-chat history, long-press the oldest message, and verify the floating action menu does not cover or move the bubble.
+- Repeat the oldest-message floating menu check in a group chat.
+- Verify the visual top of the oldest loaded history shows a centered gray time marker.
 - App restart/reconnect does not lose already persisted recall/read state if persistence is included in the implementation pass.
 
 ## Verification Records
@@ -296,6 +311,11 @@ Manual/emulator checks:
 - `mvn -q -f mock-server/pom.xml test -Dtest=MessageRouterTest` passed.
 - `mvn -q -f mock-server/pom.xml test` passed.
 
+2026-06-04:
+
+- `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.chat.ChatAutoScrollPolicyTest --tests com.codex.im.chat.ChatMessageRowLayoutTest --tests com.codex.im.chat.ChatMessageActionLayoutPolicyTest --tests com.codex.im.chat.ChatDisplayPolicyTest --console=plain` passed.
+- Manual verification passed: at the oldest loaded chat history, long-pressing a bubble shows the floating operation menu without covering or pushing the bubble. The check was confirmed for the shared chat UI path used by both single chat and group chat.
+
 ## Current Risks
 
 - Confusing `DELIVERY_ACK` with read receipts would produce incorrect UX. B12 must keep these semantics separate.
@@ -304,9 +324,11 @@ Manual/emulator checks:
 - If read cursor updates are not monotonic, stale packets can move UI from read back to unread.
 - If offline recall notifications are not persisted/replayed, the peer may keep seeing the original message after reconnect.
 - B11 image messages add another rendering path; recall rendering must take priority over both text and image bubble rendering.
+- The floating action menu uses a fixed offset above the bubble; future action expansion such as `转发` or `收藏` should re-check available top space and menu width on small screens.
 
 ## Documentation Updated
 
 - [`../DEVELOPMENT_STATUS.md`](../DEVELOPMENT_STATUS.md) lists B12 as implemented for first-pass single-chat scope and points to this status file.
 - [`../WEBSOCKET_PROTOCOL_AND_STATES.md`](../WEBSOCKET_PROTOCOL_AND_STATES.md) documents final `READ_ACK`, `RECALL_MESSAGE`, `RECALL_ACK`, and `RECALL_NOTIFY` semantics.
-- This file records the B12 verification commands that passed on 2026-05-30.
+- [`../bug/Fix-ChatOldestMessageActionBarOverlay.md`](../bug/Fix-ChatOldestMessageActionBarOverlay.md) records the 2026-06-04 oldest-message floating action menu fix and manual verification.
+- This file records the B12 verification commands that passed on 2026-05-30 and the action-menu regression verification from 2026-06-04.

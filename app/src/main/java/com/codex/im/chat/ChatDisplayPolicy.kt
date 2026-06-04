@@ -7,6 +7,9 @@ import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
 import com.codex.im.storage.MessageType
 import com.codex.im.storage.UserProfile
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 object ChatDisplayPolicy {
     val backButtonLabel: String? = null
@@ -114,6 +117,10 @@ object ChatDisplayPolicy {
             state.isHistoryMemoryLimitReached -> "本次聊天已加载 2000 条消息"
             else -> null
         }
+    }
+
+    fun topTimelineTimeText(createdAt: Long): String {
+        return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(createdAt))
     }
 
     private const val RECALL_WINDOW_MS = 2 * 60 * 1000L

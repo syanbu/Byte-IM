@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,6 +50,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
@@ -57,7 +59,10 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.codex.im.R
 import com.codex.im.message.ChatImageCompressor
 import com.codex.im.storage.ChatMessage
@@ -155,25 +160,6 @@ fun ChatScreen(
         }
     }
 
-    // Track which message is at the visual top of the LazyColumn and whether
-    // we've already scrolled as far up as possible. With reverseLayout = true,
-    // the LazyColumn lays out items in reverse data order, so the visually
-    // topmost item has the highest data index. The long-press action bar
-    // (复制 / 撤回) is normally rendered ABOVE the bubble, but if the bubble
-    // is at the very top of the chat area the action bar would overflow that
-    // edge. When that happens we render the action bar BELOW the bubble.
-    val topVisibleDataIndex by remember {
-        derivedStateOf {
-            listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
-        }
-    }
-    val isAtLazyColumnTop by remember {
-        // With reverseLayout = true, canScrollForward means "can scroll up
-        // visually" (towards older messages). At the top of the LazyColumn
-        // the user can no longer scroll up, so canScrollForward = false.
-        derivedStateOf { !listState.canScrollForward }
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -216,15 +202,6 @@ fun ChatScreen(
             reverseLayout = true
         ) {
             itemsIndexed(state.messages, key = { _, msg -> msg.messageId }) { index, message ->
-                // A message is "near the top" if the LazyColumn has scrolled
-                // all the way up AND this message is the topmost visible item
-                // (or the one directly below it, with a 1-item tolerance for
-                // bubbles whose action bar would otherwise overlap the row
-                // above). For those messages ChatMessageContent flips the
-                // action bar to render BELOW the bubble instead of above.
-                val isNearTop = isAtLazyColumnTop &&
-                    topVisibleDataIndex >= 0 &&
-                    index >= topVisibleDataIndex - 1
                 when (ChatDisplayPolicy.rowKind(message)) {
                     ChatMessageRowKind.CENTERED_NOTICE -> RecalledMessageNotice(
                         text = ChatDisplayPolicy.recalledMessageText(
@@ -243,7 +220,6 @@ fun ChatScreen(
                         peerReadUpToServerSeq = state.peerReadUpToServerSeq,
                         mentionMembers = state.mentionMembers,
                         showActions = activeActionMessageId == message.messageId,
-                        isNearTop = isNearTop,
                         onOpenImagePreview = { previewMessage = it },
                         onOpenActions = { activeActionMessageId = message.messageId },
                         onDismissActions = { activeActionMessageId = null },
@@ -266,13 +242,24 @@ fun ChatScreen(
             }
             if (state.messages.isNotEmpty()) {
                 item(key = "history-loader") {
-                    ChatDisplayPolicy.historyStatusText(state)?.let { statusText ->
-                        Text(
-                            text = statusText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = ByteImColors.TextSecondary,
-                            modifier = Modifier.padding(vertical = 8.dp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 72.dp)
+                            .padding(top = 16.dp, bottom = 18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ChatHistoryTopTime(
+                            text = ChatDisplayPolicy.topTimelineTimeText(state.messages.last().createdAt)
                         )
+                        ChatDisplayPolicy.historyStatusText(state)?.let { statusText ->
+                            Text(
+                                text = statusText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = ByteImColors.TextSecondary
+                            )
+                        }
                     }
                 }
             }
@@ -542,7 +529,6 @@ private fun ChatMessageRow(
     peerReadUpToServerSeq: Long?,
     mentionMembers: List<GroupMember>,
     showActions: Boolean,
-    isNearTop: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onOpenActions: () -> Unit,
     onDismissActions: () -> Unit,
@@ -592,7 +578,6 @@ private fun ChatMessageRow(
             peerReadUpToServerSeq = peerReadUpToServerSeq,
             mentionMembers = mentionMembers,
             showActions = showActions,
-            isNearTop = isNearTop,
             onOpenImagePreview = onOpenImagePreview,
             onOpenActions = onOpenActions,
             onDismissActions = onDismissActions,
@@ -624,7 +609,6 @@ private fun ChatMessageContent(
     peerReadUpToServerSeq: Long?,
     mentionMembers: List<GroupMember>,
     showActions: Boolean,
-    isNearTop: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onOpenActions: () -> Unit,
     onDismissActions: () -> Unit,
@@ -635,26 +619,27 @@ private fun ChatMessageContent(
 ) {
     val actions = ChatDisplayPolicy.messageActions(message, currentUserId, now = System.currentTimeMillis())
     val hasActions = showActions && actions.isNotEmpty()
-    Column(
+    val actionPopupOffsetY = with(LocalDensity.current) { -56.dp.roundToPx() }
+    Box(
         modifier = modifier,
-        horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start
+        contentAlignment = if (outgoing) Alignment.CenterEnd else Alignment.CenterStart
     ) {
-        // When the bubble is near the top of the chat area, the long-press
-        // action bar would otherwise overflow above the LazyColumn's top
-        // edge. Flip the order so the action bar appears BELOW the bubble
-        // in that case, keeping the avatar and bubble on the same row.
-        if (isNearTop) {
-            ChatBubbleLine(
-                message = message,
-                outgoing = outgoing,
-                peerReadUpToServerSeq = peerReadUpToServerSeq,
-                mentionMembers = mentionMembers,
-                onOpenImagePreview = onOpenImagePreview,
-                onRetryImage = onRetryImage,
-                onLongPressImage = onOpenActions,
-                onLongPressText = onOpenActions
-            )
-            if (hasActions) {
+        ChatBubbleLine(
+            message = message,
+            outgoing = outgoing,
+            peerReadUpToServerSeq = peerReadUpToServerSeq,
+            mentionMembers = mentionMembers,
+            onOpenImagePreview = onOpenImagePreview,
+            onRetryImage = onRetryImage,
+            onLongPressImage = onOpenActions,
+            onLongPressText = onOpenActions
+        )
+        if (hasActions) {
+            Popup(
+                alignment = if (outgoing) Alignment.TopEnd else Alignment.TopStart,
+                offset = IntOffset(x = 0, y = actionPopupOffsetY),
+                properties = PopupProperties(focusable = false)
+            ) {
                 ChatMessageActionBar(
                     actions = actions,
                     onCopy = {
@@ -664,37 +649,18 @@ private fun ChatMessageContent(
                     onRecall = {
                         onDismissActions()
                         onRecall(message)
-                    },
-                    modifier = Modifier.padding(top = 4.dp)
+                    }
                 )
             }
-        } else {
-            if (hasActions) {
-                ChatMessageActionBar(
-                    actions = actions,
-                    onCopy = {
-                        onDismissActions()
-                        onCopyText(message.content)
-                    },
-                    onRecall = {
-                        onDismissActions()
-                        onRecall(message)
-                    },
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-            }
-            ChatBubbleLine(
-                message = message,
-                outgoing = outgoing,
-                peerReadUpToServerSeq = peerReadUpToServerSeq,
-                mentionMembers = mentionMembers,
-                onOpenImagePreview = onOpenImagePreview,
-                onRetryImage = onRetryImage,
-                onLongPressImage = onOpenActions,
-                onLongPressText = onOpenActions
-            )
         }
     }
+}
+
+@Composable
+private fun ChatHistoryTopTime(
+    text: String
+) {
+    ByteImSystemNotice(text = text)
 }
 
 @Composable

@@ -8,12 +8,9 @@ import java.io.File
 /**
  * Regression coverage for the chat message row layout.
  *
- * When a user long-presses a chat bubble, the long-press action bar
- * (复制 / 撤回) appears above the bubble inside the [ChatMessageContent]
- * Column. The Row that hosts the avatar + [ChatMessageContent] must use
- * `verticalAlignment = Alignment.Bottom` so the avatar stays on the same
- * horizontal line as the bubble, instead of being pulled upward to match
- * the action bar's top edge.
+ * Regression coverage for keeping the long-press action bar as an overlay.
+ * The action bar must not be measured as part of the message row, otherwise
+ * opening it pushes the bubble and avatar around.
  */
 class ChatMessageRowLayoutTest {
 
@@ -40,7 +37,7 @@ class ChatMessageRowLayoutTest {
     }
 
     @Test
-    fun actionBarRendersAboveBubbleInTheNormalElseBranch() {
+    fun actionBarRendersInPopupOverlayNotInMessageColumn() {
         val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
 
         val contentBlock = extractFunctionBody(
@@ -48,25 +45,19 @@ class ChatMessageRowLayoutTest {
             signature = "private fun ChatMessageContent("
         ) ?: error("ChatMessageContent declaration not found")
 
-        // Find the else branch (the normal, non-near-top layout) and verify
-        // that within it the action bar is rendered ABOVE the bubble, the
-        // behavior used in the original implementation.
-        val elseMarker = contentBlock.indexOf("} else {")
         assertTrue(
-            "ChatMessageContent must have an else branch for the normal layout",
-            elseMarker >= 0
+            "ChatMessageContent must render long-press actions in a Popup so the " +
+                "action bar does not participate in message row measurement.",
+            contentBlock.contains("Popup(")
         )
-        val elseBranch = contentBlock.substring(elseMarker)
-        val elseActionIdx = elseBranch.indexOf("ChatMessageActionBar(")
-        val elseBubbleIdx = elseBranch.indexOf("ChatBubbleLine(")
-
-        assertTrue("ChatMessageActionBar must be present in the else branch", elseActionIdx >= 0)
-        assertTrue("ChatBubbleLine must be present in the else branch", elseBubbleIdx >= 0)
         assertTrue(
-            "In the else (non-near-top) branch ChatMessageActionBar must render " +
-                "before ChatBubbleLine so the action bar appears above the bubble " +
-                "and the avatar stays on the bubble's row.",
-            elseActionIdx < elseBubbleIdx
+            "ChatMessageActionBar must still be rendered by ChatMessageContent.",
+            contentBlock.contains("ChatMessageActionBar(")
+        )
+        assertTrue(
+            "ChatBubbleLine must render outside the Popup so the bubble remains the " +
+                "measured message row content.",
+            contentBlock.indexOf("ChatBubbleLine(") < contentBlock.indexOf("Popup(")
         )
     }
 
@@ -101,81 +92,31 @@ class ChatMessageRowLayoutTest {
     }
 
     @Test
-    fun chatMessageContentFlipsActionBarBelowBubbleWhenMessageIsNearTop() {
+    fun chatMessageContentDoesNotFlipActionBarIntoTheMeasuredRow() {
         val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
-
-        // ChatMessageContent should accept an isNearTop parameter and use it
-        // to swap the order of the action bar and the bubble. When isNearTop
-        // is true the bubble is rendered first and the action bar is rendered
-        // below it, so the action bar does not overflow above the LazyColumn
-        // when the bubble is at the top of the chat area.
-        assertTrue(
-            "ChatMessageContent must accept an isNearTop: Boolean parameter",
-            chatScreen.contains("isNearTop: Boolean,")
-        )
 
         val contentBlock = extractFunctionBody(
             source = chatScreen,
             signature = "private fun ChatMessageContent("
         ) ?: error("ChatMessageContent declaration not found")
 
-        val nearTopBranchStart = contentBlock.indexOf("if (isNearTop) {")
-        assertTrue(
-            "ChatMessageContent must branch on isNearTop to flip the action bar position",
-            nearTopBranchStart >= 0
-        )
-        val elseMarker = contentBlock.indexOf("} else {", nearTopBranchStart)
-        assertTrue(
-            "ChatMessageContent must provide an else branch for the normal (non-near-top) layout",
-            elseMarker > nearTopBranchStart
-        )
-
-        // In the isNearTop branch, the bubble must come BEFORE the action bar
-        // so the action bar renders below the bubble.
-        val nearTopBranch = contentBlock.substring(nearTopBranchStart, elseMarker)
-        val nearTopBubbleIdx = nearTopBranch.indexOf("ChatBubbleLine(")
-        val nearTopActionIdx = nearTopBranch.indexOf("ChatMessageActionBar(")
-        assertTrue(
-            "In the isNearTop branch ChatBubbleLine must render before ChatMessageActionBar " +
-                "so the action bar appears below the bubble.",
-            nearTopBubbleIdx >= 0 && nearTopActionIdx >= 0 && nearTopBubbleIdx < nearTopActionIdx
-        )
-
-        // In the else branch, the action bar must come BEFORE the bubble
-        // (the original behavior).
-        val elseBranch = contentBlock.substring(elseMarker)
-        val elseActionIdx = elseBranch.indexOf("ChatMessageActionBar(")
-        val elseBubbleIdx = elseBranch.indexOf("ChatBubbleLine(")
-        assertTrue(
-            "In the else branch ChatMessageActionBar must render before ChatBubbleLine " +
-                "to preserve the original above-bubble action bar position.",
-            elseActionIdx >= 0 && elseBubbleIdx >= 0 && elseActionIdx < elseBubbleIdx
-        )
+        assertFalse("ChatMessageContent should not keep the old near-top flip parameter.", chatScreen.contains("isNearTop: Boolean,"))
+        assertFalse("ChatMessageContent should not branch on isNearTop anymore.", contentBlock.contains("if (isNearTop)"))
+        assertFalse("ChatMessageContent should not render the action bar below the bubble inside the measured row.", contentBlock.contains("} else {"))
     }
 
     @Test
-    fun chatScreenComputesIsNearTopAndPassesItToEachMessageRow() {
+    fun chatScreenProvidesOldestHistoryTimeSpacer() {
         val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
 
-        // The chat screen must observe the LazyColumn layout to detect which
-        // message is at the visual top, then forward that decision to each
-        // ChatMessageRow.
         assertTrue(
             "ChatScreen should use itemsIndexed so the per-row index is available",
             chatScreen.contains("itemsIndexed(")
         )
         assertTrue(
-            "ChatScreen must derive the topmost visible message's data index from listState.layoutInfo",
-            chatScreen.contains("visibleItemsInfo.maxOfOrNull { it.index }")
-        )
-        assertTrue(
-            "ChatScreen must detect 'at the top' via canScrollForward so we don't flip " +
-                "action bar position in the middle of the chat unnecessarily",
-            chatScreen.contains("canScrollForward")
-        )
-        assertTrue(
-            "ChatMessageRow call site must pass isNearTop = isNearTop",
-            Regex("isNearTop\\s*=\\s*isNearTop").containsMatchIn(chatScreen)
+            "ChatScreen must render an oldest-history time spacer above the oldest visual message.",
+            chatScreen.contains("ChatHistoryTopTime(") &&
+                chatScreen.contains("ChatDisplayPolicy.topTimelineTimeText(state.messages.last().createdAt)")
         )
     }
 
