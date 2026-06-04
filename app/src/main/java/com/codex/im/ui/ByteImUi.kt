@@ -146,12 +146,13 @@ fun ByteImUnreadBadge(
 @Composable
 fun ByteImListSurface(
     modifier: Modifier = Modifier,
+    containerColor: Color = ByteImColors.Surface,
     content: @Composable () -> Unit
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(ByteImColors.Surface)
+            .background(containerColor)
     ) {
         content()
     }

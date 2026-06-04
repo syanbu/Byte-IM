@@ -45,8 +45,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -87,6 +90,8 @@ fun ChatScreen(
     var selectedMentions by remember { mutableStateOf(emptyList<ChatMention>()) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val context = LocalContext.current
     var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
@@ -176,7 +181,10 @@ fun ChatScreen(
             .clickable(
                 indication = null,
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                onClick = { activeActionMessageId = null }
+                onClick = {
+                    activeActionMessageId = null
+                    showMoreActions = false
+                }
             )
     ) {
         ByteImTopBar(
@@ -292,12 +300,23 @@ fun ChatScreen(
                 selectedMentions = result.selectedMentions
             },
             canSend = ChatDisplayPolicy.shouldShowSendButton(draft.text) && state.peerId.isNotBlank(),
-            onMoreActionsClick = { showMoreActions = true },
+            showMoreActions = showMoreActions,
+            onMoreActionsClick = {
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                showMoreActions = !showMoreActions
+            },
+            onDismissMoreActions = { showMoreActions = false },
+            onPickMoreActionImage = {
+                showMoreActions = false
+                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
             onSend = {
                 val content = draft.text
                 val mentionIds = ChatMentionPolicy.activeMentionIds(content, selectedMentions)
                 draft = TextFieldValue("")
                 selectedMentions = emptyList()
+                showMoreActions = false
                 scope.launch {
                     viewModel.sendText(content, mentionedUserIds = mentionIds)
                 }
@@ -308,15 +327,6 @@ fun ChatScreen(
         ChatImagePreviewScreen(
             message = message,
             onDismiss = { previewMessage = null }
-        )
-    }
-    if (showMoreActions) {
-        ChatMoreActionsSheet(
-            onPickImage = {
-                showMoreActions = false
-                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            },
-            onDismiss = { showMoreActions = false }
         )
     }
     if (showGroupRename) {
@@ -376,7 +386,10 @@ private fun ChatComposerBar(
     onMentionSelected: (GroupMember) -> Unit,
     canSend: Boolean,
     onSend: () -> Unit,
+    showMoreActions: Boolean,
     onMoreActionsClick: () -> Unit,
+    onDismissMoreActions: () -> Unit,
+    onPickMoreActionImage: () -> Unit,
     onEmojiClick: () -> Unit = {}
 ) {
     val barColor = ByteImColors.Surface
@@ -445,7 +458,13 @@ private fun ChatComposerBar(
                 TextField(
                     value = draft,
                     onValueChange = onDraftChange,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                onDismissMoreActions()
+                            }
+                        },
                     singleLine = true,
                     label = ChatDisplayPolicy.composerLabel?.let { label ->
                         { Text(label) }
@@ -498,6 +517,14 @@ private fun ChatComposerBar(
                     )
                 }
             }
+        }
+        if (showMoreActions && !hasText) {
+            ChatMoreActionsPanel(
+                onPickImage = {
+                    onDismissMoreActions()
+                    onPickMoreActionImage()
+                }
+            )
         }
     }
 }

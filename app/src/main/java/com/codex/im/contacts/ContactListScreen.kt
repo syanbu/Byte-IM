@@ -36,6 +36,7 @@ import com.codex.im.R
 import com.codex.im.ui.AvatarImage
 import com.codex.im.ui.ByteImColors
 import com.codex.im.ui.ByteImDimensions
+import com.codex.im.ui.ByteImListRowPolicy
 import com.codex.im.ui.ByteImListSurface
 import com.codex.im.ui.ByteImShapes
 import com.codex.im.ui.ByteImTopBar
@@ -70,16 +71,18 @@ fun ContactListScreen(
             .background(ByteImColors.AppBackground)
     ) {
         ContactsTopBar(onStartGroupChat = onStartGroupChat)
-        ByteImListSurface(modifier = Modifier.weight(1f)) {
+        ByteImListSurface(
+            modifier = Modifier.weight(1f),
+            containerColor = ByteImColors.AppBackground
+        ) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 item {
-                    ContactEntryBlock()
-                    Spacer(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .background(ByteImColors.AppBackground)
+                    HorizontalDivider(
+                        color = ByteImColors.Divider,
+                        modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
                     )
+                    ContactEntryBlock()
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
                 items(state.items, key = { it.userId }) { item ->
                     ContactRow(
@@ -88,11 +91,7 @@ fun ContactListScreen(
                     )
                     HorizontalDivider(
                         color = ByteImColors.Divider,
-                        modifier = Modifier.padding(
-                            start = ByteImDimensions.EdgePadding +
-                                ByteImDimensions.ListAvatarSize +
-                                ByteImDimensions.Gutter
-                        )
+                        modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
                     )
                 }
             }
@@ -108,7 +107,7 @@ private fun ContactsTopBar(
     ByteImTopBar(
         title = "通讯录",
         centerTitle = true,
-        containerColor = ByteImColors.AppBackground,
+        containerColor = ByteImColors.Surface,
         actions = listOf(
             {
                 // 搜索图标：当前为视觉占位
@@ -157,6 +156,7 @@ private fun ContactRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(ByteImDimensions.ListItemHeight)
+            .background(ByteImColors.Surface)
             .clickable(onClick = onClick)
             .padding(horizontal = ByteImDimensions.EdgePadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -197,6 +197,7 @@ private fun ContactEntryItem(
         modifier = Modifier
             .fillMaxWidth()
             .height(ByteImDimensions.ListItemHeight)
+            .background(ByteImColors.Surface)
             .clickable(onClick = onClick)
             .padding(horizontal = ByteImDimensions.EdgePadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -236,11 +237,7 @@ private fun ContactEntryBlock() {
     )
     HorizontalDivider(
         color = ByteImColors.Divider,
-        modifier = Modifier.padding(
-            start = ByteImDimensions.EdgePadding +
-                ByteImDimensions.ListAvatarSize +
-                ByteImDimensions.Gutter
-        )
+        modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
     )
     ContactEntryItem(
         iconResId = R.drawable.ic_contact_group_chat,

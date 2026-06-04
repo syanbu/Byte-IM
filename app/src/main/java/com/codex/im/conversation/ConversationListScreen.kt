@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +36,7 @@ import com.codex.im.MessagesTabUnreadBadgePolicy
 import com.codex.im.ui.AvatarImage
 import com.codex.im.ui.ByteImColors
 import com.codex.im.ui.ByteImDimensions
+import com.codex.im.ui.ByteImListRowPolicy
 import com.codex.im.ui.ByteImListSurface
 import com.codex.im.ui.ByteImSystemNotice
 import com.codex.im.ui.ByteImTopBar
@@ -93,16 +95,28 @@ fun ConversationListScreen(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         }
-        ByteImListSurface(modifier = Modifier.weight(1f)) {
+        ByteImListSurface(
+            modifier = Modifier.weight(1f),
+            containerColor = ByteImColors.AppBackground
+        ) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(state.items, key = { it.conversationId }) { item ->
+                itemsIndexed(state.items, key = { _, item -> item.conversationId }) { index, item ->
+                    if (index == 0) {
+                        HorizontalDivider(
+                            color = ByteImColors.Divider,
+                            modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
+                        )
+                    }
                     ConversationRow(
                         item = item,
                         onClick = {
                             viewModel.openConversation(if (item.isGroup) item.conversationId else item.peerId)
                         }
                     )
-                    HorizontalDivider(color = ByteImColors.Divider)
+                    HorizontalDivider(
+                        color = ByteImColors.Divider,
+                        modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
+                    )
                 }
             }
         }
@@ -118,7 +132,7 @@ private fun MessagesTopBar(
     ByteImTopBar(
         title = MessageTopBarTitlePolicy.titleForUnreadCount(unreadCount),
         centerTitle = true,
-        containerColor = ByteImColors.AppBackground,
+        containerColor = ByteImColors.Surface,
         actions = listOf(
             {
                 // 搜索图标：当前为视觉占位，后续接搜索路由
@@ -167,6 +181,7 @@ private fun ConversationRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(ByteImDimensions.ListItemHeight)
+            .background(ByteImColors.Surface)
             .clickable(enabled = onClick != null) { onClick?.invoke() }
             .padding(horizontal = ByteImDimensions.EdgePadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -198,19 +213,27 @@ private fun ConversationRow(
                     color = ByteImColors.TextSecondary
                 )
             }
-            Text(
-                text = ConversationListPreviewPolicy.previewAnnotatedText(
-                    item = item,
-                    mentionColor = ByteImColors.BadgeRed
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = ByteImColors.TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (item.unreadCount > 0) {
-            ByteImUnreadBadge(text = if (item.unreadCount >= 100) "99+" else item.unreadCount.toString())
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = ConversationListPreviewPolicy.previewAnnotatedText(
+                        item = item,
+                        mentionColor = ByteImColors.BadgeRed
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ByteImColors.TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(
+                        end = ByteImListRowPolicy.previewEndPaddingForUnreadCount(item.unreadCount)
+                    )
+                )
+                if (item.unreadCount > 0) {
+                    ByteImUnreadBadge(
+                        text = if (item.unreadCount >= 100) "99+" else item.unreadCount.toString(),
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    )
+                }
+            }
         }
     }
 }

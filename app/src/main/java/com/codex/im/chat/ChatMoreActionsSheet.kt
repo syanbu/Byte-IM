@@ -11,12 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,32 +23,27 @@ import androidx.compose.ui.unit.dp
 import com.codex.im.R
 import com.codex.im.ui.ByteImColors
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatMoreActionsSheet(
-    onPickImage: () -> Unit,
-    onDismiss: () -> Unit
+fun ChatMoreActionsPanel(
+    onPickImage: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState()
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = ByteImColors.Surface
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ByteImColors.AppBackground)
     ) {
-        Column(
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                MoreActionItem(
-                    iconRes = R.drawable.ic_panel_album,
-                    label = "图片",
-                    onClick = onPickImage
-                )
-            }
+            MoreActionItem(
+                iconRes = R.drawable.ic_panel_album,
+                label = "图片",
+                onClick = onPickImage
+            )
         }
     }
 }
