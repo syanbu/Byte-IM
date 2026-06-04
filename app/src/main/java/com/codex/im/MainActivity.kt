@@ -3,6 +3,7 @@ package com.codex.im
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.database.sqlite.SQLiteDatabase
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -101,6 +102,7 @@ import com.codex.im.storage.AndroidMessageDao
 import com.codex.im.storage.AndroidPendingMessageDao
 import com.codex.im.storage.AndroidTransactionRunner
 import com.codex.im.storage.AndroidUserProfileDao
+import com.codex.im.storage.AccountScopedDatabaseName
 import com.codex.im.storage.ImDatabaseHelper
 import com.codex.im.ui.ByteImColors
 import com.codex.im.ui.ByteImDimensions
@@ -109,12 +111,10 @@ class MainActivity : ComponentActivity() {
     private var connectionLifecycleManager: ConnectionLifecycleManager? = null
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var thumbnailDownloadScope: CoroutineScope? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        val database = ImDatabaseHelper(this).writableDatabase
         val mockServerConfig = MockServerConfig.load(this)
         val rawConnection = OkHttpImConnection(mockServerConfig.webSocketUrl)
         val repository = AuthRepository(
@@ -128,42 +128,14 @@ class MainActivity : ComponentActivity() {
         connectionLifecycleManager = connection
         registerNetworkRecoveryCallback(connection)
         val thumbnailCache = AndroidChatThumbnailCache(this)
-        val thumbnailDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        this.thumbnailDownloadScope = thumbnailDownloadScope
-        val messageRepository = MessageRepository(
-            messageDao = AndroidMessageDao(database),
-            conversationDao = AndroidConversationDao(database),
-            pendingMessageDao = AndroidPendingMessageDao(database),
-            connection = connection,
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator(),
-            transactionRunner = AndroidTransactionRunner(database),
-            thumbnailCache = thumbnailCache,
-            thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
-                thumbnailCache = thumbnailCache,
-                scope = thumbnailDownloadScope
-            )
-        )
-        val profileRepository = ProfileRepository(
-            userProfileDao = AndroidUserProfileDao(database),
-            profileApi = OkHttpProfileApi(baseUrl = mockServerConfig.httpBaseUrl)
-        )
-        val groupRepository = DefaultGroupRepository(
-            groupApi = OkHttpGroupApi(baseUrl = mockServerConfig.httpBaseUrl),
-            groupDao = AndroidGroupDao(database),
-            conversationDao = AndroidConversationDao(database)
-        )
         setContent {
             val loginViewModel = remember { LoginViewModel(repository) }
             SelfHostedImApp(
                 loginViewModel = loginViewModel,
                 validSessionProvider = repository::ensureValidSession,
-                messageRepository = messageRepository,
                 connection = connection,
-                profileRepository = profileRepository,
-                groupRepository = groupRepository,
-                avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = mockServerConfig.httpBaseUrl),
-                imageUploadApi = OkHttpImageUploadApi(baseUrl = mockServerConfig.httpBaseUrl)
+                httpBaseUrl = mockServerConfig.httpBaseUrl,
+                thumbnailCache = thumbnailCache
             )
         }
     }
@@ -180,8 +152,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         unregisterNetworkRecoveryCallback()
-        thumbnailDownloadScope?.cancel()
-        thumbnailDownloadScope = null
         super.onDestroy()
     }
 
@@ -232,12 +202,9 @@ private val ByteImColorScheme = lightColorScheme(
 fun SelfHostedImApp(
     loginViewModel: LoginViewModel? = null,
     validSessionProvider: ValidSessionProvider? = null,
-    messageRepository: MessageRepository? = null,
     connection: ImConnection? = null,
-    profileRepository: ProfileRepository? = null,
-    groupRepository: com.codex.im.group.GroupRepository? = null,
-    avatarUploadApi: AvatarUploadApi? = null,
-    imageUploadApi: ImageUploadApi? = null
+    httpBaseUrl: String? = null,
+    thumbnailCache: AndroidChatThumbnailCache? = null
 ) {
     MaterialTheme(colorScheme = ByteImColorScheme) {
         Column(
@@ -262,18 +229,33 @@ fun SelfHostedImApp(
                 loginViewModel.restoreSession()
             }
             val session = state.session
-            if (state.isAuthenticated && session != null && validSessionProvider != null && messageRepository != null && connection != null && profileRepository != null && groupRepository != null && avatarUploadApi != null && imageUploadApi != null) {
+            if (state.isAuthenticated && session != null && validSessionProvider != null && connection != null && httpBaseUrl != null && thumbnailCache != null) {
+                val context = LocalContext.current
+                val accountRepositories = remember(session.userId) {
+                    AccountScopedRepositories.create(
+                        context = context.applicationContext,
+                        userId = session.userId,
+                        httpBaseUrl = httpBaseUrl,
+                        connection = connection,
+                        thumbnailCache = thumbnailCache
+                    )
+                }
+                DisposableEffect(accountRepositories) {
+                    onDispose {
+                        accountRepositories.close()
+                    }
+                }
                 AuthenticatedImNavHost(
                     session = session,
                     validSessionProvider = validSessionProvider,
-                    messageRepository = messageRepository,
+                    messageRepository = accountRepositories.messageRepository,
                     connection = connection,
-                    profileRepository = profileRepository,
-                    groupRepository = groupRepository,
-                    avatarUploadApi = avatarUploadApi,
-                    imageUploadApi = imageUploadApi,
+                    profileRepository = accountRepositories.profileRepository,
+                    groupRepository = accountRepositories.groupRepository,
+                    avatarUploadApi = accountRepositories.avatarUploadApi,
+                    imageUploadApi = accountRepositories.imageUploadApi,
                     onLogout = {
-                        messageRepository.closeConversation()
+                        accountRepositories.messageRepository.closeConversation()
                         connection.disconnect()
                         loginViewModel.logout()
                     }
@@ -286,6 +268,74 @@ fun SelfHostedImApp(
                 )
             }
         }
+        }
+    }
+}
+
+private class AccountScopedRepositories private constructor(
+    private val helper: ImDatabaseHelper,
+    private val database: SQLiteDatabase,
+    private val thumbnailDownloadScope: CoroutineScope,
+    val messageRepository: MessageRepository,
+    val profileRepository: ProfileRepository,
+    val groupRepository: com.codex.im.group.GroupRepository,
+    val avatarUploadApi: AvatarUploadApi,
+    val imageUploadApi: ImageUploadApi
+) {
+    fun close() {
+        thumbnailDownloadScope.cancel()
+        database.close()
+        helper.close()
+    }
+
+    companion object {
+        fun create(
+            context: Context,
+            userId: String,
+            httpBaseUrl: String,
+            connection: ImConnection,
+            thumbnailCache: AndroidChatThumbnailCache
+        ): AccountScopedRepositories {
+            val helper = ImDatabaseHelper(
+                context = context,
+                databaseName = AccountScopedDatabaseName.forUser(userId)
+            )
+            val database = helper.writableDatabase
+            val conversationDao = AndroidConversationDao(database)
+            val thumbnailDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val messageRepository = MessageRepository(
+                messageDao = AndroidMessageDao(database),
+                conversationDao = conversationDao,
+                pendingMessageDao = AndroidPendingMessageDao(database),
+                connection = connection,
+                messageIdGenerator = MessageIdGenerator(),
+                seqGenerator = SeqGenerator(),
+                transactionRunner = AndroidTransactionRunner(database),
+                thumbnailCache = thumbnailCache,
+                thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
+                    thumbnailCache = thumbnailCache,
+                    scope = thumbnailDownloadScope
+                )
+            )
+            val profileRepository = ProfileRepository(
+                userProfileDao = AndroidUserProfileDao(database),
+                profileApi = OkHttpProfileApi(baseUrl = httpBaseUrl)
+            )
+            val groupRepository = DefaultGroupRepository(
+                groupApi = OkHttpGroupApi(baseUrl = httpBaseUrl),
+                groupDao = AndroidGroupDao(database),
+                conversationDao = conversationDao
+            )
+            return AccountScopedRepositories(
+                helper = helper,
+                database = database,
+                thumbnailDownloadScope = thumbnailDownloadScope,
+                messageRepository = messageRepository,
+                profileRepository = profileRepository,
+                groupRepository = groupRepository,
+                avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = httpBaseUrl),
+                imageUploadApi = OkHttpImageUploadApi(baseUrl = httpBaseUrl)
+            )
         }
     }
 }

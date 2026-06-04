@@ -4,7 +4,10 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class ImDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class ImDatabaseHelper(
+    context: Context,
+    databaseName: String = DATABASE_NAME
+) : SQLiteOpenHelper(context, databaseName, null, DATABASE_VERSION) {
     override fun onCreate(db: SQLiteDatabase) {
         createMessagesTable(db)
         createConversationsTable(db)
