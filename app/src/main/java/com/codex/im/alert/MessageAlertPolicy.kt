@@ -9,7 +9,7 @@ import java.util.TimeZone
 object MessageAlertPolicy {
     private const val MAX_PREVIEW_CHARS = 20
     private const val ELLIPSIS = "..."
-    private const val IMAGE_LABEL = "[鍥剧墖]"
+    private const val IMAGE_LABEL = "[图片]"
 
     fun previewForText(content: String): String = truncate(content)
 

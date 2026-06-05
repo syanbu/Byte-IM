@@ -150,7 +150,7 @@ class MessageRepositoryIncomingAlertTest {
         fixture.repository.handlePacket(singleImagePacket(messageId = "img1"))
 
         val alert = withTimeout(1_000L) { alertDeferred.await() }
-        assertEquals("[鍥剧墖]", alert.preview)
+        assertEquals("[图片]", alert.preview)
     }
 
     private class Fixture {
@@ -216,7 +216,7 @@ class MessageRepositoryIncomingAlertTest {
               "senderId":"u2",
               "receiverId":"u1",
               "serverSeq":1,
-              "content":"[鍥剧墖]",
+              "content":"[图片]",
               "timestamp":1000,
               "type":"IMAGE",
               "image":{"imageUrl":"https://example.com/full.jpg","thumbnailUrl":"https://example.com/thumb.jpg"}

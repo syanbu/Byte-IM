@@ -25,7 +25,7 @@ class MessageAlertPolicyTest {
 
     @Test
     fun imagePreviewIsStable() {
-        assertEquals("[鍥剧墖]", MessageAlertPolicy.previewForImage())
+        assertEquals("[图片]", MessageAlertPolicy.previewForImage())
     }
 
     @Test
@@ -57,7 +57,7 @@ class MessageAlertPolicyTest {
     @Test
     fun groupImagePreviewPrefixesImageLabel() {
         assertEquals(
-            "Alice: [鍥剧墖]",
+            "Alice: [图片]",
             MessageAlertPolicy.groupPreview(
                 senderDisplayName = "Alice",
                 senderId = "u2",

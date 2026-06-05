@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -53,8 +52,7 @@ fun MessageAlertHost(
             alert?.let { currentAlert ->
                 MessageToastPopup(
                     alert = currentAlert,
-                    onClick = { controller.openCurrent(onOpenConversation) },
-                    onDismiss = controller::dismiss
+                    onClick = { controller.openCurrent(onOpenConversation) }
                 )
             }
         }
@@ -64,8 +62,7 @@ fun MessageAlertHost(
 @Composable
 private fun MessageToastPopup(
     alert: IncomingMessageAlert,
-    onClick: () -> Unit,
-    onDismiss: () -> Unit
+    onClick: () -> Unit
 ) {
     Surface(
         color = ByteImColors.Surface,
@@ -123,16 +120,6 @@ private fun MessageToastPopup(
                     color = ByteImColors.TextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
-                )
-            }
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.size(32.dp)
-            ) {
-                Text(
-                    text = "x",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = ByteImColors.TextSecondary
                 )
             }
         }

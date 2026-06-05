@@ -10,7 +10,6 @@ The popup should:
 - show the conversation title, avatar, message preview, and message time
 - support single-chat and group-chat messages
 - open the target chat when tapped
-- close when the close affordance is tapped
 - auto-dismiss after 4 seconds
 - show only one popup at a time, replacing the old popup with the newest one
 - not appear for the conversation that is currently open
@@ -58,8 +57,7 @@ on screen, and keeps the popup independent from later profile refreshes.
    existing `NavHost`.
 8. Tapping the popup uses `SelfHostedImRoute.Chat.createRoute(conversationId)`
    and `navigateToChat` to open the chat.
-9. Tapping close only dismisses the popup. It does not clear unread counts.
-10. When the app goes to background, `MainActivity` dismisses the current popup
+9. When the app goes to background, `MainActivity` dismisses the current popup
     on lifecycle `ON_STOP` so stale in-app popups do not reappear on return.
 
 ## Alert Data Model
@@ -117,7 +115,7 @@ The popup card:
 - respects status bars and the current scaffold padding
 - reuses `AvatarImage`
 - reuses `ByteImColors`
-- uses a compact row layout: avatar, title/time, preview, close affordance
+- uses a compact row layout: avatar, title/time, preview
 - animates in/out with vertical slide plus fade
 
 The popup is intentionally independent of the current tab. It can appear above
@@ -150,6 +148,13 @@ Tests:
 - `.\gradlew.bat :app:testDebugUnitTest --tests "com.codex.im.message.*" --console=plain` passed.
 - `.\gradlew.bat :app:assembleDebug --console=plain` passed.
 
+2026-06-05:
+
+- `./gradlew :app:testDebugUnitTest --tests "com.codex.im.alert.MessageAlertPolicyTest" --tests "com.codex.im.message.MessageRepositoryIncomingAlertTest" --console=plain` passed.
+- Updated the popup to display image previews as `[图片]`.
+- Removed the in-app close affordance; popups now disappear by timer, opening
+  the chat, replacement by a newer alert, or app background dismissal.
+
 Full `.\gradlew.bat :app:testDebugUnitTest --console=plain` was also run. The
 alert-related tests passed, but the full suite still has one unrelated local
 configuration failure:
@@ -178,7 +183,6 @@ was not changed by this feature.
   conversation: popup appears for C.
 - Group message arrives: popup title is the group name and preview is
   `sender: content`.
-- Tap close: popup disappears and unread count remains incremented.
 - Do nothing for 4 seconds: popup disappears automatically.
 - Multiple messages arrive quickly: only the latest popup is shown and the
   4-second timer resets.
@@ -193,5 +197,4 @@ was not changed by this feature.
   already been created or synced.
 - Sender nickname/avatar quality depends on local profile cache; this is
   intentional because the alert snapshot does not fetch remote profile data.
-- The popup currently uses an in-app text close affordance. A future visual pass
-  may replace it with an icon while preserving the same controller behavior.
+- The popup intentionally has no visible close affordance.
