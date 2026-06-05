@@ -9,7 +9,7 @@ if (Test-Path -LiteralPath $envFile) {
 
 Push-Location $PSScriptRoot
 try {
-    mvn -q -Dexec.mainClass=com.codex.imserver.tools.MockFriendSeeder compile exec:java
+    mvn -q compile exec:java "-Dexec.mainClass=com.codex.imserver.tools.MockFriendSeeder"
 } finally {
     Pop-Location
 }
