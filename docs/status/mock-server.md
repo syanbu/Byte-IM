@@ -11,6 +11,7 @@ Done for the current B1-B9.5 local verification path, including B5.5 durable acc
 - Supports `POST /register`.
 - Supports `POST /refresh`.
 - Supports `POST /logout`.
+- Supports `GET /friends/me`.
 - Supports `GET /health`.
 - Supports WebSocket `/ws`.
 - HTTP auth returns nested JSON compatible with Android `AuthJsonParser`.
@@ -22,14 +23,24 @@ Done for the current B1-B9.5 local verification path, including B5.5 durable acc
 - Handles `AUTH`, `HEARTBEAT`, `SEND_MESSAGE`, and `DELIVERY_ACK`.
 - Sends `AUTH_ACK`, `HEARTBEAT_ACK`, `MESSAGE_ACK`, online receiver `RECEIVE_MESSAGE`, and queued offline `RECEIVE_MESSAGE` after the receiver authenticates.
 - Persists users in SQLite.
+- Persists mutual friend indexes in SQLite.
 - Persists conversation `serverSeq` state in SQLite.
 - Persists accepted messages and receiver delivery state in SQLite.
 - Restores accepted messages and undelivered receiver replay state after server restart.
 - Logs connection-path events and packet errors for local diagnostics.
 - Removes channel session state when clients disconnect.
+- Mock contact lists now come from server-side friendships instead of Android fixed demo accounts.
+- The friendship database is `mock-server/data/mock-im-friends.sqlite`.
+- The friendship schema is `friendships(owner_user_id, friend_user_id, created_at)` with a primary key on `(owner_user_id, friend_user_id)`.
+- Mutual friendships are stored as two directed rows, so if A is B's friend then B is A's friend.
+- Seed tool: `mvn -q -Dexec.mainClass=com.codex.imserver.tools.MockFriendSeeder compile exec:java` registers `15000000000` through `15000000499` with password `123456` and gives the first three accounts every other account as mutual friends.
+- Seed scripts:
+  - Windows: `mock-server/seed-mock-friends.ps1`
+  - Ubuntu/Linux: `mock-server/seed-mock-friends.sh`
 
 | Date | Command | Result |
 |---|---|---|
+| 2026-06-05 | `mvn -q test` in `mock-server`; `./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactJsonParserTest --tests com.codex.im.contacts.ContactListViewModelTest --tests com.codex.im.group.GroupCreateViewModelTest` | Passed: friend SQLite store, friend JSON service, 500-account seed behavior, and Android Contacts/GroupCreate loading contacts from server friend IDs before profile batch refresh. |
 | 2026-05-27 | `mvn -q -Dtest=MessageRouterTest test`; `mvn -q test` in `mock-server` | Passed: accepted-message SQLite persistence, router restart restore, receiver auth replay after restart, no replay after `DELIVERY_ACK`, and restart-proof sender `messageId` idempotency. |
 | 2026-05-25 | `mvn -q -Dtest=MessageRouterTest test`; `mvn -q test` in `mock-server` | Passed: messages sent to an offline receiver are queued in memory and delivered as `RECEIVE_MESSAGE` immediately after that receiver authenticates. |
 | 2026-05-22 | `mvn -q test` in `mock-server` | Passed: protocol codec, auth response, message ACK/forward routing, and channel session removal tests. |

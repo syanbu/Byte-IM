@@ -27,7 +27,7 @@ data class ContactListUiState(
 class ContactListViewModel(
     private val session: AuthSession,
     private val profileRepository: ProfileRepository,
-    private val contactResolver: (String) -> List<String>,
+    private val contactRepository: ContactRepository,
     private val validSessionProvider: ValidSessionProvider = { session },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -68,8 +68,12 @@ class ContactListViewModel(
         refreshJob?.cancel()
         refreshJob = scope.launch(dispatcher) {
             profileRepository.bootstrapSession(session)
-            val contactIds = contactResolver(session.userId)
             val validSession = validSessionProvider()
+            val contactIds = if (validSession != null) {
+                contactRepository.friendUserIds(validSession.accessToken)
+            } else {
+                emptyList()
+            }
             if (validSession != null) {
                 profileRepository.refreshProfiles(validSession.accessToken, contactIds)
             }

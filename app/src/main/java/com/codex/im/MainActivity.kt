@@ -75,7 +75,8 @@ import com.codex.im.contacts.ContactListScreen
 import com.codex.im.contacts.ContactListViewModel
 import com.codex.im.contacts.ContactProfileScreen
 import com.codex.im.contacts.ContactProfileViewModel
-import com.codex.im.contacts.DemoContactResolver
+import com.codex.im.contacts.ContactRepository
+import com.codex.im.contacts.OkHttpContactApi
 import com.codex.im.conversation.ConversationListScreen
 import com.codex.im.conversation.ConversationListViewModel
 import com.codex.im.group.GroupCreateScreen
@@ -258,6 +259,7 @@ fun SelfHostedImApp(
                     messageRepository = accountRepositories.messageRepository,
                     connection = connection,
                     profileRepository = accountRepositories.profileRepository,
+                    contactRepository = accountRepositories.contactRepository,
                     groupRepository = accountRepositories.groupRepository,
                     avatarUploadApi = accountRepositories.avatarUploadApi,
                     imageUploadApi = accountRepositories.imageUploadApi,
@@ -285,6 +287,7 @@ private class AccountScopedRepositories private constructor(
     private val thumbnailDownloadScope: CoroutineScope,
     val messageRepository: MessageRepository,
     val profileRepository: ProfileRepository,
+    val contactRepository: ContactRepository,
     val groupRepository: com.codex.im.group.GroupRepository,
     val avatarUploadApi: AvatarUploadApi,
     val imageUploadApi: ImageUploadApi
@@ -314,6 +317,9 @@ private class AccountScopedRepositories private constructor(
                 userProfileDao = AndroidUserProfileDao(database),
                 profileApi = OkHttpProfileApi(baseUrl = httpBaseUrl)
             )
+            val contactRepository = ContactRepository(
+                contactApi = OkHttpContactApi(baseUrl = httpBaseUrl)
+            )
             val messageRepository = MessageRepository(
                 messageDao = AndroidMessageDao(database),
                 conversationDao = conversationDao,
@@ -340,6 +346,7 @@ private class AccountScopedRepositories private constructor(
                 thumbnailDownloadScope = thumbnailDownloadScope,
                 messageRepository = messageRepository,
                 profileRepository = profileRepository,
+                contactRepository = contactRepository,
                 groupRepository = groupRepository,
                 avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = httpBaseUrl),
                 imageUploadApi = OkHttpImageUploadApi(baseUrl = httpBaseUrl)
@@ -355,6 +362,7 @@ private fun AuthenticatedImNavHost(
     messageRepository: MessageRepository,
     connection: ImConnection,
     profileRepository: ProfileRepository,
+    contactRepository: ContactRepository,
     groupRepository: com.codex.im.group.GroupRepository,
     avatarUploadApi: AvatarUploadApi,
     imageUploadApi: ImageUploadApi,
@@ -481,7 +489,7 @@ private fun AuthenticatedImNavHost(
                     ContactListViewModel(
                         session = session,
                         profileRepository = profileRepository,
-                        contactResolver = DemoContactResolver::contactsFor,
+                        contactRepository = contactRepository,
                         validSessionProvider = validSessionProvider
                     )
                 }
@@ -521,7 +529,7 @@ private fun AuthenticatedImNavHost(
                         session = session,
                         profileRepository = profileRepository,
                         groupRepository = groupRepository,
-                        contactResolver = DemoContactResolver::contactsFor,
+                        contactRepository = contactRepository,
                         validSessionProvider = validSessionProvider
                     )
                 }

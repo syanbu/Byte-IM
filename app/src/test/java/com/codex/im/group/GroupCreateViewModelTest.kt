@@ -3,7 +3,9 @@ package com.codex.im.group
 import com.codex.im.auth.AuthSession
 import com.codex.im.connection.ConnectionState
 import com.codex.im.connection.ImConnection
-import com.codex.im.contacts.DemoContactResolver
+import com.codex.im.contacts.ContactApi
+import com.codex.im.contacts.ContactIdsResult
+import com.codex.im.contacts.ContactRepository
 import com.codex.im.message.MessageIdGenerator
 import com.codex.im.message.MessageRepository
 import com.codex.im.message.SeqGenerator
@@ -43,7 +45,7 @@ class GroupCreateViewModelTest {
         runCurrent()
 
         assertEquals(
-            listOf("13267100423", "13900113900", "17724734511"),
+            listOf("15000000003", "15000000004"),
             fixture.viewModel.state.value.contacts.map { it.userId }
         )
         assertFalse(fixture.viewModel.state.value.canCreate)
@@ -56,9 +58,9 @@ class GroupCreateViewModelTest {
         fixture.viewModel.start()
         runCurrent()
 
-        fixture.viewModel.toggleContact("13900113900")
+        fixture.viewModel.toggleContact("15000000003")
 
-        val item = fixture.viewModel.state.value.contacts.single { it.userId == "13900113900" }
+        val item = fixture.viewModel.state.value.contacts.single { it.userId == "15000000003" }
         assertTrue(item.isSelected)
         assertTrue(fixture.viewModel.state.value.canCreate)
     }
@@ -69,14 +71,14 @@ class GroupCreateViewModelTest {
         val fixture = Fixture(this)
         fixture.viewModel.start()
         runCurrent()
-        fixture.viewModel.toggleContact("13900113900")
-        fixture.viewModel.toggleContact("17724734511")
+        fixture.viewModel.toggleContact("15000000003")
+        fixture.viewModel.toggleContact("15000000004")
 
         fixture.viewModel.createGroup(now = 1_000L)
         runCurrent()
 
         val conversation = fixture.messageRepository.conversations(limit = 20).single()
-        assertEquals(listOf("13900113900", "17724734511"), fixture.groupRepository.createdMemberUserIds)
+        assertEquals(listOf("15000000003", "15000000004"), fixture.groupRepository.createdMemberUserIds)
         assertEquals("群聊(3)", conversation.peerName)
         assertEquals("group:g_1001", conversation.conversationId)
         assertEquals(conversation.conversationId, fixture.viewModel.state.value.createdConversationId)
@@ -88,7 +90,7 @@ class GroupCreateViewModelTest {
         val fixture = Fixture(this, validSessionProvider = { null })
         fixture.viewModel.start()
         runCurrent()
-        fixture.viewModel.toggleContact("13900113900")
+        fixture.viewModel.toggleContact("15000000003")
 
         fixture.viewModel.createGroup(now = 1_000L)
         runCurrent()
@@ -104,6 +106,7 @@ class GroupCreateViewModelTest {
         }
     ) {
         private val profileRepository = ProfileRepository(InMemoryUserProfileDao(), FakeProfileApi())
+        private val contactRepository = ContactRepository(FakeContactApi(listOf("15000000003", "15000000004")))
         val messageRepository = MessageRepository(
             messageDao = InMemoryMessageDao(),
             conversationDao = InMemoryConversationDao(),
@@ -117,7 +120,7 @@ class GroupCreateViewModelTest {
             session = AuthSession("mock-token", "13800113800", "13800113800", expiresAtMillis = 2_000L),
             profileRepository = profileRepository,
             groupRepository = groupRepository,
-            contactResolver = DemoContactResolver::contactsFor,
+            contactRepository = contactRepository,
             validSessionProvider = validSessionProvider,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
@@ -201,5 +204,11 @@ class GroupCreateViewModelTest {
             gender: com.codex.im.storage.Gender?,
             signature: String?
         ): ProfileResult = ProfileResult.Failure("unused")
+    }
+
+    private class FakeContactApi(private val friendUserIds: List<String>) : ContactApi {
+        override suspend fun friends(accessToken: String): ContactIdsResult {
+            return ContactIdsResult.Success(friendUserIds)
+        }
     }
 }

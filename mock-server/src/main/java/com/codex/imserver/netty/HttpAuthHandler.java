@@ -2,6 +2,7 @@ package com.codex.imserver.netty;
 
 import com.codex.imserver.auth.AuthService;
 import com.codex.imserver.ImServerLogger;
+import com.codex.imserver.friend.FriendService;
 import com.codex.imserver.group.GroupService;
 import com.codex.imserver.oss.OssUploadService;
 import com.google.gson.JsonArray;
@@ -29,6 +30,7 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
     private final AuthService authService;
     private final OssUploadService ossUploadService;
     private final GroupService groupService;
+    private final FriendService friendService;
 
     public HttpAuthHandler(AuthService authService) {
         this(authService, new OssUploadService());
@@ -39,10 +41,15 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
     }
 
     public HttpAuthHandler(AuthService authService, OssUploadService ossUploadService, GroupService groupService) {
+        this(authService, ossUploadService, groupService, new FriendService());
+    }
+
+    public HttpAuthHandler(AuthService authService, OssUploadService ossUploadService, GroupService groupService, FriendService friendService) {
         super(false);
         this.authService = authService;
         this.ossUploadService = ossUploadService;
         this.groupService = groupService;
+        this.friendService = friendService;
     }
 
     @Override
@@ -80,6 +87,19 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
                         : authService.logout(refreshToken);
                 writeJson(context, request, HttpResponseStatus.OK, response);
                 return;
+            }
+
+            if (path.startsWith("/friends")) {
+                Optional<String> authenticatedPhone = authenticatedPhone(request);
+                if (authenticatedPhone.isEmpty()) {
+                    writeJson(context, request, HttpResponseStatus.UNAUTHORIZED, authService.failure(401, "Unauthorized"));
+                    return;
+                }
+
+                if (request.method() == HttpMethod.GET && "/friends/me".equals(path)) {
+                    writeJson(context, request, HttpResponseStatus.OK, friendService.friendsJson(authenticatedPhone.get()));
+                    return;
+                }
             }
 
             if (request.method() == HttpMethod.POST && "/oss/avatar/upload-target".equals(path)) {

@@ -5,6 +5,8 @@ import com.codex.imserver.auth.PasswordHasher;
 import com.codex.imserver.auth.SecureSaltGenerator;
 import com.codex.imserver.auth.TokenService;
 import com.codex.imserver.auth.UserStore;
+import com.codex.imserver.friend.FriendService;
+import com.codex.imserver.friend.FriendStore;
 import com.codex.imserver.group.GroupService;
 import com.codex.imserver.group.SQLiteGroupStore;
 import com.codex.imserver.netty.HttpAuthHandler;
@@ -37,6 +39,10 @@ public final class MockImServer {
                 new SQLiteGroupStore(java.nio.file.Path.of("data", "mock-im-groups.sqlite")),
                 System::currentTimeMillis
         );
+        FriendService friendService = new FriendService(
+                new FriendStore(java.nio.file.Path.of("data", "mock-im-friends.sqlite")),
+                System::currentTimeMillis
+        );
         java.nio.file.Path messageDatabase = java.nio.file.Path.of("data", "mock-im-messages.sqlite");
         MessageRouter messageRouter = new MessageRouter(
                 registry,
@@ -63,7 +69,7 @@ public final class MockImServer {
                             channel.pipeline()
                                     .addLast(new HttpServerCodec())
                                     .addLast(new HttpObjectAggregator(64 * 1024))
-                                    .addLast(new HttpAuthHandler(authService, new com.codex.imserver.oss.OssUploadService(), groupService))
+                                    .addLast(new HttpAuthHandler(authService, new com.codex.imserver.oss.OssUploadService(), groupService, friendService))
                                     .addLast(new WebSocketServerProtocolHandler("/ws", null, true))
                                     .addLast(new WebSocketFrameHandler(registry, messageRouter));
                         }

@@ -2,6 +2,7 @@ package com.codex.im.group
 
 import com.codex.im.auth.AuthSession
 import com.codex.im.auth.ValidSessionProvider
+import com.codex.im.contacts.ContactRepository
 import com.codex.im.profile.ProfileRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -32,7 +33,7 @@ class GroupCreateViewModel(
     private val session: AuthSession,
     private val profileRepository: ProfileRepository,
     private val groupRepository: GroupRepository,
-    private val contactResolver: (String) -> List<String>,
+    private val contactRepository: ContactRepository,
     private val validSessionProvider: ValidSessionProvider = { session },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
@@ -128,8 +129,12 @@ class GroupCreateViewModel(
                 .map { it.userId }
                 .toSet()
             profileRepository.bootstrapSession(session)
-            val contactIds = contactResolver(session.userId)
             val validSession = validSessionProvider()
+            val contactIds = if (validSession != null) {
+                contactRepository.friendUserIds(validSession.accessToken)
+            } else {
+                emptyList()
+            }
             if (validSession != null) {
                 profileRepository.refreshProfiles(validSession.accessToken, contactIds)
             }
