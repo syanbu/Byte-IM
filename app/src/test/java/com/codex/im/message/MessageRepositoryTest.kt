@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -319,9 +322,31 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun recallAckFailureEmitsRetryableRecallFailureEvent() = runTest {
+        val fixture = Fixture()
+        val failures = mutableListOf<String>()
+        val job = launch {
+            fixture.repository.recallFailures.collect { failures += it }
+        }
+        runCurrent()
+
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECALL_ACK.value,
+                body = """{"messageId":"missing","conversationId":"single:u1:u2","success":false,"reason":"EXPIRED"}""".toByteArray()
+            )
+        )
+        runCurrent()
+
+        assertEquals(listOf("撤回失败，请重试"), failures)
+        job.cancel()
+    }
+
+    @Test
     fun recallNotifyMarksPeerMessageRecalledAndUpdatesPreview() {
         val fixture = Fixture()
         fixture.repository.handlePacket(incomingMessagePacket("remote-recall", "u2", "u1", 1, 7, "secret", 1_000L))
+        fixture.connection.sentPackets.clear()
 
         fixture.repository.handlePacket(
             ImPacket(
@@ -333,6 +358,12 @@ class MessageRepositoryTest {
         val stored = fixture.messageDao.findByMessageId("remote-recall")
         assertEquals(true, stored?.isRecalled)
         assertEquals("对方撤回了一条消息", fixture.conversationDao.listConversations(limit = 20).single().lastMessagePreview)
+        val ack = fixture.connection.sentPackets.single()
+        assertEquals(ImCommand.RECALL_NOTIFY_ACK.value, ack.cmd)
+        assertEquals(
+            """{"messageId":"remote-recall","conversationId":"single:u1:u2","receiverId":"u1","recalledAt":2000}""",
+            ack.body.decodeToString()
+        )
     }
 
     @Test

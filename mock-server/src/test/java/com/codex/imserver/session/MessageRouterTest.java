@@ -419,6 +419,172 @@ public class MessageRouterTest {
     }
 
     @Test
+    public void recallNotifyIsRedeliveredAfterReceiverAuthUntilAcked() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
+        MessageRouter router = new MessageRouter(registry, tokenService, new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), () -> 2_000L);
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"recall-redeliver",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"hello",
+              "timestamp":1000
+            }
+            """));
+        router.handleDeliveryAck("13900113900", deliveryAck("""
+            {
+              "messageId":"recall-redeliver",
+              "conversationId":"single:13800113800:13900113900",
+              "serverSeq":1001,
+              "receiverId":"13900113900"
+            }
+            """));
+        registry.remove(receiver);
+        sender.sentPackets.clear();
+        receiver.sentPackets.clear();
+
+        router.handleRecallMessage("13800113800", recallMessage("""
+            {
+              "messageId":"recall-redeliver",
+              "conversationId":"single:13800113800:13900113900",
+              "requesterId":"13800113800",
+              "requestAt":2000
+            }
+            """));
+        CapturingClient reconnectedReceiver = new CapturingClient();
+        router.handleAuth(tokenService.issue("13900113900").token(), reconnectedReceiver);
+
+        assertEquals(List.of(ImCommand.AUTH_ACK.value(), ImCommand.RECALL_NOTIFY.value()), reconnectedReceiver.sentPackets.stream().map(ImPacket::cmd).toList());
+        JsonObject recalled = body(reconnectedReceiver.sentPackets.get(1));
+        assertEquals("recall-redeliver", recalled.get("messageId").getAsString());
+        assertEquals("13800113800", recalled.get("recalledBy").getAsString());
+    }
+
+    @Test
+    public void recallNotifyAckStopsFurtherRedelivery() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        registry.register("13800113800", sender);
+        registry.register("13900113900", receiver);
+        MessageRouter router = new MessageRouter(registry, tokenService, new MessageRouter.InMemoryServerSeqStore(), new MessageRouter.InMemoryAcceptedMessageStore(), () -> 2_000L);
+        router.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"recall-acked",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"hello",
+              "timestamp":1000
+            }
+            """));
+        router.handleDeliveryAck("13900113900", deliveryAck("""
+            {
+              "messageId":"recall-acked",
+              "conversationId":"single:13800113800:13900113900",
+              "serverSeq":1001,
+              "receiverId":"13900113900"
+            }
+            """));
+        sender.sentPackets.clear();
+        receiver.sentPackets.clear();
+
+        router.handleRecallMessage("13800113800", recallMessage("""
+            {
+              "messageId":"recall-acked",
+              "conversationId":"single:13800113800:13900113900",
+              "requesterId":"13800113800",
+              "requestAt":2000
+            }
+            """));
+        router.handleRecallNotifyAck("13900113900", recallNotifyAck("""
+            {
+              "messageId":"recall-acked",
+              "conversationId":"single:13800113800:13900113900",
+              "receiverId":"13900113900",
+              "recalledAt":2000
+            }
+            """));
+        registry.remove(receiver);
+        CapturingClient reconnectedReceiver = new CapturingClient();
+        router.handleAuth(tokenService.issue("13900113900").token(), reconnectedReceiver);
+
+        assertEquals(List.of(ImCommand.AUTH_ACK.value()), reconnectedReceiver.sentPackets.stream().map(ImPacket::cmd).toList());
+    }
+
+    @Test
+    public void pendingRecallNotifyIsRestoredAndRedeliveredAfterRouterRestart() throws Exception {
+        Path directory = Files.createTempDirectory("im-router-restart-recall-notify");
+        Path sequenceDatabase = directory.resolve("sequences.sqlite");
+        Path messageDatabase = directory.resolve("messages.sqlite");
+        TokenService tokenService = new TokenService("test-secret", () -> 1_000L, 60_000L);
+
+        ClientSessionRegistry firstRegistry = new ClientSessionRegistry();
+        CapturingClient sender = new CapturingClient();
+        CapturingClient receiver = new CapturingClient();
+        firstRegistry.register("13800113800", sender);
+        firstRegistry.register("13900113900", receiver);
+        MessageRouter firstRouter = new MessageRouter(
+                firstRegistry,
+                tokenService,
+                new MessageRouter.SQLiteServerSeqStore(sequenceDatabase, () -> 1L),
+                new MessageRouter.SQLiteAcceptedMessageStore(messageDatabase),
+                () -> 2_000L
+        );
+        firstRouter.handleSendMessage("13800113800", packet("""
+            {
+              "messageId":"recall-restart",
+              "conversationId":"single:13800113800:13900113900",
+              "senderId":"13800113800",
+              "receiverId":"13900113900",
+              "clientSeq":1,
+              "content":"hello",
+              "timestamp":1000
+            }
+            """));
+        firstRouter.handleDeliveryAck("13900113900", deliveryAck("""
+            {
+              "messageId":"recall-restart",
+              "conversationId":"single:13800113800:13900113900",
+              "serverSeq":2,
+              "receiverId":"13900113900"
+            }
+            """));
+        firstRegistry.remove(receiver);
+        firstRouter.handleRecallMessage("13800113800", recallMessage("""
+            {
+              "messageId":"recall-restart",
+              "conversationId":"single:13800113800:13900113900",
+              "requesterId":"13800113800",
+              "requestAt":2000
+            }
+            """));
+
+        ClientSessionRegistry secondRegistry = new ClientSessionRegistry();
+        CapturingClient reconnectedReceiver = new CapturingClient();
+        MessageRouter secondRouter = new MessageRouter(
+                secondRegistry,
+                tokenService,
+                new MessageRouter.SQLiteServerSeqStore(sequenceDatabase, () -> 1L),
+                new MessageRouter.SQLiteAcceptedMessageStore(messageDatabase),
+                () -> 3_000L
+        );
+        secondRouter.handleAuth(tokenService.issue("13900113900").token(), reconnectedReceiver);
+
+        assertEquals(List.of(ImCommand.AUTH_ACK.value(), ImCommand.RECALL_NOTIFY.value()), reconnectedReceiver.sentPackets.stream().map(ImPacket::cmd).toList());
+        assertEquals("recall-restart", body(reconnectedReceiver.sentPackets.get(1)).get("messageId").getAsString());
+    }
+
+    @Test
     public void duplicateDeliveryAckIsIdempotent() {
         ClientSessionRegistry registry = new ClientSessionRegistry();
         CapturingClient sender = new CapturingClient();
@@ -1224,6 +1390,10 @@ public class MessageRouterTest {
 
     private static ImPacket recallMessage(String json) {
         return new ImPacket(ImCommand.RECALL_MESSAGE.value(), json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static ImPacket recallNotifyAck(String json) {
+        return new ImPacket(ImCommand.RECALL_NOTIFY_ACK.value(), json.getBytes(StandardCharsets.UTF_8));
     }
 
     private static JsonObject body(ImPacket packet) {

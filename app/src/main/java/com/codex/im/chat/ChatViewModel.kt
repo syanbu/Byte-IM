@@ -85,6 +85,11 @@ class ChatViewModel(
             }
         }
         jobs += scope.launch(dispatcher) {
+            repository.recallFailures.collect { message ->
+                mutableState.value = mutableState.value.copy(errorMessage = message)
+            }
+        }
+        jobs += scope.launch(dispatcher) {
             refreshInitialPage()
             refreshProfiles()
             scheduleMissingThumbnailRetries(immediate = true)
@@ -265,9 +270,13 @@ class ChatViewModel(
         withContext(dispatcher) {
             val sent = repository.recallMessage(messageId, requesterId = session.userId, now = now)
             if (!sent) {
-                mutableState.value = mutableState.value.copy(errorMessage = "消息撤回失败")
+                mutableState.value = mutableState.value.copy(errorMessage = RECALL_FAILURE_MESSAGE)
             }
         }
+    }
+
+    fun clearErrorMessage() {
+        mutableState.value = mutableState.value.copy(errorMessage = null)
     }
 
     private suspend fun uploadImageAndQueueSend(messageId: String, selectedImage: SelectedChatImage) {
@@ -574,6 +583,7 @@ class ChatViewModel(
         const val MAX_RETAINED_MESSAGES = 2_000
         const val MAX_IMAGES_PER_SEND = 9
         const val MISSING_THUMBNAIL_RETRY_BATCH_SIZE = 20
+        const val RECALL_FAILURE_MESSAGE = "撤回失败，请重试"
         val THUMBNAIL_RETRY_DELAYS_MS = longArrayOf(2_000L, 10_000L, 30_000L)
     }
 }

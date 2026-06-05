@@ -39,6 +39,7 @@ Android local state:
 | `RECALL_MESSAGE` | client -> server | 请求撤回消息 |
 | `RECALL_ACK` | server -> requester | 撤回结果 |
 | `RECALL_NOTIFY` | server -> peer | 通知对方消息已撤回 |
+| `RECALL_NOTIFY_ACK` | receiver -> server | 接收方已将撤回状态本地持久化 |
 
 这些命令都被封装在自定义二进制协议帧中。协议帧包含 header、body 和 CRC。
 
@@ -217,6 +218,7 @@ Android 保留原始 `messages` row，只标记为 recalled；UI 渲染撤回提
 RECALL_MESSAGE = 15
 RECALL_ACK     = 16
 RECALL_NOTIFY  = 17
+RECALL_NOTIFY_ACK = 18
 ```
 
 成功的 `RECALL_ACK` 和 `RECALL_NOTIFY` 包含：
@@ -236,6 +238,26 @@ RECALL_NOTIFY  = 17
 - 保存 `recalledAt` 和 `recalledBy`。
 - 如果该消息仍是 conversation 最新消息，更新 conversation preview。
 - 聊天 UI 渲染居中撤回提示。
+
+接收方处理 `RECALL_NOTIFY` 并成功持久化本地撤回状态后，发送
+`RECALL_NOTIFY_ACK`：
+
+```json
+{
+  "messageId": "m1",
+  "conversationId": "single:u1:u2",
+  "receiverId": "u2",
+  "recalledAt": 1717000000000
+}
+```
+
+`RECALL_NOTIFY_ACK` 的语义与 `DELIVERY_ACK` 平行但不混用：
+
+- `DELIVERY_ACK`：原消息内容已经写入接收端本地库。
+- `RECALL_NOTIFY_ACK`：撤回状态已经写入接收端本地库。
+
+Mock server 会按 `(message_id, receiver_id)` 追踪 `recall_notified`，未
+ACK 的撤回通知会在接收方 auth/reconnect 后重放。
 
 ## 群文本和群图片消息
 

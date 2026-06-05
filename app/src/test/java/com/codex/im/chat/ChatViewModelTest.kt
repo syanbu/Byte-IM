@@ -85,6 +85,52 @@ class ChatViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun recallMessageSendFailureShowsRetryToastMessageWithoutChangingMessageState() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+        fixture.viewModel.sendText("secret", now = 1_000L)
+        val message = fixture.messageDao.queryPage("single:13800113800:13900113900", null, 20).single()
+        fixture.messageDao.markAcked(message.messageId, serverSeq = 8L, updatedAt = 1_100L)
+        fixture.connection.sendSucceeds = false
+
+        fixture.viewModel.recallMessage(message.messageId, now = 2_000L)
+        runCurrent()
+
+        assertEquals("撤回失败，请重试", fixture.viewModel.state.value.errorMessage)
+        assertEquals(false, fixture.messageDao.findByMessageId(message.messageId)?.isRecalled)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun serverRecallFailureEventShowsRetryToastMessage() = runTest {
+        val fixture = Fixture(this)
+
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = ImCommand.RECALL_ACK.value,
+                body = """{"messageId":"missing","conversationId":"single:13800113800:13900113900","success":false,"reason":"EXPIRED"}""".toByteArray()
+            )
+        )
+        runCurrent()
+
+        assertEquals("撤回失败，请重试", fixture.viewModel.state.value.errorMessage)
+    }
+
+    @Test
+    fun clearErrorMessageDismissesTransientChatToast() = runTest {
+        val fixture = Fixture(this)
+        fixture.connection.sendSucceeds = false
+
+        fixture.viewModel.recallMessage("missing", now = 2_000L)
+        fixture.viewModel.clearErrorMessage()
+
+        assertEquals(null, fixture.viewModel.state.value.errorMessage)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun startExposesPeerNicknameAndAvatarFromProfileCache() = runTest {
         val fixture = Fixture(this)
         fixture.profileDao.upsert(
@@ -1102,6 +1148,7 @@ class ChatViewModelTest {
 
     private class FakeConnection : ImConnection {
         var connectedToken: String? = null
+        var sendSucceeds: Boolean = true
         val incoming = MutableSharedFlow<ImPacket>()
         val state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
         val sentPackets = mutableListOf<ImPacket>()
@@ -1116,7 +1163,7 @@ class ChatViewModelTest {
 
         override fun send(packet: ImPacket): Boolean {
             sentPackets += packet
-            return true
+            return sendSucceeds
         }
     }
 

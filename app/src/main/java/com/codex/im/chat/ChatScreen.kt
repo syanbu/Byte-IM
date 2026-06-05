@@ -33,6 +33,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -82,6 +83,7 @@ import com.codex.im.ui.ByteImSystemNotice
 import com.codex.im.ui.ByteImTopBar
 import com.codex.im.ui.byteImBubbleColor
 import com.codex.im.ui.byteImBubbleShape
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -176,7 +178,7 @@ fun ChatScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(ByteImColors.AppBackground)
@@ -190,157 +192,163 @@ fun ChatScreen(
                 }
             )
     ) {
-        ByteImTopBar(
-            title = state.peerName,
-            onBack = onBack,
-            centerTitle = true,
-            actions = if (state.peerId.startsWith("group:")) {
-                listOf {
-                    IconButton(onClick = { showGroupRename = true }) {
-                        Text(
-                            text = "...",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = ByteImColors.TextPrimary
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            ByteImTopBar(
+                title = state.peerName,
+                onBack = onBack,
+                centerTitle = true,
+                actions = if (state.peerId.startsWith("group:")) {
+                    listOf {
+                        IconButton(onClick = { showGroupRename = true }) {
+                            Text(
+                                text = "...",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = ByteImColors.TextPrimary
+                            )
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+            )
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(ByteImColors.AppBackground)
+                    .padding(horizontal = ByteImDimensions.EdgePadding),
+                reverseLayout = true
+            ) {
+                itemsIndexed(state.messages, key = { _, msg -> msg.messageId }) { index, message ->
+                    when (ChatDisplayPolicy.rowKind(message)) {
+                        ChatMessageRowKind.CENTERED_NOTICE -> RecalledMessageNotice(
+                            text = ChatDisplayPolicy.recalledMessageText(
+                                message = message,
+                                currentUserId = viewModel.currentUserId,
+                                senderDisplayName = recalledSenderDisplayName(message, state)
+                            )
+                        )
+                        ChatMessageRowKind.BUBBLE -> ChatMessageRow(
+                            message = message,
+                            peerName = state.peerName,
+                            peerAvatarUrl = state.peerAvatarUrl,
+                            currentUserAvatarUrl = state.currentUserAvatarUrl,
+                            currentUserId = viewModel.currentUserId,
+                            senderProfile = state.senderProfiles[message.senderId],
+                            peerReadUpToServerSeq = state.peerReadUpToServerSeq,
+                            mentionMembers = state.mentionMembers,
+                            showActions = activeActionMessageId == message.messageId,
+                            onOpenImagePreview = { previewMessage = it },
+                            onOpenActions = { activeActionMessageId = message.messageId },
+                            onDismissActions = { activeActionMessageId = null },
+                            onRetryImage = { message ->
+                                scope.launch {
+                                    viewModel.retryImageMessage(message.messageId)
+                                }
+                            },
+                            onCopyText = { text ->
+                                clipboard.setText(AnnotatedString(text))
+                            },
+                            onRecall = { message ->
+                                scope.launch {
+                                    viewModel.recallMessage(message.messageId)
+                                }
+                            },
+                            onOpenUserProfile = onOpenUserProfile
                         )
                     }
                 }
-            } else {
-                emptyList()
-            }
-        )
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .background(ByteImColors.AppBackground)
-                .padding(horizontal = ByteImDimensions.EdgePadding),
-            reverseLayout = true
-        ) {
-            itemsIndexed(state.messages, key = { _, msg -> msg.messageId }) { index, message ->
-                when (ChatDisplayPolicy.rowKind(message)) {
-                    ChatMessageRowKind.CENTERED_NOTICE -> RecalledMessageNotice(
-                        text = ChatDisplayPolicy.recalledMessageText(
-                            message = message,
-                            currentUserId = viewModel.currentUserId,
-                            senderDisplayName = recalledSenderDisplayName(message, state)
-                        )
-                    )
-                    ChatMessageRowKind.BUBBLE -> ChatMessageRow(
-                        message = message,
-                        peerName = state.peerName,
-                        peerAvatarUrl = state.peerAvatarUrl,
-                        currentUserAvatarUrl = state.currentUserAvatarUrl,
-                        currentUserId = viewModel.currentUserId,
-                        senderProfile = state.senderProfiles[message.senderId],
-                        peerReadUpToServerSeq = state.peerReadUpToServerSeq,
-                        mentionMembers = state.mentionMembers,
-                        showActions = activeActionMessageId == message.messageId,
-                        onOpenImagePreview = { previewMessage = it },
-                        onOpenActions = { activeActionMessageId = message.messageId },
-                        onDismissActions = { activeActionMessageId = null },
-                        onRetryImage = { message ->
-                            scope.launch {
-                                viewModel.retryImageMessage(message.messageId)
-                            }
-                        },
-                        onCopyText = { text ->
-                            clipboard.setText(AnnotatedString(text))
-                        },
-                        onRecall = { message ->
-                            scope.launch {
-                                viewModel.recallMessage(message.messageId)
-                            }
-                        },
-                        onOpenUserProfile = onOpenUserProfile
-                    )
-                }
-            }
-            if (state.messages.isNotEmpty()) {
-                item(key = "history-loader") {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 72.dp)
-                            .padding(top = 16.dp, bottom = 18.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ChatHistoryTopTime(
-                            text = ChatDisplayPolicy.topTimelineTimeText(state.messages.last().createdAt)
-                        )
-                        ChatDisplayPolicy.historyStatusText(state)?.let { statusText ->
-                            Text(
-                                text = statusText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = ByteImColors.TextSecondary
+                if (state.messages.isNotEmpty()) {
+                    item(key = "history-loader") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 72.dp)
+                                .padding(top = 16.dp, bottom = 18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ChatHistoryTopTime(
+                                text = ChatDisplayPolicy.topTimelineTimeText(state.messages.last().createdAt)
                             )
+                            ChatDisplayPolicy.historyStatusText(state)?.let { statusText ->
+                                Text(
+                                    text = statusText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = ByteImColors.TextSecondary
+                                )
+                            }
                         }
                     }
                 }
             }
+            if (albumPermissionDenied) {
+                Text(
+                    text = "需要相册权限才能选择图片",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+            ChatComposerBar(
+                draft = draft,
+                onDraftChange = {
+                    draft = it
+                    selectedMentions = ChatMentionPolicy.activeMentions(it.text, selectedMentions)
+                },
+                isGroup = state.peerId.startsWith("group:"),
+                mentionMembers = state.mentionMembers.filter { it.userId != viewModel.currentUserId },
+                onMentionSelected = { member ->
+                    val result = ChatMentionPolicy.insertMention(draft.text, selectedMentions, member)
+                    draft = TextFieldValue(
+                        text = result.draft,
+                        selection = TextRange(result.cursorPosition)
+                    )
+                    selectedMentions = result.selectedMentions
+                },
+                canSend = ChatDisplayPolicy.shouldShowSendButton(draft.text) && state.peerId.isNotBlank(),
+                showMoreActions = showMoreActions,
+                onMoreActionsClick = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    showMoreActions = !showMoreActions
+                },
+                onDismissMoreActions = { showMoreActions = false },
+                onPickMoreActionImage = {
+                    showMoreActions = false
+                    if (ContextCompat.checkSelfPermission(context, albumPermission) == PackageManager.PERMISSION_GRANTED) {
+                        albumPermissionDenied = false
+                        albumSessionId += 1
+                        showAlbumPicker = true
+                    } else {
+                        albumPermissionLauncher.launch(albumPermission)
+                    }
+                },
+                onSend = {
+                    val content = draft.text
+                    val mentionIds = ChatMentionPolicy.activeMentionIds(content, selectedMentions)
+                    draft = TextFieldValue("")
+                    selectedMentions = emptyList()
+                    showMoreActions = false
+                    scope.launch {
+                        viewModel.sendText(content, mentionedUserIds = mentionIds)
+                    }
+                }
+            )
         }
         state.errorMessage?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        }
-        if (albumPermissionDenied) {
-            Text(
-                text = "需要相册权限才能选择图片",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-        }
-        ChatComposerBar(
-            draft = draft,
-            onDraftChange = {
-                draft = it
-                selectedMentions = ChatMentionPolicy.activeMentions(it.text, selectedMentions)
-            },
-            isGroup = state.peerId.startsWith("group:"),
-            mentionMembers = state.mentionMembers.filter { it.userId != viewModel.currentUserId },
-            onMentionSelected = { member ->
-                val result = ChatMentionPolicy.insertMention(draft.text, selectedMentions, member)
-                draft = TextFieldValue(
-                    text = result.draft,
-                    selection = TextRange(result.cursorPosition)
-                )
-                selectedMentions = result.selectedMentions
-            },
-            canSend = ChatDisplayPolicy.shouldShowSendButton(draft.text) && state.peerId.isNotBlank(),
-            showMoreActions = showMoreActions,
-            onMoreActionsClick = {
-                focusManager.clearFocus()
-                keyboardController?.hide()
-                showMoreActions = !showMoreActions
-            },
-            onDismissMoreActions = { showMoreActions = false },
-            onPickMoreActionImage = {
-                showMoreActions = false
-                if (ContextCompat.checkSelfPermission(context, albumPermission) == PackageManager.PERMISSION_GRANTED) {
-                    albumPermissionDenied = false
-                    albumSessionId += 1
-                    showAlbumPicker = true
-                } else {
-                    albumPermissionLauncher.launch(albumPermission)
-                }
-            },
-            onSend = {
-                val content = draft.text
-                val mentionIds = ChatMentionPolicy.activeMentionIds(content, selectedMentions)
-                draft = TextFieldValue("")
-                selectedMentions = emptyList()
-                showMoreActions = false
-                scope.launch {
-                    viewModel.sendText(content, mentionedUserIds = mentionIds)
-                }
+            LaunchedEffect(message) {
+                delay(CHAT_ERROR_TOAST_DURATION_MS)
+                viewModel.clearErrorMessage()
             }
-        )
+            ChatBottomToast(
+                text = message,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
     previewMessage?.let { message ->
         ChatImagePreviewScreen(
@@ -822,6 +830,32 @@ private fun ChatMessage.mentionText(mentionMembers: List<GroupMember>): Annotate
 }
 
 @Composable
+private fun ChatBottomToast(
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .padding(start = 24.dp, end = 24.dp, bottom = 84.dp),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Surface(
+            color = Color(0xFFE0E0E0),
+            shape = RoundedCornerShape(18.dp),
+            tonalElevation = 0.dp,
+            modifier = Modifier.widthIn(max = 360.dp)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF222222),
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun ChatMessageActionBar(
     actions: List<ChatMessageAction>,
     onCopy: () -> Unit,
@@ -856,6 +890,8 @@ private fun ChatMessageActionBar(
         }
     }
 }
+
+private const val CHAT_ERROR_TOAST_DURATION_MS = 2_000L
 
 @Composable
 private fun OutgoingMessageStatus(

@@ -151,6 +151,38 @@ class ChatMessageRowLayoutTest {
         )
     }
 
+    @Test
+    fun chatErrorsRenderAsTransientBottomToastInsteadOfInlineErrorText() {
+        val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
+
+        assertTrue(
+            "ChatScreen should render transient chat errors through a bottom toast component.",
+            chatScreen.contains("ChatBottomToast(")
+        )
+        assertTrue(
+            "ChatScreen should auto-clear transient chat errors after a short delay.",
+            chatScreen.contains("LaunchedEffect(message)") &&
+                chatScreen.contains("delay(CHAT_ERROR_TOAST_DURATION_MS)") &&
+                chatScreen.contains("viewModel.clearErrorMessage()")
+        )
+
+        val toastBlock = extractFunctionBody(
+            source = chatScreen,
+            signature = "private fun ChatBottomToast("
+        ) ?: error("ChatBottomToast declaration not found")
+
+        assertTrue(
+            "The chat toast should use a neutral gray rounded surface rather than red inline error text.",
+            toastBlock.contains("Color(0xFFE0E0E0)") &&
+                toastBlock.contains("RoundedCornerShape(") &&
+                toastBlock.contains("Alignment.BottomCenter")
+        )
+        assertFalse(
+            "ChatScreen should no longer render state.errorMessage as Material error-colored inline Text.",
+            chatScreen.contains("state.errorMessage?.let { message ->\n            Text(")
+        )
+    }
+
     /**
      * Returns the argument list of the first occurrence of `callName(` found
      * inside the body of the function whose declaration starts with [functionSignature].

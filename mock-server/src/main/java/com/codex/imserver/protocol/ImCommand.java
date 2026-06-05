@@ -14,6 +14,7 @@ public enum ImCommand {
     RECALL_MESSAGE(15),
     RECALL_ACK(16),
     RECALL_NOTIFY(17),
+    RECALL_NOTIFY_ACK(18),
     HISTORY_QUERY(20),
     HISTORY_RESULT(21);
 

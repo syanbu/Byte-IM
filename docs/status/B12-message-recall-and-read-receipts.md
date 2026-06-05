@@ -15,7 +15,7 @@ Design source: [`../feature-notes/B12-message-recall-and-read-receipts-design.md
 
 Implemented for first-pass single-chat read receipts, with message recall and long-press copy/recall interactions handled on the shared single-chat and group-chat UI path. Group-chat recall copy now resolves recalled group member display names.
 
-The Android client now persists recall state and a conversation-level peer read cursor, sends `READ_ACK` when an open chat has incoming persisted `serverSeq` messages, processes inbound `READ_ACK`, sends recall requests, and marks local messages recalled from `RECALL_ACK` / `RECALL_NOTIFY`.
+The Android client now persists recall state and a conversation-level peer read cursor, sends `READ_ACK` when an open chat has incoming persisted `serverSeq` messages, processes inbound `READ_ACK`, sends recall requests, marks local messages recalled from `RECALL_ACK` / `RECALL_NOTIFY`, and sends `RECALL_NOTIFY_ACK` after receiver-side recall state is persisted.
 
 Conversation preview updates now preserve the existing peer read cursor, so later unread incoming messages do not make older already-read outgoing messages lose their read marker.
 
@@ -27,7 +27,7 @@ Recalled messages now render as centered system notices in chronological positio
 
 Group conversation-list previews now also resolve recalled sender display names when the last message is a recalled group message, so the Messages tab shows `{成员昵称}撤回了一条消息` instead of the single-chat fallback `对方撤回了一条消息`.
 
-The mock server now routes `READ_ACK`, validates recall requests, enforces the 2-minute server-time recall window, returns `RECALL_ACK`, and sends `RECALL_NOTIFY` to the online peer. The durable accepted-message store includes recall columns and migrates older SQLite files that do not have those columns. Durable recall replay for offline peers is not part of this first pass.
+The mock server now routes `READ_ACK`, validates recall requests, enforces the 2-minute server-time recall window, returns `RECALL_ACK`, sends `RECALL_NOTIFY`, accepts `RECALL_NOTIFY_ACK`, and replays pending recall notifications after receiver auth/reconnect until the receiver acknowledges local recall persistence. The durable accepted-message store includes recall columns, a per-receiver `recall_notified` column, and migrations for older SQLite files that do not have those columns.
 
 ## Project Context
 
@@ -178,6 +178,7 @@ Add recall commands to Android and mock-server `ImCommand` enums:
 RECALL_MESSAGE = 15
 RECALL_ACK     = 16
 RECALL_NOTIFY  = 17
+RECALL_NOTIFY_ACK = 18
 ```
 
 Command meanings:
@@ -185,6 +186,7 @@ Command meanings:
 - `RECALL_MESSAGE`: client requests recall for a message.
 - `RECALL_ACK`: server returns recall success or failure to the requester.
 - `RECALL_NOTIFY`: server notifies the peer that the message was recalled.
+- `RECALL_NOTIFY_ACK`: receiver confirms the recall state was persisted locally.
 
 `docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md` must be updated in the same implementation pass so protocol documentation does not drift from code.
 
@@ -227,11 +229,13 @@ Recommended order:
    - receiver/peer id
    - server accepted time
    - recalled flag/time/by
+   - per-receiver recall notified flag
 7. On `RECALL_MESSAGE`, validate sender ownership, conversation match, 2-minute window, and idempotency.
 8. Return `RECALL_ACK` to requester.
-9. Send `RECALL_NOTIFY` to peer if online.
-10. If offline recall consistency is required, persist recall state and replay/synchronize it on peer reconnect.
-11. Existing mock-server SQLite accepted-message stores must be migrated when recall columns are missing.
+9. Mark per-receiver recall notification pending and send `RECALL_NOTIFY` to online receivers.
+10. Handle `RECALL_NOTIFY_ACK` by clearing the per-receiver pending recall notification.
+11. Replay pending `RECALL_NOTIFY` packets on receiver auth/reconnect independently of original message `DELIVERY_ACK`.
+12. Existing mock-server SQLite accepted-message stores must be migrated when recall columns are missing.
 
 ## UI Acceptance Criteria
 
@@ -269,6 +273,7 @@ Android unit tests should cover:
 - outgoing read/unread marker derives from `serverSeq` and peer cursor
 - processing successful `RECALL_ACK` marks the local requester message recalled
 - processing `RECALL_NOTIFY` marks receiver message recalled
+- processing `RECALL_NOTIFY` sends `RECALL_NOTIFY_ACK` after local recall persistence
 - recall failure surfaces a user-visible error
 - recalled messages render centered prompt text instead of original text/image
 - recalled messages use the centered-notice row kind rather than the normal bubble row
@@ -285,7 +290,8 @@ Mock-server tests should cover:
 - successful recall sends `RECALL_NOTIFY` to peer.
 - repeated recall is idempotent.
 - durable accepted-message stores missing recall columns migrate successfully.
-- offline peer recovery behavior is covered if durable recall sync is implemented.
+- pending `RECALL_NOTIFY` is replayed on receiver auth until `RECALL_NOTIFY_ACK`.
+- pending `RECALL_NOTIFY` survives router restart through `SQLiteAcceptedMessageStore`.
 
 Manual/emulator checks:
 
@@ -322,13 +328,13 @@ Manual/emulator checks:
 - If read/recall packets are handled by page ViewModels instead of `MessagePacketProcessor`, packets can be missed or processed more than once.
 - If recall state physically deletes rows, message ordering and conversation preview can become inconsistent.
 - If read cursor updates are not monotonic, stale packets can move UI from read back to unread.
-- If offline recall notifications are not persisted/replayed, the peer may keep seeing the original message after reconnect.
+- If offline recall notifications are not persisted/replayed, the peer may keep seeing the original message after reconnect. This is now covered by `RECALL_NOTIFY_ACK` plus per-receiver pending recall notification replay.
 - B11 image messages add another rendering path; recall rendering must take priority over both text and image bubble rendering.
 - The floating action menu uses a fixed offset above the bubble; future action expansion such as `转发` or `收藏` should re-check available top space and menu width on small screens.
 
 ## Documentation Updated
 
 - [`../DEVELOPMENT_STATUS.md`](../DEVELOPMENT_STATUS.md) lists B12 as implemented for first-pass single-chat scope and points to this status file.
-- [`../feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md`](../feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md) documents final `READ_ACK`, `RECALL_MESSAGE`, `RECALL_ACK`, and `RECALL_NOTIFY` semantics.
+- [`../feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md`](../feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md) documents final `READ_ACK`, `RECALL_MESSAGE`, `RECALL_ACK`, `RECALL_NOTIFY`, and `RECALL_NOTIFY_ACK` semantics.
 - [`../bug/Fix-ChatOldestMessageActionBarOverlay.md`](../bug/Fix-ChatOldestMessageActionBarOverlay.md) records the 2026-06-04 oldest-message floating action menu fix and manual verification.
 - This file records the B12 verification commands that passed on 2026-05-30 and the action-menu regression verification from 2026-06-04.

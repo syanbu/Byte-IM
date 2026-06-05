@@ -49,6 +49,8 @@ class MessageRepository(
     override val conversationUpdates: SharedFlow<Unit> = mutableConversationUpdates.asSharedFlow()
     private val mutableMessageAlerts = MutableSharedFlow<IncomingMessageAlert>(extraBufferCapacity = 64)
     val messageAlerts: SharedFlow<IncomingMessageAlert> = mutableMessageAlerts.asSharedFlow()
+    private val mutableRecallFailures = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val recallFailures: SharedFlow<String> = mutableRecallFailures.asSharedFlow()
 
     fun sendText(senderId: String, receiverId: String, content: String, now: Long): ChatMessage {
         val conversationId = conversationIdFor(senderId, receiverId)
@@ -727,7 +729,7 @@ class MessageRepository(
     private fun handleRecallAck(json: String) {
         val body = JsonParser.parseString(json).asJsonObject
         if (body.optionalBoolean("success") == false) {
-            notifyConversationChanged()
+            mutableRecallFailures.tryEmit(RECALL_FAILURE_MESSAGE)
             return
         }
         markMessageRecalled(
@@ -739,10 +741,18 @@ class MessageRepository(
 
     private fun handleRecallNotify(json: String) {
         val body = JsonParser.parseString(json).asJsonObject
+        val messageId = body.requiredString("messageId")
+        val conversationId = body.requiredString("conversationId")
+        val recalledAt = body.optionalLong("recalledAt") ?: System.currentTimeMillis()
         markMessageRecalled(
-            messageId = body.requiredString("messageId"),
+            messageId = messageId,
             recalledBy = body.requiredString("recalledBy"),
-            recalledAt = body.optionalLong("recalledAt") ?: System.currentTimeMillis()
+            recalledAt = recalledAt
+        )
+        sendRecallNotifyAck(
+            messageId = messageId,
+            conversationId = conversationId,
+            recalledAt = recalledAt
         )
     }
 
@@ -758,6 +768,24 @@ class MessageRepository(
         if (changed || previewChanged) {
             notifyConversationChanged()
         }
+    }
+
+    private fun sendRecallNotifyAck(messageId: String, conversationId: String, recalledAt: Long) {
+        val message = messageDao.findByMessageId(messageId) ?: return
+        connection.send(
+            ImPacket(
+                cmd = ImCommand.RECALL_NOTIFY_ACK.value,
+                body = """
+                    {
+                      "messageId":"${messageId.escapeJson()}",
+                      "conversationId":"${conversationId.escapeJson()}",
+                      "receiverId":"${message.receiverId.escapeJson()}",
+                      "recalledAt":$recalledAt
+                    }
+                """.trimIndent().replace(Regex("\\s+"), "")
+                    .toByteArray()
+            )
+        )
     }
 
     private fun sendReadAckIfAdvanced(conversationId: String, readerId: String, peerId: String, readAt: Long) {
@@ -934,5 +962,6 @@ class MessageRepository(
         const val DEFAULT_ACK_TIMEOUT_MS = 5_000L
         const val DEFAULT_RETRY_BATCH_SIZE = 50
         const val IMAGE_PLACEHOLDER_CONTENT = "[图片]"
+        const val RECALL_FAILURE_MESSAGE = "撤回失败，请重试"
     }
 }
