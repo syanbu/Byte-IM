@@ -228,6 +228,7 @@ class ChatViewModel(
     suspend fun sendImages(selectedImages: List<SelectedChatImage>, now: Long = System.currentTimeMillis()) {
         selectedImages
             .take(MAX_IMAGES_PER_SEND)
+            .sortedBy { it.selectionOrder }
             .forEachIndexed { index, selectedImage ->
                 sendImage(selectedImage, now + index)
             }

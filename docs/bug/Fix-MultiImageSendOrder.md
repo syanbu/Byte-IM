@@ -2,11 +2,12 @@
 
 ## Status
 
-- Status: Workaround applied
+- Status: Durable fix implemented
 - Workaround applied on: 2026-06-04
+- Durable fix implemented on: 2026-06-05
 - Branch: current working branch
 - Tracking doc: `docs/status/B11-image-message-design-status.md` (Bug Fix Log + Current Risks)
-- Long-term fix: a self-built album preview page that records an explicit `selectionOrder` on each `SelectedChatImage` and lets the user drag-reorder before sending. The self-built picker also removes the dependence on the system Photo Picker's tap-order behavior, which is the root cause described below.
+- Long-term fix: implemented a self-built album selection flow that records an explicit `selectionOrder` on each `SelectedChatImage` and sends directly from the album page. Tap-to-preview and drag reorder are intentionally left as future UX optimizations. The self-built picker removes the dependence on the system Photo Picker's tap-order behavior, which is the root cause described below.
 
 ## Problem
 
@@ -38,7 +39,7 @@ AndroidX's `ActivityResultContracts.PickMultipleVisualMedia` contract comments s
 
 The 1ms step of `now + index` is also too coarse to absorb any platform reordering; even on devices where the picker is consistent, two consecutive compress-and-insert cycles can land on the same `System.currentTimeMillis()` tick, and the `createdAt` tie-break then falls through to `clientSeq` and `messageId`, which is not necessarily tap order either.
 
-## Chosen Fix (Workaround)
+## Short-Term Fix (Workaround)
 
 Add `.reversed()` to the URI list inside the `PickMultipleVisualMedia` callback in `ChatScreen.kt` before compression, so the tap order is restored for this specific Photo Picker build. Record the rationale in a comment next to the change so the next reader does not delete it as a no-op.
 
@@ -65,19 +66,31 @@ val preparedImages = orderedUris.mapNotNull { uri ->
 
 ## Alternative Considered
 
-Switch the chat composer to a self-built album UI plus a send preview page:
+Switch the chat composer to a self-built album UI:
 
 - Build the album page from `ContentResolver.query(MediaStore.Images)` and a Coil-backed thumbnail grid.
 - Maintain the selection as a `LinkedHashSet<Uri>` so the click order is explicit in the data model, not inferred from a system callback.
-- Add a `ImagePreviewScreen` between selection and send that exposes a draggable thumbnail strip (left-to-right = send order), per-image delete, and a "原图" toggle.
 - Add an explicit `selectionOrder: Int` field to `SelectedChatImage` and have `ChatViewModel.sendImages` sort the list by `selectionOrder` before applying `now + index` for `createdAt`.
 
 Why it was not done in this pass:
 
-- The work is a multi-day UI task (album grid, drag-to-reorder, preview page) plus a model and ViewModel change plus regression tests, and the immediate reported bug ("first selected photo ends up newest") is the only user-visible symptom so far.
+- The full expanded UX work is a multi-day UI task if it includes tap-to-preview, drag reorder, delete-before-send, and original-image toggles; the immediate reported bug ("first selected photo ends up newest") only requires app-owned selection order.
 - The `.reversed()` workaround unblocks the user today at the cost of one extra line in the picker callback. It is fragile across Android versions and Photo Picker builds, which is why this fix is documented as "workaround" rather than "completed".
 
-The long-term plan is to do the self-built album + preview page pass next, at which point the `.reversed()` workaround and the rationale comment can be deleted in the same change.
+The self-built album pass has now replaced this workaround, and the `.reversed()` callback code was removed in the same change.
+
+## Durable Fix
+
+Implemented on 2026-06-05:
+
+- Added `selectionOrder` to `SelectedChatImage`.
+- Updated `ChatViewModel.sendImages(...)` to sort by `selectionOrder` before assigning `createdAt = now + index`.
+- Replaced the chat composer image entry with a self-built album flow backed by `MediaStore.Images`.
+- Added an app-owned album selection state model that records tap order, compacts order after deselect/delete, and caps one batch at 9 images.
+- The album page primary action sends directly; it does not force a preview confirmation step.
+- Removed the system Photo Picker callback and its `.reversed()` workaround from `ChatScreen.kt`.
+
+Tap-to-preview, delete-before-send UI, and drag reorder are not included in this pass. They can be added later while keeping `selectionOrder` as the send-order contract.
 
 ## Verification Result
 
@@ -94,13 +107,14 @@ No automated test was added for this workaround:
 
 ## Verification Plan For The Long-Term Fix
 
-When the self-built album + preview page is implemented, add the following tests:
+When the self-built album enhancements are implemented, add the following tests:
 
 - `AlbumPickerViewModelTest`:
   - tap order A, B, C, D produces selection list `[A, B, C, D]`
   - tap B again to deselect, then tap E, produces `[A, C, D, E]` (LinkedHashSet semantics)
   - tapping the same image twice does not create a duplicate
-- `ImagePreviewViewModelTest`:
+- Future preview/reorder tests:
+  - tapping an album image opens preview without changing selected send order
   - drag-reorder swaps `selectionOrder` of the two involved entries
   - delete a middle entry compacts `selectionOrder` so it stays a `[0, size)` bijection
 - `ChatViewModelTest.sendImagesOrdersBySelectionOrderNotByInputOrder`:

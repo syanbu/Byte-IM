@@ -107,7 +107,32 @@ class ChatComposerMoreActionsLayoutTest {
             "When the TextField becomes focused, ChatComposerBar should dismiss the inline more-actions panel.",
             chatScreen.contains(".onFocusChanged {") &&
                 chatScreen.contains("if (it.isFocused)") &&
-                chatScreen.contains("onDismissMoreActions()")
+            chatScreen.contains("onDismissMoreActions()")
+        )
+    }
+
+    @Test
+    fun albumPickerPrimaryActionSendsWithoutForcedPreviewStep() {
+        val chatScreen = sourceFile("src/main/java/com/codex/im/chat/ChatScreen.kt").readText()
+        val albumPickerScreen = sourceFile("src/main/java/com/codex/im/chat/AlbumPickerScreen.kt").readText()
+
+        assertTrue(
+            "Album picker should label the selected-image primary action as Send, because tapping it " +
+                "should directly send the selected images.",
+            albumPickerScreen.contains("""Text("发送 ${'$'}{state.selected.size}")""")
+        )
+        assertFalse(
+            "Album picker should not label the primary action as Next Step; that implies a mandatory " +
+                "preview confirmation screen.",
+            albumPickerScreen.contains("下一步")
+        )
+        assertFalse(
+            "ChatScreen should not keep a previewAlbumImages state for a forced album -> preview -> send flow.",
+            chatScreen.contains("previewAlbumImages")
+        )
+        assertFalse(
+            "The album send flow should not render ImageSendPreviewScreen as a mandatory intermediate step.",
+            chatScreen.contains("ImageSendPreviewScreen(")
         )
     }
 

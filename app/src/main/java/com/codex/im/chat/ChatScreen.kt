@@ -1,8 +1,11 @@
 package com.codex.im.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +39,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +67,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.core.content.ContextCompat
 import com.codex.im.R
 import com.codex.im.message.ChatImageCompressor
 import com.codex.im.storage.ChatMessage
@@ -92,6 +97,9 @@ fun ChatScreen(
     var activeActionMessageId by remember { mutableStateOf<String?>(null) }
     var showGroupRename by remember { mutableStateOf(false) }
     var showMoreActions by remember { mutableStateOf(false) }
+    var showAlbumPicker by remember { mutableStateOf(false) }
+    var albumPermissionDenied by remember { mutableStateOf(false) }
+    var albumSessionId by remember { mutableStateOf(0) }
     var groupNameDraft by remember { mutableStateOf(state.peerName) }
     var selectedMentions by remember { mutableStateOf(emptyList<ChatMention>()) }
     val scope = rememberCoroutineScope()
@@ -100,29 +108,28 @@ fun ChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val context = LocalContext.current
-    var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
-    val latestMessageId = state.messages.firstOrNull()?.messageId
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(9)) { uris ->
-        if (uris.isNotEmpty()) {
-            scope.launch {
-                // AndroidX `PickMultipleVisualMedia` does not guarantee that the returned URI
-                // list follows the user's tap order. Empirically, on this device's Photo Picker
-                // build the URIs come back in reverse selection order (last tapped at index 0),
-                // which makes the first selected photo end up as the newest message after
-                // `forEachIndexed` + `now + index` apply ascending `createdAt` values. Reverse
-                // the list here so the user's tap order is preserved end-to-end. If we ever
-                // switch to a self-built album UI (see status doc), this `.reversed()` should be
-                // removed because the custom picker can guarantee tap order directly.
-                val orderedUris = uris.reversed()
-                val preparedImages = orderedUris.mapNotNull { uri ->
-                    ChatImageCompressor.prepareSelectedImage(context, context.contentResolver, uri)
-                }
-                if (preparedImages.isNotEmpty()) {
-                    viewModel.sendImages(preparedImages)
-                }
-            }
+    val albumViewModel = remember(albumSessionId) {
+        AlbumPickerViewModel(AndroidAlbumImageRepository(context.contentResolver))
+    }
+    val albumState by albumViewModel.state.collectAsState()
+    val albumPermission = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
         }
     }
+    val albumPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            albumPermissionDenied = false
+            albumSessionId += 1
+            showAlbumPicker = true
+        } else {
+            albumPermissionDenied = true
+        }
+    }
+    var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
+    val latestMessageId = state.messages.firstOrNull()?.messageId
     val shouldLoadEarlierHistory by remember(
         listState,
         state.messages.size,
@@ -281,6 +288,14 @@ fun ChatScreen(
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
         }
+        if (albumPermissionDenied) {
+            Text(
+                text = "需要相册权限才能选择图片",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
         ChatComposerBar(
             draft = draft,
             onDraftChange = {
@@ -307,7 +322,13 @@ fun ChatScreen(
             onDismissMoreActions = { showMoreActions = false },
             onPickMoreActionImage = {
                 showMoreActions = false
-                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                if (ContextCompat.checkSelfPermission(context, albumPermission) == PackageManager.PERMISSION_GRANTED) {
+                    albumPermissionDenied = false
+                    albumSessionId += 1
+                    showAlbumPicker = true
+                } else {
+                    albumPermissionLauncher.launch(albumPermission)
+                }
             },
             onSend = {
                 val content = draft.text
@@ -325,6 +346,31 @@ fun ChatScreen(
         ChatImagePreviewScreen(
             message = message,
             onDismiss = { previewMessage = null }
+        )
+    }
+    if (showAlbumPicker) {
+        AlbumPickerScreen(
+            viewModel = albumViewModel,
+            state = albumState,
+            onBack = {
+                showAlbumPicker = false
+            },
+            onSendSelected = { selected ->
+                showAlbumPicker = false
+                scope.launch {
+                    val preparedImages = selected.mapIndexedNotNull { index, image ->
+                        ChatImageCompressor.prepareSelectedImage(
+                            context,
+                            context.contentResolver,
+                            Uri.parse(image.uriString)
+                        )?.copy(selectionOrder = index)
+                    }
+                    if (preparedImages.isNotEmpty()) {
+                        viewModel.sendImages(preparedImages)
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxSize()
         )
     }
     if (showGroupRename) {

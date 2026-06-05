@@ -861,6 +861,30 @@ class ChatViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesOrdersBySelectionOrderNotInputOrder() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+
+        fixture.viewModel.sendImages(
+            listOf(
+                selectedImage(label = "D", selectionOrder = 3),
+                selectedImage(label = "A", selectionOrder = 0),
+                selectedImage(label = "C", selectionOrder = 2),
+                selectedImage(label = "B", selectionOrder = 1)
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+
+        val sentLabels = fixture.messageDao
+            .queryPage("single:13800113800:13900113900", null, 20)
+            .sortedBy { it.createdAt }
+            .map { it.localOriginalPath?.substringAfterLast('-')?.substringBefore('.') }
+        assertEquals(listOf("A", "B", "C", "D"), sentLabels)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun ackedImageSentAfterFailedUploadStaysNewestInChatState() = runTest {
         val fixture = Fixture(
             this,
@@ -1197,6 +1221,19 @@ class ChatViewModelTest {
             width = 1440,
             height = 960,
             mimeType = "image/jpeg"
+        )
+    }
+
+    private fun selectedImage(label: String, selectionOrder: Int): SelectedChatImage {
+        return SelectedChatImage(
+            originalBytes = ByteArray(1) { label.first().code.toByte() },
+            thumbnailBytes = ByteArray(1) { 2 },
+            localOriginalPath = "cache/original-$label.jpg",
+            localThumbnailPath = "cache/thumb-$label.jpg",
+            width = 1440,
+            height = 960,
+            mimeType = "image/jpeg",
+            selectionOrder = selectionOrder
         )
     }
 
