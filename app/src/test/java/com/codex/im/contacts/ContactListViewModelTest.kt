@@ -5,6 +5,8 @@ import com.codex.im.profile.ProfileApi
 import com.codex.im.profile.ProfileBatchResult
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.profile.ProfileResult
+import com.codex.im.storage.FriendContact
+import com.codex.im.storage.InMemoryFriendContactDao
 import com.codex.im.storage.InMemoryUserProfileDao
 import com.codex.im.storage.UserProfile
 import kotlinx.coroutines.CompletableDeferred
@@ -49,7 +51,7 @@ class ContactListViewModelTest {
         fixture.viewModel.start()
         runCurrent()
 
-        assertEquals(listOf("15000000003", "15000000004"), profileApi.requestedBatchUserIds)
+        assertEquals(listOf(listOf("15000000003", "15000000004")), profileApi.requestedBatchUserIds)
     }
 
     @Test
@@ -85,7 +87,10 @@ class ContactListViewModelTest {
             friendUserIds = listOf("13900113900"),
             profileApiOverride = profileApi
         )
-        fixture.contactRepository.cacheFriendUserIds(listOf("13900113900"))
+        fixture.friendContactDao.replaceForOwner(
+            ownerUserId = "15000000000",
+            contacts = listOf(FriendContact("13900113900", profileUpdatedAt = 2_000L, sortOrder = 0))
+        )
         fixture.profileDao.upsert(
             UserProfile(
                 userId = "13900113900",
@@ -103,6 +108,68 @@ class ContactListViewModelTest {
         val item = fixture.viewModel.state.value.items.single()
         assertEquals("13900113900", item.userId)
         assertEquals("Megumi", item.displayName)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startDoesNotBatchRefreshUnchangedProfiles() = runTest {
+        val profileApi = FakeProfileApi()
+        val fixture = Fixture(
+            this,
+            userId = "15000000000",
+            friendContacts = listOf(FriendContact("13900113900", profileUpdatedAt = 2_000L, sortOrder = 0)),
+            profileApiOverride = profileApi
+        )
+        fixture.profileDao.upsert(profile("13900113900", updatedAt = 2_000L))
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(emptyList<List<String>>(), profileApi.requestedBatchUserIds)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startBatchRefreshesProfilesWithNewerRemoteVersion() = runTest {
+        val profileApi = FakeProfileApi()
+        val fixture = Fixture(
+            this,
+            userId = "15000000000",
+            friendContacts = listOf(FriendContact("13900113900", profileUpdatedAt = 3_000L, sortOrder = 0)),
+            profileApiOverride = profileApi
+        )
+        fixture.profileDao.upsert(profile("13900113900", updatedAt = 2_000L))
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(listOf(listOf("13900113900")), profileApi.requestedBatchUserIds)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun changedProfilesAreRefreshedInInitialAndBackgroundBatches() = runTest {
+        val profileApi = FakeProfileApi()
+        val contacts = (1..25).map { index ->
+            FriendContact("139001139%02d".format(index), profileUpdatedAt = 2_000L, sortOrder = index - 1)
+        }
+        val fixture = Fixture(
+            this,
+            userId = "15000000000",
+            friendContacts = contacts,
+            profileApiOverride = profileApi
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                contacts.take(20).map { it.userId },
+                contacts.drop(20).take(10).map { it.userId }
+            ),
+            profileApi.requestedBatchUserIds
+        )
     }
 
     @Test
@@ -128,15 +195,51 @@ class ContactListViewModelTest {
         assertEquals(null, fixture.viewModel.state.value.navigationTargetPeerId)
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun stopAndStartAgainKeepsExistingItemsWithoutRefreshing() = runTest {
+        val fixture = Fixture(this, userId = "15000000000")
+
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.stop()
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(listOf("13900113900"), fixture.viewModel.state.value.items.map { it.userId })
+        assertEquals(1, fixture.contactApi.requestCount)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun scrollPositionSurvivesStopStartAndRefreshUpdates() = runTest {
+        val fixture = Fixture(this, userId = "15000000000")
+
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.updateScrollPosition(firstVisibleItemIndex = 12, firstVisibleItemScrollOffset = 34)
+        fixture.viewModel.stop()
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(12, fixture.viewModel.state.value.firstVisibleItemIndex)
+        assertEquals(34, fixture.viewModel.state.value.firstVisibleItemScrollOffset)
+    }
+
     private class Fixture(
         scope: TestScope,
         userId: String,
         friendUserIds: List<String> = listOf("13900113900"),
+        friendContacts: List<FriendContact> = friendUserIds.mapIndexed { index, userId ->
+            FriendContact(userId, profileUpdatedAt = 0L, sortOrder = index)
+        },
         profileApiOverride: ProfileApi = FakeProfileApi()
     ) {
         val profileDao = InMemoryUserProfileDao()
+        val friendContactDao = InMemoryFriendContactDao()
         private val profileRepository = ProfileRepository(profileDao, profileApiOverride)
-        val contactRepository = ContactRepository(FakeContactApi(friendUserIds))
+        val contactApi = FakeContactApi(friendContacts)
+        val contactRepository = ContactRepository(contactApi, friendContactDao)
         val viewModel = ContactListViewModel(
             session = AuthSession("mock-token-$userId", userId, userId, expiresAtMillis = 2_000L),
             profileRepository = profileRepository,
@@ -147,14 +250,14 @@ class ContactListViewModelTest {
     }
 
     private class FakeProfileApi : ProfileApi {
-        var requestedBatchUserIds: List<String> = emptyList()
+        val requestedBatchUserIds: MutableList<List<String>> = mutableListOf()
 
         override suspend fun me(accessToken: String): ProfileResult = ProfileResult.Failure("unused")
 
         override suspend fun user(accessToken: String, userId: String): ProfileResult = ProfileResult.Failure("unused")
 
         override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
-            requestedBatchUserIds = userIds
+            requestedBatchUserIds += userIds
             return ProfileBatchResult.Success(emptyList())
         }
 
@@ -189,9 +292,26 @@ class ContactListViewModelTest {
         ): ProfileResult = ProfileResult.Failure("unused")
     }
 
-    private class FakeContactApi(private val friendUserIds: List<String>) : ContactApi {
+    private class FakeContactApi(private val friendContacts: List<FriendContact>) : ContactApi {
+        var requestCount = 0
+
         override suspend fun friends(accessToken: String): ContactIdsResult {
-            return ContactIdsResult.Success(friendUserIds)
+            requestCount += 1
+            return ContactIdsResult.Success(
+                userIds = friendContacts.map { it.userId },
+                contacts = friendContacts
+            )
         }
+    }
+
+    private fun profile(userId: String, updatedAt: Long): UserProfile {
+        return UserProfile(
+            userId = userId,
+            phone = userId,
+            nickname = userId,
+            avatarUrl = null,
+            avatarUpdatedAt = 0L,
+            updatedAt = updatedAt
+        )
     }
 }

@@ -86,6 +86,12 @@ public final class UserStore {
         return records;
     }
 
+    public synchronized long profileUpdatedAtByPhone(String phone) {
+        return findByPhone(phone)
+                .map(UserRecord::updatedAt)
+                .orElse(0L);
+    }
+
     public synchronized Optional<UserRecord> updateProfile(String phone, String nickname, String avatarUrl, String avatarObjectKey, String gender, String signature, long nowMillis) {
         Optional<UserRecord> current = findByPhone(phone);
         if (current.isEmpty()) {

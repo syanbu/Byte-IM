@@ -13,6 +13,7 @@ class ImDatabaseHelper(
         createConversationsTable(db)
         createPendingMessagesTable(db)
         createUserProfilesTable(db)
+        createFriendContactsTable(db)
         createGroupsTable(db)
         createGroupMembersTable(db)
     }
@@ -112,6 +113,26 @@ class ImDatabaseHelper(
         )
     }
 
+    private fun createFriendContactsTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS friend_contacts (
+              owner_user_id TEXT NOT NULL,
+              friend_user_id TEXT NOT NULL,
+              profile_updated_at INTEGER NOT NULL,
+              sort_order INTEGER NOT NULL,
+              PRIMARY KEY(owner_user_id, friend_user_id)
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS idx_friend_contacts_owner_order
+            ON friend_contacts(owner_user_id, sort_order ASC)
+            """.trimIndent()
+        )
+    }
+
     private fun createGroupsTable(db: SQLiteDatabase) {
         db.execSQL(
             """
@@ -149,6 +170,7 @@ class ImDatabaseHelper(
         if (oldVersion < 2) {
             createUserProfilesTable(db)
         }
+        db.execSQL("DROP TABLE IF EXISTS friend_contacts")
         db.execSQL("DROP TABLE IF EXISTS pending_messages")
         db.execSQL("DROP TABLE IF EXISTS user_profiles")
         db.execSQL("DROP TABLE IF EXISTS group_members")
@@ -160,6 +182,6 @@ class ImDatabaseHelper(
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 7
+        const val DATABASE_VERSION = 8
     }
 }

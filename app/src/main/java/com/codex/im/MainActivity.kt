@@ -105,6 +105,7 @@ import com.codex.im.profile.OkHttpProfileApi
 import com.codex.im.profile.AvatarUploadApi
 import com.codex.im.profile.ProfileRepository
 import com.codex.im.storage.AndroidConversationDao
+import com.codex.im.storage.AndroidFriendContactDao
 import com.codex.im.storage.AndroidGroupDao
 import com.codex.im.storage.AndroidMessageDao
 import com.codex.im.storage.AndroidPendingMessageDao
@@ -318,7 +319,8 @@ private class AccountScopedRepositories private constructor(
                 profileApi = OkHttpProfileApi(baseUrl = httpBaseUrl)
             )
             val contactRepository = ContactRepository(
-                contactApi = OkHttpContactApi(baseUrl = httpBaseUrl)
+                contactApi = OkHttpContactApi(baseUrl = httpBaseUrl),
+                friendContactDao = AndroidFriendContactDao(database)
             )
             val messageRepository = MessageRepository(
                 messageDao = AndroidMessageDao(database),
@@ -395,6 +397,14 @@ private fun AuthenticatedImNavHost(
         MessageOutboxWorker(
             repository = messageRepository,
             connection = connection
+        )
+    }
+    val contactListViewModel = remember(session.userId) {
+        ContactListViewModel(
+            session = session,
+            profileRepository = profileRepository,
+            contactRepository = contactRepository,
+            validSessionProvider = validSessionProvider
         )
     }
 
@@ -485,14 +495,6 @@ private fun AuthenticatedImNavHost(
             }
 
             composable(SelfHostedImRoute.Contacts.route) {
-                val contactListViewModel = remember(session.userId) {
-                    ContactListViewModel(
-                        session = session,
-                        profileRepository = profileRepository,
-                        contactRepository = contactRepository,
-                        validSessionProvider = validSessionProvider
-                    )
-                }
                 val contactState by contactListViewModel.state.collectAsState()
                 Column(modifier = Modifier.fillMaxSize()) {
                     ContactListScreen(
@@ -667,9 +669,9 @@ private fun String.peerIdForCurrentSession(currentUserId: String): String {
 private fun NavHostController.navigateToTopLevelTab(route: String) {
     navigate(route) {
         launchSingleTop = true
-        restoreState = false
+        restoreState = true
         popUpTo(graph.findStartDestination().id) {
-            saveState = false
+            saveState = true
         }
     }
 }

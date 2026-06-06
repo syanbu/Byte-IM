@@ -3,6 +3,7 @@ package com.codex.im.contacts
 import com.codex.im.auth.AuthSession
 import com.codex.im.auth.ValidSessionProvider
 import com.codex.im.profile.ProfileRepository
+import com.codex.im.storage.FriendContact
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +22,9 @@ data class ContactListItem(
 
 data class ContactListUiState(
     val items: List<ContactListItem> = emptyList(),
-    val navigationTargetPeerId: String? = null
+    val navigationTargetPeerId: String? = null,
+    val firstVisibleItemIndex: Int = 0,
+    val firstVisibleItemScrollOffset: Int = 0
 )
 
 class ContactListViewModel(
@@ -39,7 +42,6 @@ class ContactListViewModel(
 
     fun start() {
         if (started) {
-            refresh()
             return
         }
         started = true
@@ -49,7 +51,6 @@ class ContactListViewModel(
     fun stop() {
         refreshJob?.cancel()
         refreshJob = null
-        started = false
     }
 
     fun openContact(userId: String) {
@@ -64,25 +65,77 @@ class ContactListViewModel(
         mutableState.value = mutableState.value.copy(navigationTargetPeerId = null)
     }
 
+    fun updateScrollPosition(firstVisibleItemIndex: Int, firstVisibleItemScrollOffset: Int) {
+        val safeIndex = firstVisibleItemIndex.coerceAtLeast(0)
+        val safeOffset = firstVisibleItemScrollOffset.coerceAtLeast(0)
+        val current = mutableState.value
+        if (
+            current.firstVisibleItemIndex == safeIndex &&
+            current.firstVisibleItemScrollOffset == safeOffset
+        ) {
+            return
+        }
+        mutableState.value = current.copy(
+            firstVisibleItemIndex = safeIndex,
+            firstVisibleItemScrollOffset = safeOffset
+        )
+    }
+
     private fun refresh() {
         refreshJob?.cancel()
         refreshJob = scope.launch(dispatcher) {
             profileRepository.bootstrapSession(session)
-            val cachedContactIds = contactRepository.cachedFriendUserIds()
-            if (cachedContactIds.isNotEmpty()) {
-                mutableState.value = mutableState.value.copy(items = buildItems(cachedContactIds))
+            val cachedContacts = contactRepository.cachedFriends(session.userId)
+            if (cachedContacts.isNotEmpty()) {
+                mutableState.value = mutableState.value.copy(items = buildItems(cachedContacts.map { it.userId }))
             }
             val validSession = validSessionProvider()
-            val contactIds = if (validSession != null) {
-                contactRepository.friendUserIds(validSession.accessToken)
+            val contacts = if (validSession != null) {
+                contactRepository.refreshFriends(validSession.accessToken, session.userId)
             } else {
-                cachedContactIds
+                cachedContacts
             }
-            if (validSession != null) {
-                profileRepository.refreshProfiles(validSession.accessToken, contactIds)
-            }
+            val contactIds = contacts.map { it.userId }
             mutableState.value = mutableState.value.copy(items = buildItems(contactIds))
+            if (validSession != null) {
+                refreshChangedProfiles(validSession.accessToken, contacts, contactIds)
+            }
         }
+    }
+
+    private suspend fun refreshChangedProfiles(
+        accessToken: String,
+        contacts: List<FriendContact>,
+        contactIds: List<String>
+    ) {
+        val changedIds = changedProfileIds(contacts)
+        if (changedIds.isEmpty()) {
+            return
+        }
+        changedIds
+            .take(INITIAL_PROFILE_REFRESH_LIMIT)
+            .let { ids ->
+                if (ids.isNotEmpty()) {
+                    profileRepository.refreshProfiles(accessToken, ids)
+                    mutableState.value = mutableState.value.copy(items = buildItems(contactIds))
+                }
+            }
+        changedIds
+            .drop(INITIAL_PROFILE_REFRESH_LIMIT)
+            .chunked(NEXT_PROFILE_REFRESH_LIMIT)
+            .forEach { ids ->
+                profileRepository.refreshProfiles(accessToken, ids)
+                mutableState.value = mutableState.value.copy(items = buildItems(contactIds))
+            }
+    }
+
+    private fun changedProfileIds(contacts: List<FriendContact>): List<String> {
+        return contacts
+            .filter { contact ->
+                val local = profileRepository.localProfile(contact.userId)
+                local == null || contact.profileUpdatedAt > local.updatedAt
+            }
+            .map { it.userId }
     }
 
     private fun buildItems(contactIds: List<String>): List<ContactListItem> {
@@ -94,5 +147,10 @@ class ContactListViewModel(
                 avatarUrl = profile?.avatarUrl
             )
         }
+    }
+
+    private companion object {
+        const val INITIAL_PROFILE_REFRESH_LIMIT = 20
+        const val NEXT_PROFILE_REFRESH_LIMIT = 10
     }
 }

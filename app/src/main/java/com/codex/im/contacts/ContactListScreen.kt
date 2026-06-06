@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -41,6 +43,7 @@ import com.codex.im.ui.ByteImListSurface
 import com.codex.im.ui.ByteImShapes
 import com.codex.im.ui.ByteImTopBar
 import com.codex.im.ui.ConversationCreateMenu
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun ContactListScreen(
@@ -64,6 +67,19 @@ fun ContactListScreen(
             viewModel.consumeNavigationTarget()
         }
     }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = state.firstVisibleItemIndex,
+        initialFirstVisibleItemScrollOffset = state.firstVisibleItemScrollOffset
+    )
+    LaunchedEffect(viewModel, listState) {
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }
+            .distinctUntilChanged()
+            .collect { (index, offset) ->
+                viewModel.updateScrollPosition(index, offset)
+            }
+    }
 
     Column(
         modifier = modifier
@@ -75,7 +91,10 @@ fun ContactListScreen(
             modifier = Modifier.weight(1f),
             containerColor = ByteImColors.AppBackground
         ) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize()
+            ) {
                 item {
                     HorizontalDivider(
                         color = ByteImColors.Divider,
