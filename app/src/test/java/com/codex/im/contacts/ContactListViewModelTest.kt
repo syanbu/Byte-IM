@@ -7,6 +7,7 @@ import com.codex.im.profile.ProfileRepository
 import com.codex.im.profile.ProfileResult
 import com.codex.im.storage.InMemoryUserProfileDao
 import com.codex.im.storage.UserProfile
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -37,16 +38,18 @@ class ContactListViewModelTest {
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
     fun serverFriendIdsAreRefreshedThroughProfileBatch() = runTest {
+        val profileApi = FakeProfileApi()
         val fixture = Fixture(
             this,
             userId = "15000000000",
-            friendUserIds = listOf("15000000003", "15000000004")
+            friendUserIds = listOf("15000000003", "15000000004"),
+            profileApiOverride = profileApi
         )
 
         fixture.viewModel.start()
         runCurrent()
 
-        assertEquals(listOf("15000000003", "15000000004"), fixture.profileApi.requestedBatchUserIds)
+        assertEquals(listOf("15000000003", "15000000004"), profileApi.requestedBatchUserIds)
     }
 
     @Test
@@ -70,6 +73,36 @@ class ContactListViewModelTest {
         val item = fixture.viewModel.state.value.items.single { it.userId == "13900113900" }
         assertEquals("Megumi", item.displayName)
         assertEquals("https://example.com/megumi.jpg", item.avatarUrl)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startShowsCachedContactsBeforeRemoteRefreshCompletes() = runTest {
+        val profileApi = BlockingBatchProfileApi()
+        val fixture = Fixture(
+            this,
+            userId = "15000000000",
+            friendUserIds = listOf("13900113900"),
+            profileApiOverride = profileApi
+        )
+        fixture.contactRepository.cacheFriendUserIds(listOf("13900113900"))
+        fixture.profileDao.upsert(
+            UserProfile(
+                userId = "13900113900",
+                phone = "13900113900",
+                nickname = "Megumi",
+                avatarUrl = "https://example.com/megumi.jpg",
+                avatarUpdatedAt = 2_000L,
+                updatedAt = 2_000L
+            )
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val item = fixture.viewModel.state.value.items.single()
+        assertEquals("13900113900", item.userId)
+        assertEquals("Megumi", item.displayName)
     }
 
     @Test
@@ -98,12 +131,12 @@ class ContactListViewModelTest {
     private class Fixture(
         scope: TestScope,
         userId: String,
-        friendUserIds: List<String> = listOf("13900113900")
+        friendUserIds: List<String> = listOf("13900113900"),
+        profileApiOverride: ProfileApi = FakeProfileApi()
     ) {
         val profileDao = InMemoryUserProfileDao()
-        val profileApi = FakeProfileApi()
-        private val profileRepository = ProfileRepository(profileDao, profileApi)
-        private val contactRepository = ContactRepository(FakeContactApi(friendUserIds))
+        private val profileRepository = ProfileRepository(profileDao, profileApiOverride)
+        val contactRepository = ContactRepository(FakeContactApi(friendUserIds))
         val viewModel = ContactListViewModel(
             session = AuthSession("mock-token-$userId", userId, userId, expiresAtMillis = 2_000L),
             profileRepository = profileRepository,
@@ -123,6 +156,27 @@ class ContactListViewModelTest {
         override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
             requestedBatchUserIds = userIds
             return ProfileBatchResult.Success(emptyList())
+        }
+
+        override suspend fun updateMe(
+            accessToken: String,
+            nickname: String,
+            avatarUrl: String?,
+            avatarObjectKey: String?,
+            gender: com.codex.im.storage.Gender?,
+            signature: String?
+        ): ProfileResult = ProfileResult.Failure("unused")
+    }
+
+    private class BlockingBatchProfileApi : ProfileApi {
+        private val neverCompletes = CompletableDeferred<ProfileBatchResult>()
+
+        override suspend fun me(accessToken: String): ProfileResult = ProfileResult.Failure("unused")
+
+        override suspend fun user(accessToken: String, userId: String): ProfileResult = ProfileResult.Failure("unused")
+
+        override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
+            return neverCompletes.await()
         }
 
         override suspend fun updateMe(

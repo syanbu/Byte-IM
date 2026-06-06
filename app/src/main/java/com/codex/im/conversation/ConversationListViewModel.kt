@@ -172,11 +172,11 @@ class ConversationListViewModel(
     private fun connectIfNeeded() {
         when (connection.states.value) {
             ConnectionState.Disconnected,
-            is ConnectionState.Failed -> connection.connect(session.token)
+            is ConnectionState.Failed,
+            is ConnectionState.Reconnecting -> connection.connect(session.token)
             ConnectionState.Connecting,
             ConnectionState.Connected,
-            ConnectionState.Authenticated,
-            is ConnectionState.Reconnecting -> Unit
+            ConnectionState.Authenticated -> Unit
         }
     }
 

@@ -29,6 +29,10 @@ class ConnectionLifecycleManager(
     override val states: StateFlow<ConnectionState> = mutableStates.asStateFlow()
     override val incomingPackets: SharedFlow<ImPacket> = connection.incomingPackets
 
+    // Access-token hint for the current connection lifecycle. It identifies which
+    // authenticated session reconnect/heartbeat-timeout/network-recovery should keep
+    // trying to restore; tokenProvider may refresh or replace it before each attempt.
+    // requestedToken 当前这个 IM 连接生命周期绑定的登录token，名字可以改为 reconnectTokenHint
     private var requestedToken: String? = null
     private var started = false
     private var foreground = true

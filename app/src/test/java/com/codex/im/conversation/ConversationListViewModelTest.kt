@@ -187,6 +187,21 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun startReconnectsImmediatelyWhenPreviousBackoffIsActive() = runTest {
+        val fixture = Fixture(this)
+        fixture.connection.mutableStates.value = ConnectionState.Reconnecting(
+            delayMillis = 30_000L,
+            reason = "token unavailable"
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals("mock-token-13800113800", fixture.connection.connectedToken)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun startShowsLocalConversationsBeforeRemoteProfileRefreshCompletes() = runTest {
         val profileApi = BlockingBatchProfileApi()
         val fixture = Fixture(this, profileApi = profileApi)
@@ -600,8 +615,9 @@ class ConversationListViewModelTest {
 
     private class FakeConnection : ImConnection {
         var connectedToken: String? = null
+        val mutableStates = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
         val incoming = MutableSharedFlow<ImPacket>(extraBufferCapacity = 64)
-        override val states: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.Disconnected)
+        override val states: StateFlow<ConnectionState> = mutableStates
         override val incomingPackets: SharedFlow<ImPacket> = incoming
 
         override fun connect(token: String) {

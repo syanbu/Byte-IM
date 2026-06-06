@@ -68,24 +68,31 @@ class ContactListViewModel(
         refreshJob?.cancel()
         refreshJob = scope.launch(dispatcher) {
             profileRepository.bootstrapSession(session)
+            val cachedContactIds = contactRepository.cachedFriendUserIds()
+            if (cachedContactIds.isNotEmpty()) {
+                mutableState.value = mutableState.value.copy(items = buildItems(cachedContactIds))
+            }
             val validSession = validSessionProvider()
             val contactIds = if (validSession != null) {
                 contactRepository.friendUserIds(validSession.accessToken)
             } else {
-                emptyList()
+                cachedContactIds
             }
             if (validSession != null) {
                 profileRepository.refreshProfiles(validSession.accessToken, contactIds)
             }
-            val items = contactIds.map { contactId ->
-                val profile = profileRepository.localProfile(contactId)
-                ContactListItem(
-                    userId = contactId,
-                    displayName = profile?.nickname ?: contactId,
-                    avatarUrl = profile?.avatarUrl
-                )
-            }
-            mutableState.value = mutableState.value.copy(items = items)
+            mutableState.value = mutableState.value.copy(items = buildItems(contactIds))
+        }
+    }
+
+    private fun buildItems(contactIds: List<String>): List<ContactListItem> {
+        return contactIds.map { contactId ->
+            val profile = profileRepository.localProfile(contactId)
+            ContactListItem(
+                userId = contactId,
+                displayName = profile?.nickname ?: contactId,
+                avatarUrl = profile?.avatarUrl
+            )
         }
     }
 }
