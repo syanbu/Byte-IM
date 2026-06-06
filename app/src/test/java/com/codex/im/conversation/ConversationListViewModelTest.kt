@@ -95,6 +95,82 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun startLoadsOnlyFirstConversationPageWhenMoreThanFiftyExist() = runTest {
+        val fixture = Fixture(this)
+        val peers = (1..60).map { index -> "13900113%03d".format(index) }
+        peers.forEachIndexed { index, peerId ->
+            fixture.repository.sendText(
+                senderId = "13800113800",
+                receiverId = peerId,
+                content = "seed $index",
+                now = 1_000L + index
+            )
+        }
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        assertEquals(50, fixture.viewModel.state.value.items.size)
+        assertEquals(true, fixture.viewModel.state.value.hasMoreConversations)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun loadMoreConversationsAppendsNextPageAndMarksEnd() = runTest {
+        val fixture = Fixture(this)
+        val peers = (1..60).map { index -> "13900113%03d".format(index) }
+        peers.forEachIndexed { index, peerId ->
+            fixture.repository.sendText(
+                senderId = "13800113800",
+                receiverId = peerId,
+                content = "seed $index",
+                now = 1_000L + index
+            )
+        }
+        fixture.viewModel.start()
+        runCurrent()
+
+        fixture.viewModel.loadMoreConversations()
+        runCurrent()
+
+        assertEquals(60, fixture.viewModel.state.value.items.size)
+        assertEquals(false, fixture.viewModel.state.value.isLoadingMore)
+        assertEquals(false, fixture.viewModel.state.value.hasMoreConversations)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun repositoryConversationUpdateRefreshesRowsWithoutDroppingLoadedOlderPage() = runTest {
+        val fixture = Fixture(this)
+        val peers = (1..60).map { index -> "13900113%03d".format(index) }
+        peers.forEachIndexed { index, peerId ->
+            fixture.repository.sendText(
+                senderId = "13800113800",
+                receiverId = peerId,
+                content = "seed $index",
+                now = 1_000L + index
+            )
+        }
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.loadMoreConversations()
+        runCurrent()
+
+        fixture.repository.sendText(
+            senderId = "13800113800",
+            receiverId = peers.first(),
+            content = "bump oldest loaded row",
+            now = 9_000L
+        )
+        runCurrent()
+
+        assertEquals(60, fixture.viewModel.state.value.items.size)
+        assertEquals(peers.first(), fixture.viewModel.state.value.items.first().peerId)
+        assertEquals("bump oldest loaded row", fixture.viewModel.state.value.items.first().lastMessagePreview)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun startMarksLocalGroupConversationsAsGroups() = runTest {
         val fixture = Fixture(this)
         fixture.repository.createLocalGroupConversation(

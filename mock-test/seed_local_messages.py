@@ -2,15 +2,15 @@
 """
 向 Android 本地 IM 数据库 self_hosted_im.db 直接灌入测试数据。
 仅写 TEXT 类型，每个好友插 OUTGOING/INCOMING 各 N 条；同步刷新 conversations
-列表（last_message_preview、未读数）、user_profiles、friend_contacts。
+列表（last_message_preview、未读数）。
+
+好友资料和联系人关系请由 mock-server/seed-mock-friends.ps1 灌入；本脚本不会写
+user_profiles 或 friend_contacts，避免覆盖已有昵称、头像和联系人排序。
 
 不做 git 操作、不改 app 代码；需要 adb 通路（debug 包走 run-as；模拟器/root 走 su）。
 
 用法：
-    python seed_local_messages.py                       # 默认：A=15000000000，好友=15000000001..15000000499（499 个），各 100 条
-    python seed_local_messages.py --per-peer 20          # 改每会话条数
-    python seed_local_messages.py --user-a 15000000100   # 换一个登录用户
-    python seed_local_messages.py --start 15000000000 --end 15000000499   # 自定义 ID 范围（A 仍会自动从好友里排除）
+    python mock-test/seed_local_messages.py --user-a 15000000000 --start 15000000000 --end 15000000499 --per-peer 100
 """
 
 import argparse
@@ -188,13 +188,13 @@ def build_rows(
         for k in range(per_peer):
             t = base_t + k * 1000  # 每条 1s 间隔
 
-            # A → peer（OUTGOING）
+            # user_a → peer（OUTGOING）
             mid_out = f"seed-out-{peer}-{k}"
-            content_out = f"[A→{peer}] 这是 A 发送的第 {k+1} 条消息"
+            content_out = f"[{user_a}→{peer}] 这是 A 发送的第 {k+1} 条消息"
             messages.append((
                 mid_out, conv_id, CONV_TYPE, None,
                 user_a, peer,
-                k, k + 1,                    # client_seq, server_seq
+                k * 2, k * 2 + 1,            # client_seq, server_seq
                 content_out, None, MSG_TYPE,
                 None, None, None, None, None, None, None, None,
                 0, None, None,
@@ -203,14 +203,14 @@ def build_rows(
             ))
             last_msg_id, last_preview, last_time = mid_out, content_out, t
 
-            # peer → A（INCOMING），时间略晚于同序号的 OUT
+            # peer → user_a（INCOMING），时间略晚于同序号的 OUT
             mid_in = f"seed-in-{peer}-{k}"
             t_in = t + 500
-            content_in = f"[{peer}→A] 已收到第 {k+1} 条，回复一下"
+            content_in = f"[{peer}→{user_a}] 已收到第 {k+1} 条，回复一下"
             messages.append((
                 mid_in, conv_id, CONV_TYPE, None,
                 peer, user_a,
-                k, k + 1 + per_peer,        # server_seq 段接 OUT 之后
+                k * 2 + 1, k * 2 + 2,
                 content_in, None, MSG_TYPE,
                 None, None, None, None, None, None, None, None,
                 0, None, None,
@@ -221,16 +221,14 @@ def build_rows(
 
         # 每条 INCOMING 算 1 条未读，UI 上能看到红点
         unread = per_peer
-        peer_name = f"好友{peer[-4:]}"
+        # peer_name/title 只是会话兜底显示名；真实昵称由已灌入的 user_profiles 提供。
+        peer_name = peer
         conversations.append((
             conv_id, peer, peer_name, CONV_TYPE, peer_name, None,
             last_msg_id, last_preview, last_time,
             unread, 0,                       # unread_count, mention_unread_count
             last_time, None, None,          # peer_read_* 留空
         ))
-
-        profiles.append((peer, peer, peer_name, None, now_ms, now_ms, None, None))
-        contacts.append((user_a, peer, now_ms, idx))
 
     return messages, conversations, profiles, contacts
 
@@ -258,10 +256,6 @@ def clear_existing(cur: sqlite3.Cursor, user_a: str, friends: List[str]) -> None
         cur.execute("DELETE FROM messages WHERE sender_id IN (?, ?) AND receiver_id IN (?, ?)",
                     (user_a, peer, user_a, peer))
         cur.execute("DELETE FROM conversations WHERE peer_id = ?", (peer,))
-    cur.execute("DELETE FROM user_profiles WHERE user_id IN ({})".format(
-        ",".join("?" * len(friends))), friends)
-    cur.execute("DELETE FROM friend_contacts WHERE owner_user_id = ? AND friend_user_id IN ({})".format(
-        ",".join("?" * len(friends))), [user_a, *friends])
     cur.execute("COMMIT")
 
 
@@ -286,19 +280,6 @@ def insert_all(cur: sqlite3.Cursor, messages, conversations, profiles, contacts)
             peer_read_up_to_server_seq, peer_read_at
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         conversations,
-    )
-    cur.executemany(
-        """INSERT OR REPLACE INTO user_profiles(
-            user_id, phone, nickname, avatar_url,
-            avatar_updated_at, updated_at, gender, signature
-        ) VALUES (?,?,?,?,?,?,?,?)""",
-        profiles,
-    )
-    cur.executemany(
-        """INSERT OR REPLACE INTO friend_contacts(
-            owner_user_id, friend_user_id, profile_updated_at, sort_order
-        ) VALUES (?,?,?,?)""",
-        contacts,
     )
 
 

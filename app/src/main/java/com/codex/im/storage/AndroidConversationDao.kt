@@ -55,15 +55,51 @@ class AndroidConversationDao(private val database: SQLiteDatabase) : Conversatio
     }
 
     override fun listConversations(limit: Int): List<Conversation> {
-        return database.query(
-            "conversations",
-            null,
-            null,
-            null,
-            null,
-            null,
-            "last_message_time DESC, conversation_id ASC",
-            limit.toString()
+        return listConversationsPage(
+            beforeLastMessageTime = null,
+            beforeConversationId = null,
+            limit = limit
+        )
+    }
+
+    override fun listConversationsPage(
+        beforeLastMessageTime: Long?,
+        beforeConversationId: String?,
+        limit: Int
+    ): List<Conversation> {
+        if (beforeLastMessageTime == null) {
+            return database.query(
+                "conversations",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "last_message_time DESC, conversation_id ASC",
+                limit.toString()
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        add(cursor.toConversation())
+                    }
+                }
+            }
+        }
+        return database.rawQuery(
+            """
+            SELECT *
+            FROM conversations
+            WHERE (last_message_time < ?)
+               OR (last_message_time = ? AND conversation_id > ?)
+            ORDER BY last_message_time DESC, conversation_id ASC
+            LIMIT ?
+            """.trimIndent(),
+            arrayOf(
+                beforeLastMessageTime.toString(),
+                beforeLastMessageTime.toString(),
+                beforeConversationId.orEmpty(),
+                limit.toString()
+            )
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {

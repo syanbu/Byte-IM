@@ -425,6 +425,28 @@ class MessageRepositoryTest {
     }
 
     @Test
+    fun conversationPageReturnsNextPageAfterCursor() {
+        val fixture = Fixture()
+        fixture.repository.sendText("u1", "u2", "old", now = 1_000L)
+        fixture.repository.sendText("u1", "u3", "middle", now = 2_000L)
+        fixture.repository.sendText("u1", "u4", "new", now = 3_000L)
+
+        val firstPage = fixture.repository.conversationPage(
+            beforeLastMessageTime = null,
+            beforeConversationId = null,
+            limit = 2
+        )
+        val secondPage = fixture.repository.conversationPage(
+            beforeLastMessageTime = firstPage.last().lastMessageTime,
+            beforeConversationId = firstPage.last().conversationId,
+            limit = 2
+        )
+
+        assertEquals(listOf("single:u1:u4", "single:u1:u3"), firstPage.map { it.conversationId })
+        assertEquals(listOf("single:u1:u2"), secondPage.map { it.conversationId })
+    }
+
+    @Test
     fun sendGroupTextStoresPendingGroupMessageAndMentionPayload() {
         val fixture = Fixture()
 

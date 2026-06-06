@@ -39,7 +39,9 @@ data class ConversationListUiState(
     val items: List<ConversationListItem> = emptyList(),
     val connectionStatus: String = "未连接",
     val navigationTargetPeerId: String? = null,
-    val navigationTargetConversationId: String? = null
+    val navigationTargetConversationId: String? = null,
+    val isLoadingMore: Boolean = false,
+    val hasMoreConversations: Boolean = true
 )
 
 class ConversationListViewModel(
@@ -57,6 +59,7 @@ class ConversationListViewModel(
     val state: StateFlow<ConversationListUiState> = mutableState.asStateFlow()
     private var started = false
     private val jobs = mutableListOf<Job>()
+    private var loadedConversations: List<Conversation> = emptyList()
 
     fun start() {
         if (started) {
@@ -139,10 +142,50 @@ class ConversationListViewModel(
         }
     }
 
+    fun loadMoreConversations() {
+        val currentState = mutableState.value
+        if (currentState.isLoadingMore || !currentState.hasMoreConversations || loadedConversations.isEmpty()) {
+            return
+        }
+        mutableState.value = currentState.copy(isLoadingMore = true)
+        scope.launch(dispatcher) {
+            val cursor = loadedConversations.lastOrNull()
+            if (cursor == null) {
+                mutableState.value = mutableState.value.copy(isLoadingMore = false)
+                return@launch
+            }
+            val nextPage = repository.conversationPage(
+                beforeLastMessageTime = cursor.lastMessageTime,
+                beforeConversationId = cursor.conversationId,
+                limit = CONVERSATION_PAGE_SIZE
+            )
+            loadedConversations = mergeConversations(loadedConversations, nextPage)
+            updateItems(
+                conversations = loadedConversations,
+                hasMoreConversations = nextPage.size == CONVERSATION_PAGE_SIZE,
+                isLoadingMore = false
+            )
+        }
+    }
+
     private suspend fun refresh() {
-        val conversations = repository.conversations(limit = 50)
+        val firstPage = repository.conversationPage(
+            beforeLastMessageTime = null,
+            beforeConversationId = null,
+            limit = CONVERSATION_PAGE_SIZE
+        )
+        loadedConversations = mergeConversations(
+            firstPage,
+            loadedConversations.filter { repository.conversation(it.conversationId) != null }
+        )
+        val hasMoreAfterFirstPage = if (loadedConversations.size <= firstPage.size) {
+            firstPage.size == CONVERSATION_PAGE_SIZE
+        } else {
+            mutableState.value.hasMoreConversations
+        }
+        val conversations = loadedConversations
         profileRepository.bootstrapSession(session)
-        updateItems(conversations)
+        updateItems(conversations, hasMoreConversations = hasMoreAfterFirstPage)
         val validSession = validSessionProvider()
         if (validSession != null) {
             profileRepository.refreshProfiles(
@@ -155,10 +198,23 @@ class ConversationListViewModel(
             )
             groupRepository?.syncGroups(validSession.accessToken)
         }
-        updateItems(repository.conversations(limit = 50))
+        val refreshedFirstPage = repository.conversationPage(
+            beforeLastMessageTime = null,
+            beforeConversationId = null,
+            limit = CONVERSATION_PAGE_SIZE
+        )
+        loadedConversations = mergeConversations(
+            refreshedFirstPage,
+            loadedConversations.filter { repository.conversation(it.conversationId) != null }
+        )
+        updateItems(loadedConversations, hasMoreConversations = hasMoreAfterFirstPage)
     }
 
-    private fun updateItems(conversations: List<Conversation>) {
+    private fun updateItems(
+        conversations: List<Conversation>,
+        hasMoreConversations: Boolean = mutableState.value.hasMoreConversations,
+        isLoadingMore: Boolean = mutableState.value.isLoadingMore
+    ) {
         val mentionDisplayNamesByConversationId = mentionDisplayNamesByConversationId(conversations)
         val items = conversations.map { conversation ->
             conversation.toItem(
@@ -166,7 +222,20 @@ class ConversationListViewModel(
             )
         }
             .distinctBy { it.conversationId }
-        mutableState.value = mutableState.value.copy(items = items)
+        mutableState.value = mutableState.value.copy(
+            items = items,
+            isLoadingMore = isLoadingMore,
+            hasMoreConversations = hasMoreConversations
+        )
+    }
+
+    private fun mergeConversations(
+        primary: List<Conversation>,
+        secondary: List<Conversation>
+    ): List<Conversation> {
+        return (primary + secondary)
+            .distinctBy { it.conversationId }
+            .sortedWith(compareByDescending<Conversation> { it.lastMessageTime }.thenBy { it.conversationId })
     }
 
     private fun connectIfNeeded() {
@@ -299,6 +368,7 @@ class ConversationListViewModel(
     }
 
     private companion object {
+        const val CONVERSATION_PAGE_SIZE = 50
         const val RECENT_THUMBNAIL_PRELOAD_LIMIT = 5
     }
 }

@@ -66,6 +66,25 @@ class ConversationRowLayoutTest {
         )
     }
 
+    @Test
+    fun conversationListTriggersLoadMoreNearBottomWithLazyListState() {
+        val conversationScreen =
+            sourceFile("src/main/java/com/codex/im/conversation/ConversationListScreen.kt").readText()
+
+        assertTrue(
+            "ConversationListScreen should remember LazyListState so it can observe scroll position.",
+            conversationScreen.contains("rememberLazyListState(")
+        )
+        assertTrue(
+            "ConversationListScreen should observe visible items with snapshotFlow for pagination.",
+            conversationScreen.contains("snapshotFlow")
+        )
+        assertTrue(
+            "ConversationListScreen should call the ViewModel paging entry point near the bottom.",
+            conversationScreen.contains("viewModel.loadMoreConversations()")
+        )
+    }
+
     private fun sourceFile(path: String): File {
         val userDir = File(System.getProperty("user.dir"))
         val candidates = listOf(

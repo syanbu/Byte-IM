@@ -361,7 +361,23 @@ class MessageRepository(
         ).mapNotNull { it.localThumbnailPath }
     }
 
-    fun conversations(limit: Int = 50) = conversationDao.listConversations(limit)
+    fun conversations(limit: Int = 50) = conversationPage(
+        beforeLastMessageTime = null,
+        beforeConversationId = null,
+        limit = limit
+    )
+
+    fun conversationPage(
+        beforeLastMessageTime: Long?,
+        beforeConversationId: String?,
+        limit: Int
+    ): List<Conversation> {
+        return conversationDao.listConversationsPage(
+            beforeLastMessageTime = beforeLastMessageTime,
+            beforeConversationId = beforeConversationId,
+            limit = limit
+        )
+    }
 
     fun conversation(conversationId: String): Conversation? = conversationDao.findConversation(conversationId)
 

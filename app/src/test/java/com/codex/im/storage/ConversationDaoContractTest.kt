@@ -20,6 +20,54 @@ class ConversationDaoContractTest {
     }
 
     @Test
+    fun listConversationsPageReturnsNextPageAfterCursor() {
+        val dao = InMemoryConversationDao()
+        dao.upsertFromMessage(message("c1", "u1", "one", createdAt = 500), incrementUnread = false)
+        dao.upsertFromMessage(message("c2", "u2", "two", createdAt = 400), incrementUnread = false)
+        dao.upsertFromMessage(message("c3", "u3", "three", createdAt = 300), incrementUnread = false)
+
+        val firstPage = dao.listConversationsPage(
+            beforeLastMessageTime = null,
+            beforeConversationId = null,
+            limit = 2
+        )
+        val secondPage = dao.listConversationsPage(
+            beforeLastMessageTime = firstPage.last().lastMessageTime,
+            beforeConversationId = firstPage.last().conversationId,
+            limit = 2
+        )
+
+        assertEquals(listOf("c1", "c2"), firstPage.map { it.conversationId })
+        assertEquals(listOf("c3"), secondPage.map { it.conversationId })
+    }
+
+    @Test
+    fun listConversationsPageUsesConversationIdTieBreakerForEqualTimes() {
+        val dao = InMemoryConversationDao()
+        dao.upsertFromMessage(message("c2", "u2", "two", createdAt = 500), incrementUnread = false)
+        dao.upsertFromMessage(message("c1", "u1", "one", createdAt = 500), incrementUnread = false)
+        dao.upsertFromMessage(message("c3", "u3", "three", createdAt = 400), incrementUnread = false)
+
+        val firstPage = dao.listConversationsPage(
+            beforeLastMessageTime = null,
+            beforeConversationId = null,
+            limit = 1
+        )
+        val secondPage = dao.listConversationsPage(
+            beforeLastMessageTime = firstPage.last().lastMessageTime,
+            beforeConversationId = firstPage.last().conversationId,
+            limit = 2
+        )
+
+        assertEquals(listOf("c1"), firstPage.map { it.conversationId })
+        assertEquals(listOf("c2", "c3"), secondPage.map { it.conversationId })
+        assertEquals(
+            emptySet<String>(),
+            firstPage.map { it.conversationId }.toSet().intersect(secondPage.map { it.conversationId }.toSet())
+        )
+    }
+
+    @Test
     fun clearUnreadResetsOnlyTargetConversation() {
         val dao = InMemoryConversationDao()
         dao.upsertFromMessage(message("c1", "u2", "one", createdAt = 100), incrementUnread = true)

@@ -7,6 +7,12 @@ interface ConversationDao {
 
     fun listConversations(limit: Int): List<Conversation>
 
+    fun listConversationsPage(
+        beforeLastMessageTime: Long?,
+        beforeConversationId: String?,
+        limit: Int
+    ): List<Conversation>
+
     fun findConversation(conversationId: String): Conversation?
 
     fun clearUnread(conversationId: String)
@@ -74,8 +80,26 @@ class InMemoryConversationDao : ConversationDao {
     }
 
     override fun listConversations(limit: Int): List<Conversation> {
+        return listConversationsPage(
+            beforeLastMessageTime = null,
+            beforeConversationId = null,
+            limit = limit
+        )
+    }
+
+    override fun listConversationsPage(
+        beforeLastMessageTime: Long?,
+        beforeConversationId: String?,
+        limit: Int
+    ): List<Conversation> {
         return conversations.values
             .sortedWith(compareByDescending<Conversation> { it.lastMessageTime }.thenBy { it.conversationId })
+            .filter { conversation ->
+                beforeLastMessageTime == null ||
+                    conversation.lastMessageTime < beforeLastMessageTime ||
+                    (conversation.lastMessageTime == beforeLastMessageTime &&
+                        conversation.conversationId > (beforeConversationId ?: ""))
+            }
             .take(limit)
     }
 

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -50,6 +52,7 @@ import com.codex.im.ui.ByteImSystemNotice
 import com.codex.im.ui.ByteImTopBar
 import com.codex.im.ui.ByteImUnreadBadge
 import com.codex.im.ui.ConversationCreateMenu
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.text.DateFormat
 import java.util.Date
 
@@ -87,6 +90,28 @@ fun ConversationListScreen(
             viewModel.consumeNavigationTarget()
         }
     }
+    val listState = rememberLazyListState()
+    LaunchedEffect(
+        viewModel,
+        listState,
+        state.items.size,
+        state.hasMoreConversations,
+        state.isLoadingMore
+    ) {
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        }
+            .distinctUntilChanged()
+            .collect { lastVisibleIndex ->
+                val shouldLoadMore = state.hasMoreConversations &&
+                    !state.isLoadingMore &&
+                    state.items.isNotEmpty() &&
+                    lastVisibleIndex >= state.items.lastIndex - 5
+                if (shouldLoadMore) {
+                    viewModel.loadMoreConversations()
+                }
+            }
+    }
 
     Column(
         modifier = modifier
@@ -107,7 +132,10 @@ fun ConversationListScreen(
             modifier = Modifier.weight(1f),
             containerColor = ByteImColors.AppBackground
         ) {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize()
+            ) {
                 itemsIndexed(state.items, key = { _, item -> item.conversationId }) { index, item ->
                     if (index == 0) {
                         HorizontalDivider(
