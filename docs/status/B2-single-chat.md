@@ -25,6 +25,7 @@ Done for the current local mock-server path.
 - Login success currently routes directly from login to chat.
 - Default peer is temporarily hard-coded from the logged-in account for local demo convenience.
 - Single-chat conversation ids are canonicalized by sorting the two user ids.
+- Fixed chat text-bubble layout so long outgoing and incoming text wraps onto the next line instead of expanding horizontally and pushing the avatar out of the row. This change was made after reproducing that longer single-chat and group-chat text messages could hide the avatar even though avatar data was present.
 
 ## Verification
 
@@ -38,6 +39,7 @@ Done for the current local mock-server path.
 | 2026-05-22 | Android Chat UI | `gradle-9.0.0\bin\gradle.bat :app:assembleDebug --console=plain` | Passed: debug APK assembled with minimal chat screen wired to local mock WebSocket URL. |
 | 2026-05-22 | Manual A/B Chat Smoke Test | Two Android emulators + local mock server | Passed by user verification: both `13800113800 -> 13900113900` and `13900113900 -> 13800113800` messages were ACKed and forwarded after both clients were online. |
 | 2026-05-22 | WebSocket Auth State Display | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.connection.ConnectionStateReducerTest --tests com.codex.im.chat.ChatViewModelTest --console=plain`; `mvn -q test -Dtest=MessageRouterTest` in `mock-server` | Passed: Android maps `AUTH_ACK` to `ConnectionState.Authenticated`, chat UI exposes connection status text, and mock-server records authenticated status after sending AUTH_ACK. |
+| 2026-06-06 | Chat Text Bubble Width Guard | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatTextBubbleLayoutPolicyTest --console=plain` | Passed: long text bubbles are width-constrained to 72% of the available row width so content wraps instead of pushing single-chat or group-chat avatars out of the row. |
 
 ## Remaining Risks
 

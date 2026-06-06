@@ -76,8 +76,8 @@ class ConversationRowLayoutTest {
             conversationScreen.contains("rememberLazyListState(")
         )
         assertTrue(
-            "ConversationListScreen should observe visible items with snapshotFlow for pagination.",
-            conversationScreen.contains("snapshotFlow")
+            "ConversationListScreen should observe visible items with derivedStateOf for pagination.",
+            conversationScreen.contains("derivedStateOf")
         )
         assertTrue(
             "ConversationListScreen should call the ViewModel paging entry point near the bottom.",

@@ -33,6 +33,12 @@ Done for the current local single-chat scope.
 - Deleting a conversation removes that row from the local conversation list and deletes local message history for that conversation.
 - Conversation deletion is local-only and does not send any network packet, so it does not affect the other participant's client.
 - Conversation list now loads the first page with `CONVERSATION_PAGE_SIZE = 50` and fetches older pages as the user scrolls near the bottom.
+- Conversation list scroll trigger is now driven by `derivedStateOf` plus `LaunchedEffect(Boolean)` (mirroring `ChatScreen`'s history-pagination pattern), so the scroll-listening coroutine is no longer cancelled and recreated on every page load. Fast scroll no longer drops emissions between page boundaries.
+- Conversation list now pre-fetches the next page immediately after the initial refresh completes and after each successful page append. In the common path, the first scroll past 50 rows already has the second page waiting in memory instead of issuing a fresh DAO query on demand.
+- Conversation list pre-fetch is cancelled and the cached page is cleared on every `refresh`, so incoming messages, manual refresh, or session restore never reuses stale pre-fetched rows.
+- Cached-page consumption now runs on the background paging dispatcher too, so page merge/sort/item-building work no longer blocks the UI thread at 50-row boundaries before Compose can render the appended rows.
+- New `ConversationListLoadMorePolicy` extracts the page-trigger predicate (item count, `hasMore`, `isLoadingMore`, threshold) as a pure, testable object. The screen and the unit tests share the same source of truth.
+- Conversation list page trigger threshold is 10 items from the bottom, matching one full screen on a typical device.
 - Conversation list refreshes merge already-loaded pages with refreshed recent rows, so incoming updates do not shrink the visible list back to the first page.
 - Connection/auth status and logout are only displayed on the conversation list; chat detail keeps only back navigation.
 - Empty conversation lists no longer show a fixed mock peer; demo contacts live in the separate `Contacts` tab and do not create conversation rows until a real message exists.
@@ -55,6 +61,8 @@ Done for the current local single-chat scope.
 | 2026-05-23 | B3 manual acceptance | User two-client manual test | Passed: conversation list preview refreshes correctly, chat detail hides connection status, and logout is only available from the conversation list. |
 | 2026-06-04 | B3 local conversation deletion | `./gradlew :app:testDebugUnitTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.storage.MessageDaoContractTest --tests com.codex.im.conversation.ConversationListViewModelTest --console=plain` | Passed: local-only conversation deletion removes the list row and target chat history while preserving other conversations. |
 | 2026-06-06 | B3 conversation pagination | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.message.MessageRepositoryTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.conversation.ConversationRowLayoutTest` | Passed: cursor page ordering, repository page access, first-page load, load-more append, refresh-without-dropping-loaded-pages, and UI scroll trigger are covered. |
+| 2026-06-06 | B3 derivedStateOf + prefetch | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListLoadMorePolicyTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.conversation.ConversationRowLayoutTest` | Passed: `ConversationListLoadMorePolicy` covers all trigger branches (threshold met, not yet met, loading, end-of-list, empty, short list); ViewModel covers cache-hit on second `loadMoreConversations` (delta=1 vs. real-query delta=2) and `refresh` clearing pending pre-fetch; row-layout sniff test now asserts `derivedStateOf` instead of `snapshotFlow`. |
+| 2026-06-06 | B3 prefetch warm-start + background cached-page apply | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.conversation.ConversationListLoadMorePolicyTest --tests com.codex.im.conversation.ConversationRowLayoutTest --console=plain` | Passed: startup now prefetches page 2 before the first 50-row boundary, cached-page `loadMoreConversations()` no longer updates synchronously on the caller thread, and refresh rebuilds a fresh cached page for the next scroll. |
 
 ## Next Implementation Slice
 
@@ -212,3 +220,40 @@ Manual acceptance:
 - Confirm rows continue past the first 50 and eventually reach the oldest seeded conversation.
 - Send or receive a message while several pages are loaded.
 - Confirm the updated conversation moves to the top without dropping already-loaded rows.
+
+## Post-Implementation Refinements (2026-06-06)
+
+After the initial cursor-pagination slice, two follow-up changes were made to address fast-scroll stutter at page boundaries.
+
+### UI Trigger Refactor: `snapshotFlow` → `derivedStateOf`
+
+**Why**: the original `LaunchedEffect` in [ConversationListScreen.kt](app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt) was keyed on `state.items.size`, `state.hasMoreConversations`, and `state.isLoadingMore`. Every successful page load changed `state.items.size` and cancelled the running `snapshotFlow` collect, then rebuilt it from scratch. The first emission of the rebuilt flow came in late, leaving a gap where fast scrolls could overshoot the trigger.
+
+**What changed**:
+
+- Replaced the `LaunchedEffect` + `snapshotFlow` + `collect` block with `remember(...) { derivedStateOf { ... } }` plus a `LaunchedEffect(shouldLoadMore) { ... }` (mirroring [ChatScreen.kt:135-179](app/src/main/java/com/codex/im/chat/ChatScreen.kt#L135-L179)).
+- The scroll-listening subscription is now driven by snapshot reads inside `derivedStateOf`, so the underlying coroutine is never torn down on state changes.
+- Extracted the trigger predicate into [ConversationListLoadMorePolicy.kt](app/src/main/java/com/codex/im/conversation/ConversationListLoadMorePolicy.kt) as a pure object so the screen and the unit tests share one source of truth.
+- Updated the row-layout sniff test to assert `derivedStateOf` instead of `snapshotFlow`.
+
+### Pre-fetch the Next Page in the Background
+
+**Why**: even with a smooth trigger, each page boundary still cost one DB round-trip plus Compose recomposition (≈ 100–300 ms per page). For 499 seeded conversations that meant a noticeable stutter every 50 rows on fast scrolls.
+
+**What changed in [ConversationListViewModel.kt](app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt)**:
+
+- Added two private fields: `prefetchedPage: List<Conversation>?` and `prefetchJob: Job?`.
+- `loadMoreConversations()` now checks the cache first. If `prefetchedPage` is non-null, the cached page is still consumed on the paging dispatcher, so the merge/sort/item-building work stays off the UI thread. If the cache is empty, the existing real query path runs.
+- New `applyPage(page)` centralizes merge + state update + prefetch scheduling. After every successful page append, `scheduleNextPagePrefetch()` fires a background coroutine that loads the *next* page into `prefetchedPage` for the next scroll.
+- `refresh()` cancels the in-flight `prefetchJob`, clears `prefetchedPage`, rebuilds the newest first page, and then immediately prefetches the next page again so the first 50-row boundary after opening the screen or after a refresh is already warm.
+- `prefetchJob` uses `ensureActive()` before assigning to `prefetchedPage` to guarantee cancellation propagates if `loadMoreConversations` runs while the prefetch is still in flight.
+
+**Test coverage**:
+
+- New [ConversationListLoadMorePolicyTest.kt](app/src/test/java/com/codex/im/conversation/ConversationListLoadMorePolicyTest.kt) covers the trigger predicate's branches (threshold met, not yet met, loading, end-of-list, empty list, list shorter than threshold).
+- New tests in [ConversationListViewModelTest.kt](app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt) use a `CountingConversationDao` wrapper to assert DAO-call deltas: startup now performs an extra page-2 prefetch, the first and second cached `loadMoreConversations()` calls each add only one DAO query (the next prefetch), and cached-page load more does not synchronously mutate the visible item count before the background dispatcher runs.
+
+**Out of scope (kept for later)**:
+
+- Bottom-of-list loading indicator (the `isLoadingMore` flag is already exposed in the UI state and ready to render).
+- Tuning `CONVERSATION_PAGE_SIZE = 50` based on real-device measurements.

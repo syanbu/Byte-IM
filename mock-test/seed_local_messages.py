@@ -5,22 +5,24 @@
 列表（last_message_preview、未读数）。
 
 好友资料和联系人关系请由 mock-server/seed-mock-friends.ps1 灌入；本脚本不会写
-user_profiles 或 friend_contacts，避免覆盖已有昵称、头像和联系人排序。
+friend_contacts，也不会覆盖好友的 user_profiles，但会按需把 user_a 自己的头像资料
+从 mock-server/data/mock-im-users.sqlite 同步进本地库，确保 OUTGOING 气泡能显示头像。
 
 不做 git 操作、不改 app 代码；需要 adb 通路（debug 包走 run-as；模拟器/root 走 su）。
 
 用法：
-    python mock-test/seed_local_messages.py --user-a 15000000000 --start 15000000000 --end 15000000499 --per-peer 100
+    python mock-test/seed_local_messages.py --user-a 15000000000 --start 15000000002 --end 15000000499 --per-peer 100
 """
 
 import argparse
 import os
+from pathlib import Path
 import re
 import sqlite3
 import subprocess
 import sys
 import time
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 PKG = "com.codex.im"
 # DB 文件名按登录账号作用域命名（见 AccountScopedDatabaseName.forUser）：
@@ -34,6 +36,9 @@ DEFAULT_USER_A = "15000000000"
 DEFAULT_START = 15000000000
 DEFAULT_END   = 15000000499      # 含 4999；与 A 一起共 500 个号，A 自动从好友里剔除 → 499 好友
 DEFAULT_PER_PEER = 100
+DEFAULT_MOCK_USER_DB = (
+    Path(__file__).resolve().parent.parent / "mock-server" / "data" / "mock-im-users.sqlite"
+)
 
 OUT_STATUS = "SENT"
 IN_STATUS = "RECEIVED"
@@ -170,13 +175,56 @@ def conversation_id(a: str, b: str) -> str:
     return f"single:{p[0]}:{p[1]}"
 
 
+def load_user_a_profile_from_mock_user_db(
+    user_a: str, mock_user_db: Path
+) -> Optional[Tuple[str, str, str, Optional[str], int, int, None, None]]:
+    con = sqlite3.connect(mock_user_db)
+    try:
+        cur = con.cursor()
+        cur.execute(
+            """
+            SELECT phone, nickname, avatar_url, avatar_updated_at, updated_at, created_at
+            FROM users
+            WHERE phone = ?
+            """,
+            (user_a,),
+        )
+        row = cur.fetchone()
+    finally:
+        con.close()
+
+    if row is None:
+        return None
+
+    phone, nickname, avatar_url, avatar_updated_at, updated_at, created_at = row
+    resolved_nickname = nickname.strip() if isinstance(nickname, str) and nickname.strip() else phone
+    resolved_updated_at = updated_at or created_at or 0
+    return (
+        phone,
+        phone,
+        resolved_nickname,
+        avatar_url,
+        avatar_updated_at or 0,
+        resolved_updated_at,
+        None,
+        None,
+    )
+
+
 def build_rows(
-    user_a: str, friends: List[str], per_peer: int, now_ms: int
+    user_a: str,
+    friends: List[str],
+    per_peer: int,
+    now_ms: int,
+    user_a_profile: Optional[Tuple[str, str, str, Optional[str], int, int, None, None]] = None,
 ) -> Tuple[List[Tuple], List[Tuple], List[Tuple], List[Tuple]]:
     messages: List[Tuple] = []
     conversations: List[Tuple] = []
     profiles: List[Tuple] = []
     contacts: List[Tuple] = []
+
+    if user_a_profile is not None:
+        profiles.append(user_a_profile)
 
     for idx, peer in enumerate(friends):
         conv_id = conversation_id(user_a, peer)
@@ -190,7 +238,7 @@ def build_rows(
 
             # user_a → peer（OUTGOING）
             mid_out = f"seed-out-{peer}-{k}"
-            content_out = f"[{user_a}→{peer}] 这是 A 发送的第 {k+1} 条消息"
+            content_out = f"[{user_a[-3:]}→{peer[-3:]}] 这是 A 发送的第 {k+1} 条消息"
             messages.append((
                 mid_out, conv_id, CONV_TYPE, None,
                 user_a, peer,
@@ -206,7 +254,7 @@ def build_rows(
             # peer → user_a（INCOMING），时间略晚于同序号的 OUT
             mid_in = f"seed-in-{peer}-{k}"
             t_in = t + 500
-            content_in = f"[{peer}→{user_a}] 已收到第 {k+1} 条，回复一下"
+            content_in = f"[{peer[-3:]}→{user_a[-3:]}] 已收到第 {k+1} 条，回复一下"
             messages.append((
                 mid_in, conv_id, CONV_TYPE, None,
                 peer, user_a,
@@ -281,6 +329,12 @@ def insert_all(cur: sqlite3.Cursor, messages, conversations, profiles, contacts)
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         conversations,
     )
+    cur.executemany(
+        """INSERT OR REPLACE INTO user_profiles(
+            user_id, phone, nickname, avatar_url, avatar_updated_at, updated_at, gender, signature
+        ) VALUES (?,?,?,?,?,?,?,?)""",
+        profiles,
+    )
 
 
 # ---------- main ----------
@@ -291,6 +345,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--start", type=int, default=DEFAULT_START, help="候选 ID 起始（含）")
     p.add_argument("--end", type=int, default=DEFAULT_END, help="候选 ID 结束（含）")
     p.add_argument("--per-peer", type=int, default=DEFAULT_PER_PEER, help="每个好友的消息数（OUT/IN 各一半）")
+    p.add_argument("--mock-user-db", default=str(DEFAULT_MOCK_USER_DB), help="mock-server 用户库路径；用于补齐 user_a 的本地头像资料")
     p.add_argument("--keep-local", action="store_true", help="保留本地暂存 DB 文件")
     p.add_argument("--no-restart", action="store_true", help="写完不重启 app")
     p.add_argument("--device", default="", help="目标设备序列号（adb devices 第一列）；多设备时建议显式指定")
@@ -334,8 +389,16 @@ def main() -> int:
     cur = con.cursor()
     clear_existing(cur, args.user_a, friends)
     now_ms = int(time.time() * 1000)
+    user_a_profile = None
+    mock_user_db = Path(args.mock_user_db)
+    if mock_user_db.exists():
+        user_a_profile = load_user_a_profile_from_mock_user_db(args.user_a, mock_user_db)
+        if user_a_profile is None:
+            print(f"[warn] mock 用户库未找到 {args.user_a}；跳过补齐 user_a 本地头像")
+    else:
+        print(f"[warn] mock 用户库不存在：{mock_user_db}；跳过补齐 user_a 本地头像")
     messages, conversations, profiles, contacts = build_rows(
-        args.user_a, friends, args.per_peer, now_ms
+        args.user_a, friends, args.per_peer, now_ms, user_a_profile=user_a_profile
     )
     insert_all(cur, messages, conversations, profiles, contacts)
     con.commit()

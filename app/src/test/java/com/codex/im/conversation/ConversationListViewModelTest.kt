@@ -140,6 +140,100 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun loadMoreConversationsPrefetchesAndReusesCachedPage() = runTest {
+        val countingDao = CountingConversationDao(InMemoryConversationDao())
+        val fixture = Fixture(this, conversationDao = countingDao)
+        val peers = (1..150).map { index -> "13900113%03d".format(index) }
+        peers.forEachIndexed { index, peerId ->
+            fixture.repository.sendText(
+                senderId = "13800113800",
+                receiverId = peerId,
+                content = "seed $index",
+                now = 1_000L + index
+            )
+        }
+
+        fixture.viewModel.start()
+        runCurrent()
+        assertEquals(50, fixture.viewModel.state.value.items.size)
+        // start -> refresh 内部跑了 2 次首页查询 + 1 次第二页预加载
+        assertEquals(3, countingDao.pageQueryCount)
+
+        // 第一次 loadMore: 命中启动阶段已经准备好的第二页，不应同步阻塞更新 UI。
+        fixture.viewModel.loadMoreConversations()
+        assertEquals(50, fixture.viewModel.state.value.items.size)
+        runCurrent()
+        assertEquals(100, fixture.viewModel.state.value.items.size)
+        assertEquals(4, countingDao.pageQueryCount)
+
+        // 第二次 loadMore: 缓存命中(0) + 调度下一批预加载(1) = +1
+        // 同时缓存命中页的应用也应该在后台完成,而不是调用时同步卡住主线程。
+        fixture.viewModel.loadMoreConversations()
+        assertEquals(100, fixture.viewModel.state.value.items.size)
+        runCurrent()
+        assertEquals(150, fixture.viewModel.state.value.items.size)
+        assertEquals(5, countingDao.pageQueryCount)
+
+        // 第三次 loadMore: 缓存命中(空列表) + 没有下一页所以不预加载 = +0
+        fixture.viewModel.loadMoreConversations()
+        runCurrent()
+        assertEquals(150, fixture.viewModel.state.value.items.size)
+        assertEquals(false, fixture.viewModel.state.value.hasMoreConversations)
+        assertEquals(5, countingDao.pageQueryCount)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun refreshClearsPendingPrefetchedPage() = runTest {
+        val countingDao = CountingConversationDao(InMemoryConversationDao())
+        val fixture = Fixture(this, conversationDao = countingDao)
+        val peers = (1..150).map { index -> "13900113%03d".format(index) }
+        peers.forEachIndexed { index, peerId ->
+            fixture.repository.sendText(
+                senderId = "13800113800",
+                receiverId = peerId,
+                content = "seed $index",
+                now = 1_000L + index
+            )
+        }
+        fixture.viewModel.start()
+        runCurrent()
+        fixture.viewModel.loadMoreConversations()
+        runCurrent()
+        // 此时 prefetchedPage 应该有 50 条 (next batch 100~149)
+        assertEquals(4, countingDao.pageQueryCount)
+
+        // 收到新消息触发 refresh -> 应该清掉 prefetchedPage 和 prefetchJob
+        fixture.repository.handlePacket(
+            ImPacket(
+                cmd = 12,
+                body = """
+                    {
+                      "messageId":"refresh-trigger-msg",
+                      "senderId":"13900113900",
+                      "receiverId":"13800113800",
+                      "clientSeq":200,
+                      "serverSeq":300,
+                      "content":"hi",
+                      "timestamp":9999
+                    }
+                """.trimIndent().toByteArray()
+            )
+        )
+        runCurrent()
+        // refresh 内部 2 次首页查询 (firstPage + refreshedFirstPage) + 1 次第二页预热
+        assertEquals(7, countingDao.pageQueryCount)
+
+        // refresh 会先清缓存,但结束时会重新预热最新的第二页。
+        // 所以下一次 loadMore 应该命中新缓存,只新增 1 次下一批预加载查询。
+        fixture.viewModel.loadMoreConversations()
+        runCurrent()
+        assertEquals(8, countingDao.pageQueryCount)
+        assertEquals(151, fixture.viewModel.state.value.items.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun repositoryConversationUpdateRefreshesRowsWithoutDroppingLoadedOlderPage() = runTest {
         val fixture = Fixture(this)
         val peers = (1..60).map { index -> "13900113%03d".format(index) }
@@ -659,11 +753,11 @@ class ConversationListViewModelTest {
         scope: TestScope,
         profileApi: ProfileApi = FakeProfileApi(),
         val groupRepository: FakeGroupRepository? = null,
-        thumbnailPreloader: ChatThumbnailPreloader = NoopChatThumbnailPreloader
+        thumbnailPreloader: ChatThumbnailPreloader = NoopChatThumbnailPreloader,
+        private val conversationDao: com.codex.im.storage.ConversationDao = InMemoryConversationDao()
     ) {
         val connection = FakeConnection()
         val messageDao = InMemoryMessageDao()
-        private val conversationDao = InMemoryConversationDao()
         val profileDao = InMemoryUserProfileDao()
         private val profileRepository = ProfileRepository(profileDao, profileApi)
         init {
@@ -785,8 +879,9 @@ class ConversationListViewModelTest {
 
     private class FakeGroupRepository(
         private val groups: List<GroupInfo>,
-        var conversationDao: InMemoryConversationDao?
+        var conversationDao: com.codex.im.storage.ConversationDao?
     ) : GroupRepository {
+
         override suspend fun createGroup(
             accessToken: String,
             ownerId: String,
@@ -824,6 +919,20 @@ class ConversationListViewModelTest {
 
         override fun localMembers(groupId: String): List<com.codex.im.storage.GroupMember> {
             return emptyList()
+        }
+    }
+
+    private class CountingConversationDao(
+        private val delegate: com.codex.im.storage.ConversationDao
+    ) : com.codex.im.storage.ConversationDao by delegate {
+        var pageQueryCount: Int = 0
+        override fun listConversationsPage(
+            beforeLastMessageTime: Long?,
+            beforeConversationId: String?,
+            limit: Int
+        ): List<com.codex.im.storage.Conversation> {
+            pageQueryCount++
+            return delegate.listConversationsPage(beforeLastMessageTime, beforeConversationId, limit)
         }
     }
 }

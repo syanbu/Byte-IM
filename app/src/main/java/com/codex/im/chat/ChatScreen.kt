@@ -13,6 +13,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -65,6 +66,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -85,6 +87,7 @@ import com.codex.im.ui.byteImBubbleColor
 import com.codex.im.ui.byteImBubbleShape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun ChatScreen(
@@ -683,15 +686,17 @@ private fun ChatMessageContent(
     val actions = ChatDisplayPolicy.messageActions(message, currentUserId, now = System.currentTimeMillis())
     val hasActions = showActions && actions.isNotEmpty()
     val actionPopupOffsetY = with(LocalDensity.current) { -56.dp.roundToPx() }
-    Box(
+    BoxWithConstraints(
         modifier = modifier,
         contentAlignment = if (outgoing) Alignment.CenterEnd else Alignment.CenterStart
     ) {
+        val maxBubbleWidth = ChatTextBubbleLayoutPolicy.maxBubbleWidth(maxWidth.value.roundToInt()).dp
         ChatBubbleLine(
             message = message,
             outgoing = outgoing,
             peerReadUpToServerSeq = peerReadUpToServerSeq,
             mentionMembers = mentionMembers,
+            maxBubbleWidth = maxBubbleWidth,
             onOpenImagePreview = onOpenImagePreview,
             onRetryImage = onRetryImage,
             onLongPressImage = onOpenActions,
@@ -732,6 +737,7 @@ private fun ChatBubbleLine(
     outgoing: Boolean,
     peerReadUpToServerSeq: Long?,
     mentionMembers: List<GroupMember>,
+    maxBubbleWidth: Dp,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onRetryImage: (ChatMessage) -> Unit,
     onLongPressImage: () -> Unit,
@@ -765,6 +771,7 @@ private fun ChatBubbleLine(
                 message = message,
                 outgoing = outgoing,
                 mentionMembers = mentionMembers,
+                maxBubbleWidth = maxBubbleWidth,
                 onLongPress = onLongPressText,
                 modifier = Modifier.padding(horizontal = 10.dp)
             )
@@ -778,6 +785,7 @@ private fun ChatTextBubble(
     message: ChatMessage,
     outgoing: Boolean,
     mentionMembers: List<GroupMember>,
+    maxBubbleWidth: Dp,
     onLongPress: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -787,6 +795,7 @@ private fun ChatTextBubble(
             style = MaterialTheme.typography.bodyLarge,
             color = ByteImColors.TextPrimary,
             modifier = Modifier
+                .widthIn(max = maxBubbleWidth)
                 .background(byteImBubbleColor(outgoing), byteImBubbleShape(outgoing))
                 .combinedClickable(
                     onClick = {},

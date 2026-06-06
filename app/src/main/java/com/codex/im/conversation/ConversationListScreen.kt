@@ -26,11 +26,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -52,7 +52,6 @@ import com.codex.im.ui.ByteImSystemNotice
 import com.codex.im.ui.ByteImTopBar
 import com.codex.im.ui.ByteImUnreadBadge
 import com.codex.im.ui.ConversationCreateMenu
-import kotlinx.coroutines.flow.distinctUntilChanged
 import java.text.DateFormat
 import java.util.Date
 
@@ -91,26 +90,26 @@ fun ConversationListScreen(
         }
     }
     val listState = rememberLazyListState()
-    LaunchedEffect(
-        viewModel,
+    val shouldLoadMore by remember(
         listState,
         state.items.size,
         state.hasMoreConversations,
         state.isLoadingMore
     ) {
-        snapshotFlow {
-            listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        derivedStateOf {
+            val visibleLastIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            ConversationListLoadMorePolicy.shouldLoadMore(
+                visibleLastIndex = visibleLastIndex,
+                itemCount = state.items.size,
+                hasMore = state.hasMoreConversations,
+                isLoadingMore = state.isLoadingMore
+            )
         }
-            .distinctUntilChanged()
-            .collect { lastVisibleIndex ->
-                val shouldLoadMore = state.hasMoreConversations &&
-                    !state.isLoadingMore &&
-                    state.items.isNotEmpty() &&
-                    lastVisibleIndex >= state.items.lastIndex - 5
-                if (shouldLoadMore) {
-                    viewModel.loadMoreConversations()
-                }
-            }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) {
+            viewModel.loadMoreConversations()
+        }
     }
 
     Column(

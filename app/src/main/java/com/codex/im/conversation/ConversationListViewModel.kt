@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +61,8 @@ class ConversationListViewModel(
     private var started = false
     private val jobs = mutableListOf<Job>()
     private var loadedConversations: List<Conversation> = emptyList()
+    private var prefetchedPage: List<Conversation>? = null
+    private var prefetchJob: Job? = null
 
     fun start() {
         if (started) {
@@ -149,6 +152,18 @@ class ConversationListViewModel(
         }
         mutableState.value = currentState.copy(isLoadingMore = true)
         scope.launch(dispatcher) {
+            // 无论命中缓存还是走真实查询,整批合并/组装都放到后台执行,避免分页边界阻塞主线程。
+            val cached = prefetchedPage
+            if (cached != null) {
+                prefetchedPage = null
+                prefetchJob?.cancel()
+                prefetchJob = null
+                applyPage(cached)
+                return@launch
+            }
+            // 缓存未就绪:取消可能仍在跑的预加载(避免脏数据),走真实查询
+            prefetchJob?.cancel()
+            prefetchJob = null
             val cursor = loadedConversations.lastOrNull()
             if (cursor == null) {
                 mutableState.value = mutableState.value.copy(isLoadingMore = false)
@@ -159,16 +174,41 @@ class ConversationListViewModel(
                 beforeConversationId = cursor.conversationId,
                 limit = CONVERSATION_PAGE_SIZE
             )
-            loadedConversations = mergeConversations(loadedConversations, nextPage)
-            updateItems(
-                conversations = loadedConversations,
-                hasMoreConversations = nextPage.size == CONVERSATION_PAGE_SIZE,
-                isLoadingMore = false
+            applyPage(nextPage)
+        }
+    }
+
+    private fun applyPage(page: List<Conversation>) {
+        loadedConversations = mergeConversations(loadedConversations, page)
+        val hasMore = page.size == CONVERSATION_PAGE_SIZE
+        updateItems(
+            conversations = loadedConversations,
+            hasMoreConversations = hasMore,
+            isLoadingMore = false
+        )
+        if (hasMore) {
+            scheduleNextPagePrefetch()
+        }
+    }
+
+    private fun scheduleNextPagePrefetch() {
+        prefetchJob?.cancel()
+        prefetchJob = scope.launch(dispatcher) {
+            val cursor = loadedConversations.lastOrNull() ?: return@launch
+            val nextPage = repository.conversationPage(
+                beforeLastMessageTime = cursor.lastMessageTime,
+                beforeConversationId = cursor.conversationId,
+                limit = CONVERSATION_PAGE_SIZE
             )
+            ensureActive()
+            prefetchedPage = nextPage
         }
     }
 
     private suspend fun refresh() {
+        prefetchJob?.cancel()
+        prefetchJob = null
+        prefetchedPage = null
         val firstPage = repository.conversationPage(
             beforeLastMessageTime = null,
             beforeConversationId = null,
@@ -208,6 +248,9 @@ class ConversationListViewModel(
             loadedConversations.filter { repository.conversation(it.conversationId) != null }
         )
         updateItems(loadedConversations, hasMoreConversations = hasMoreAfterFirstPage)
+        if (hasMoreAfterFirstPage) {
+            scheduleNextPagePrefetch()
+        }
     }
 
     private fun updateItems(
@@ -369,6 +412,6 @@ class ConversationListViewModel(
 
     private companion object {
         const val CONVERSATION_PAGE_SIZE = 50
-        const val RECENT_THUMBNAIL_PRELOAD_LIMIT = 5
+        const val RECENT_THUMBNAIL_PRELOAD_LIMIT = 10
     }
 }
