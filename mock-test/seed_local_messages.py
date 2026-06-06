@@ -12,6 +12,7 @@ friend_contacts，也不会覆盖好友的 user_profiles，但会按需把 user_
 
 用法：
     python mock-test/seed_local_messages.py --user-a 15000000000 --start 15000000002 --end 15000000499 --per-peer 100
+    python mock-test/seed_local_messages.py --user-a 15000000000 --start 15000000002 --end 15000000499 --per-peer 100 --device 192.168.137.76:42595
 """
 
 import argparse
