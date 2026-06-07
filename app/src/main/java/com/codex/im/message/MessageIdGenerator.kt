@@ -1,10 +1,12 @@
 package com.codex.im.message
 
+import java.util.concurrent.atomic.AtomicLong
+
 class MessageIdGenerator(startCounter: Long = 0) {
-    private var counter = startCounter
+    private val counter = AtomicLong(startCounter)
 
     fun next(userId: String, now: Long): String {
-        counter += 1
-        return "$userId-$now-${counter.toString().padStart(6, '0')}"
+        val n = counter.incrementAndGet()
+        return "$userId-$now-${n.toString().padStart(6, '0')}"
     }
 }

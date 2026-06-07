@@ -217,6 +217,72 @@ class MessageRepository(
         return message
     }
 
+    /**
+     * Batch counterpart of [createLocalImageMessage] / [createLocalGroupImageMessage].
+     *
+     * Allocates [MessageIdGenerator] and [SeqGenerator] ids serially on the calling
+     * coroutine (they are now thread-safe, but allocation is still kept on a single
+     * coroutine so the per-row `createdAt` values stay contiguous and `clientSeq`
+     * remains strictly increasing per `conversationId`), then inserts all N rows
+     * inside a single transaction and emits exactly one
+     * [notifyConversationChanged] afterwards.
+     *
+     * The caller is expected to fan out the per-row upload pipeline in parallel
+     * after this returns — the per-row success/failure paths already call
+     * [notifyConversationChanged] on their own.
+     */
+    fun createLocalImageMessages(
+        senderId: String,
+        receiverId: String?,
+        groupId: String?,
+        selectedImages: List<SelectedChatImage>,
+        nowBase: Long
+    ): List<ChatMessage> {
+        require(selectedImages.isNotEmpty()) { "selectedImages must not be empty" }
+        val isGroup = !groupId.isNullOrBlank()
+        val trimmedGroupId = groupId?.trim().orEmpty()
+        val conversationId = if (isGroup) {
+            require(trimmedGroupId.isNotEmpty()) { "groupId is required" }
+            groupConversationIdFor(trimmedGroupId)
+        } else {
+            require(!receiverId.isNullOrBlank()) { "receiverId is required" }
+            conversationIdFor(senderId, receiverId)
+        }
+        val resolvedReceiverId = if (isGroup) trimmedGroupId else receiverId!!
+        val built = selectedImages.mapIndexed { index, image ->
+            val rowNow = nowBase + index
+            ChatMessage(
+                messageId = messageIdGenerator.next(senderId, rowNow),
+                conversationId = conversationId,
+                senderId = senderId,
+                receiverId = resolvedReceiverId,
+                clientSeq = seqGenerator.next(conversationId),
+                serverSeq = null,
+                content = IMAGE_PLACEHOLDER_CONTENT,
+                status = MessageStatus.UPLOADING,
+                direction = MessageDirection.OUTGOING,
+                createdAt = rowNow,
+                updatedAt = rowNow,
+                type = MessageType.IMAGE,
+                imageWidth = image.width,
+                imageHeight = image.height,
+                mimeType = image.mimeType,
+                localOriginalPath = image.localOriginalPath,
+                localThumbnailPath = image.localThumbnailPath,
+                conversationType = if (isGroup) ConversationType.GROUP else ConversationType.SINGLE,
+                groupId = if (isGroup) trimmedGroupId else null
+            )
+        }
+        transactionRunner.runInTransaction {
+            built.forEach { message ->
+                messageDao.insertOrIgnore(message)
+                conversationDao.upsertFromMessage(message, incrementUnread = false)
+            }
+        }
+        notifyConversationChanged()
+        return built
+    }
+
     fun completeImageUploadAndQueueSend(
         messageId: String,
         imageUrl: String,

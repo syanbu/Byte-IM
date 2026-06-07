@@ -301,6 +301,74 @@ select images, tap Send.
    distinct bubbles appear; `clientSeq` for the conversation is 1..6 (no
    gaps, no duplicates). Confirms `SeqGenerator` and `MessageIdGenerator`
    are not producing collisions across overlapping batches.
+6. **Send 3 images where upload completion order is C, A, B.** The chat still
+   renders the final visual order as A, B, C from top to bottom. This confirms
+   that "parallel upload" no longer implies "completion-order SEND_MESSAGE".
+
+## Implementation note (2026-06-07)
+
+After the parallel-upload restructuring landed, we found a second ordering bug
+that only shows up once uploads finish at different times.
+
+### What went wrong
+
+The first fix correctly preserved the user's album selection order during local
+message creation:
+
+- `AlbumPickerViewModel` compacts `selectionOrder`
+- `ChatViewModel.sendImages(...)` sorts by `selectionOrder`
+- `MessageRepository.createLocalImageMessages(...)` assigns contiguous
+  `createdAt = nowBase + index`
+
+That guarantees the temporary local `UPLOADING` rows appear in the expected
+visual order before ACK.
+
+However, the previous "parallel fan-out" implementation also called
+`completeImageUploadAndQueueSend(...)` from each upload coroutine as soon as its
+own thumbnail/original PUTs finished. That means:
+
+1. uploads run in parallel;
+2. image C may finish uploading before image A;
+3. image C therefore enqueues `SEND_MESSAGE` before image A;
+4. the server assigns `serverSeq` in send-arrival order, not selection order;
+5. once ACKs arrive, `MessageOrderingPolicy` correctly prefers `serverSeq` for
+   sent messages, so the final chat order can become C, A, B instead of A, B, C.
+
+So the root cause was not lost `selectionOrder`; it was letting upload
+completion order leak into the authoritative IM send order.
+
+### How it was changed
+
+`ChatViewModel.sendImages(...)` now uses a two-step phase-3 flow:
+
+1. Start all image uploads in parallel and let each coroutine finish only the
+   upload preparation work (request upload target, PUT thumbnail, PUT original).
+2. Collect those prepared results in `selectionOrder`, then call
+   `completeImageUploadAndQueueSend(...)` sequentially in that same order.
+
+Concretely, the previous "upload and queue send inside each sibling launch"
+shape was split into:
+
+- `prepareImageUpload(...)`
+  - performs the upload-target request and both OSS PUTs
+  - still marks `UPLOAD_FAILED` immediately on per-row failure
+- `completePreparedImageSend(...)`
+  - performs `completeImageUploadAndQueueSend(...)`
+  - therefore controls when `SEND_MESSAGE` is actually emitted
+
+This preserves both requirements:
+
+- thumbnails appear immediately and uploads still run in parallel;
+- authoritative `serverSeq` assignment now follows the user's selection order.
+
+### Regression coverage added
+
+- `sendImagesKeepsSelectionOrderWhenUploadsFinishOutOfOrder`
+  - forces the upload completion order to differ from the selection order
+  - asserts `sentPackets` are still emitted in selection order
+- Existing selection-order tests remain valid:
+  - `sendImagesOrdersBySelectionOrderNotInputOrder`
+  - `sendImagesSixImagesPreserveSelectionOrderInVisualLayout`
 
 ## Risks and trade-offs
 
@@ -326,6 +394,12 @@ select images, tap Send.
   back-pressure.** 9 `completeImageUploadAndQueueSend` calls each enqueue one
   `SEND_MESSAGE` packet; OkHttp's WebSocket impl buffers. This is acceptable
   for this fix and matches existing single-image behavior.
+- **Parallel upload and ordered send are intentionally decoupled.** This adds
+  one more internal state boundary (`prepareImageUpload` vs
+  `completePreparedImageSend`), but it is necessary because the product
+  contract is "selection order wins", while the server's contract is
+  "arrival order gets `serverSeq`". If we ever want "true completion-order
+  send", that would be a product change, not an implementation cleanup.
 - **`refreshKeepingHistory` cost.** The function does a full SQL page query +
   sort + state copy. We call it once after the batch insert, plus N times
   indirectly (one per completion) via the existing `notifyConversationChanged`

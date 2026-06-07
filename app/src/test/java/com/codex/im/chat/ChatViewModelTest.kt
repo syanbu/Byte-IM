@@ -39,13 +39,18 @@ import com.codex.im.storage.MessageDirection
 import com.codex.im.storage.MessageStatus
 import com.codex.im.storage.MessageType
 import com.codex.im.storage.UserProfile
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -54,6 +59,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 class ChatViewModelTest {
     @Test
@@ -870,17 +876,25 @@ class ChatViewModelTest {
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
     fun sendImagesContinuesAfterOneUploadFailure() = runTest {
+        // Pre-compute the messageIds that MessageIdGenerator(startCounter=1) will
+        // emit, given now = 1_000L and three rows. The fixture looks up
+        // per-messageId upload results by these keys in `upload(...)`, so the
+        // results no longer depend on upload() call order.
+        val perMessageResults = ConcurrentHashMap<String, MutableList<AvatarPutResult>>()
+        perMessageResults["13800113800-1000-000002"] = mutableListOf(
+            AvatarPutResult.Success,
+            AvatarPutResult.Success
+        )
+        perMessageResults["13800113800-1001-000003"] = mutableListOf(
+            AvatarPutResult.Failure("HTTP 500")
+        )
+        perMessageResults["13800113800-1002-000004"] = mutableListOf(
+            AvatarPutResult.Success,
+            AvatarPutResult.Success
+        )
         val fixture = Fixture(
             this,
-            uploadApi = FakeImageUploadApi(
-                uploadResults = mutableListOf(
-                    AvatarPutResult.Success,
-                    AvatarPutResult.Success,
-                    AvatarPutResult.Failure("HTTP 500"),
-                    AvatarPutResult.Success,
-                    AvatarPutResult.Success
-                )
-            )
+            uploadApi = FakeImageUploadApi(uploadResultsByMessageId = perMessageResults)
         )
         fixture.viewModel.selectPeer("13900113900")
 
@@ -932,16 +946,20 @@ class ChatViewModelTest {
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
     fun ackedImageSentAfterFailedUploadStaysNewestInChatState() = runTest {
+        // image 0: thumb success, original failure -> UPLOAD_FAILED
+        // image 1: thumb + original success -> SENDING (then acked -> SENT)
+        val perMessageResults = ConcurrentHashMap<String, MutableList<AvatarPutResult>>()
+        perMessageResults["13800113800-1000-000002"] = mutableListOf(
+            AvatarPutResult.Success,
+            AvatarPutResult.Failure("HTTP 500")
+        )
+        perMessageResults["13800113800-1001-000003"] = mutableListOf(
+            AvatarPutResult.Success,
+            AvatarPutResult.Success
+        )
         val fixture = Fixture(
             this,
-            uploadApi = FakeImageUploadApi(
-                uploadResults = mutableListOf(
-                    AvatarPutResult.Success,
-                    AvatarPutResult.Failure("HTTP 500"),
-                    AvatarPutResult.Success,
-                    AvatarPutResult.Success
-                )
-            )
+            uploadApi = FakeImageUploadApi(uploadResultsByMessageId = perMessageResults)
         )
         fixture.viewModel.selectPeer("13900113900")
         fixture.viewModel.start()
@@ -988,6 +1006,293 @@ class ChatViewModelTest {
         val messages = fixture.messageDao.queryPage("single:13800113800:13900113900", null, 20)
         assertEquals(9, messages.size)
         assertEquals(9, fixture.uploadApi.requests.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesSixImagesPreserveSelectionOrderInVisualLayout() = runTest {
+        // Regression test for the user-reported "non-sorted visual order" concern.
+        // 6 images are selected in order 1..6 with explicit selectionOrder=0..5.
+        // After sortNewestFirst (newest first) + reverseLayout=true (oldest at
+        // top), the chat list rendered top-to-bottom must read 1, 2, 3, 4, 5, 6.
+        // If this test ever prints 4, 3, 2, 1, 5, 6, the createdAt values are
+        // no longer assigned in selection order and the user's tap order has
+        // been lost somewhere in createLocalImageMessages / sendImages.
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+
+        fixture.viewModel.sendImages(
+            listOf(
+                selectedImage(label = "1", selectionOrder = 0),
+                selectedImage(label = "2", selectionOrder = 1),
+                selectedImage(label = "3", selectionOrder = 2),
+                selectedImage(label = "4", selectionOrder = 3),
+                selectedImage(label = "5", selectionOrder = 4),
+                selectedImage(label = "6", selectionOrder = 5)
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+
+        // Internal list is sorted newest first by MessageOrderingPolicy.
+        val internalNewestFirst = fixture.viewModel.state.value.messages
+        assertEquals(
+            listOf("6", "5", "4", "3", "2", "1"),
+            internalNewestFirst.map { it.localOriginalPath?.substringAfterLast('-')?.substringBefore('.') }
+        )
+        // The same list, reversed, is what ChatScreen's LazyColumn(reverseLayout
+        // = true) shows visually from top to bottom.
+        assertEquals(
+            listOf("1", "2", "3", "4", "5", "6"),
+            internalNewestFirst.reversed().map { it.localOriginalPath?.substringAfterLast('-')?.substringBefore('.') }
+        )
+        // createdAt is the primary sort key, monotonically increasing per
+        // selectionOrder — this is what the B8 design relies on for the
+        // pre-ACK temporary ordering.
+        val byCreatedAt = fixture.viewModel.state.value.messages.sortedBy { it.createdAt }
+        assertEquals(
+            listOf("1", "2", "3", "4", "5", "6"),
+            byCreatedAt.map { it.localOriginalPath?.substringAfterLast('-')?.substringBefore('.') }
+        )
+        assertEquals(
+            listOf(1L, 2L, 3L, 4L, 5L, 6L),
+            byCreatedAt.map { it.clientSeq }
+        )
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesKeepsSelectionOrderWhenUploadsFinishOutOfOrder() = runTest {
+        val gates = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+        val uploadApi = object : FakeImageUploadApi() {
+            override suspend fun requestUploadTargets(
+                accessToken: String,
+                messageId: String,
+                contentType: String
+            ): ImageUploadTargetsResult {
+                gates.putIfAbsent(messageId, CompletableDeferred())
+                return super.requestUploadTargets(accessToken, messageId, contentType)
+            }
+
+            override suspend fun upload(uploadUrl: String, contentType: String, bytes: ByteArray): AvatarPutResult {
+                val messageId = uploadUrl.substringAfter("https://signed/").substringBefore("/")
+                gates.getOrPut(messageId) { CompletableDeferred() }.await()
+                return super.upload(uploadUrl, contentType, bytes)
+            }
+        }
+        val fixture = Fixture(this, uploadApi = uploadApi, dispatcherOverride = UnconfinedTestDispatcher(testScheduler))
+        fixture.viewModel.selectPeer("13900113900")
+
+        backgroundScope.launch {
+            fixture.viewModel.sendImages(
+                listOf(
+                    selectedImage(label = "A", selectionOrder = 0),
+                    selectedImage(label = "B", selectionOrder = 1),
+                    selectedImage(label = "C", selectionOrder = 2)
+                ),
+                now = 1_000L
+            )
+        }
+        runCurrent()
+
+        val requestMessageIds = fixture.uploadApi.requests.map { it.substringBefore('|') }
+        assertEquals(3, requestMessageIds.size)
+
+        gates.getValue(requestMessageIds[2]).complete(Unit)
+        runCurrent()
+        assertTrue(fixture.connection.sentPackets.isEmpty())
+
+        gates.getValue(requestMessageIds[0]).complete(Unit)
+        runCurrent()
+        assertEquals(1, fixture.connection.sentPackets.size)
+        assertTrue(fixture.connection.sentPackets[0].body.decodeToString().contains(""""messageId":"${requestMessageIds[0]}""""))
+
+        gates.getValue(requestMessageIds[1]).complete(Unit)
+        runCurrent()
+        assertEquals(3, fixture.connection.sentPackets.size)
+        assertTrue(fixture.connection.sentPackets[1].body.decodeToString().contains(""""messageId":"${requestMessageIds[1]}""""))
+        assertTrue(fixture.connection.sentPackets[2].body.decodeToString().contains(""""messageId":"${requestMessageIds[2]}""""))
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesAllRowsAppearBeforeAnyUploadCompletes() = runTest {
+        // Gate the upload API so each upload(...) call suspends until the test
+        // releases the gate. This lets us observe the chat state in the
+        // narrow window between batch insert and first completion, where the
+        // user-facing bug used to be visible (only the first thumbnail showed
+        // up, with subsequent ones appearing one at a time).
+        //
+        // The viewModel's dispatcher is overridden to UnconfinedTestDispatcher
+        // so each launch runs on the calling thread up to its first real
+        // suspension (the gate). The first `runCurrent()` walks the test
+        // scheduler, executes the batch insert, and parks all three launches
+        // on the gate — at which point the assertions can run.
+        val gate = CompletableDeferred<Unit>()
+        val blockingUploadApi = object : FakeImageUploadApi() {
+            override suspend fun upload(uploadUrl: String, contentType: String, bytes: ByteArray): AvatarPutResult {
+                uploadCalls += "$uploadUrl|$contentType|${bytes.size}"
+                gate.await()
+                return AvatarPutResult.Success
+            }
+        }
+        val fixture = Fixture(
+            this,
+            uploadApi = blockingUploadApi,
+            dispatcherOverride = UnconfinedTestDispatcher(testScheduler)
+        )
+        fixture.viewModel.selectPeer("13900113900")
+
+        // sendImages is launched on backgroundScope so the test thread is not
+        // blocked on the coroutineScope inside it.
+        backgroundScope.launch {
+            fixture.viewModel.sendImages(
+                listOf(
+                    selectedImage(originalSize = 3, thumbnailSize = 2),
+                    selectedImage(originalSize = 4, thumbnailSize = 2),
+                    selectedImage(originalSize = 5, thumbnailSize = 2)
+                ),
+                now = 1_000L
+            )
+        }
+        // runCurrent walks the test scheduler. With UnconfinedTestDispatcher,
+        // the launches have already advanced up to the gate by the time we
+        // reach this line; runCurrent just runs anything that's still
+        // pending on the scheduler (e.g., any state-collection emissions).
+        runCurrent()
+
+        val imageMessages = fixture.viewModel.state.value.messages.filter { it.type == MessageType.IMAGE }
+        assertEquals(3, imageMessages.size)
+        assertTrue(imageMessages.all { it.status == MessageStatus.UPLOADING })
+        assertEquals(3, imageMessages.map { it.messageId }.distinct().size)
+        assertEquals(3, fixture.uploadApi.requests.size)
+        // No upload has completed -> no SENDING yet, no packets enqueued.
+        assertTrue(fixture.connection.sentPackets.isEmpty())
+
+        // Release the gate so the suspended uploads can unblock, then let
+        // runCurrent drain the rest of the work so the test can exit.
+        gate.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesPartialFailureKeepsSuccessfulRowsSENT() = runTest {
+        // Canonical partial-failure regression under the new messageId-keyed
+        // fixture: image #2's thumb PUT fails; images #1 and #3 still progress
+        // to SENDING and enqueue a SEND packet each.
+        val perMessageResults = ConcurrentHashMap<String, MutableList<AvatarPutResult>>()
+        perMessageResults["13800113800-1000-000002"] = mutableListOf(
+            AvatarPutResult.Success,
+            AvatarPutResult.Success
+        )
+        perMessageResults["13800113800-1001-000003"] = mutableListOf(
+            AvatarPutResult.Failure("HTTP 500")
+        )
+        perMessageResults["13800113800-1002-000004"] = mutableListOf(
+            AvatarPutResult.Success,
+            AvatarPutResult.Success
+        )
+        val fixture = Fixture(
+            this,
+            uploadApi = FakeImageUploadApi(uploadResultsByMessageId = perMessageResults)
+        )
+        fixture.viewModel.selectPeer("13900113900")
+
+        fixture.viewModel.sendImages(
+            listOf(
+                selectedImage(originalSize = 3, thumbnailSize = 2),
+                selectedImage(originalSize = 4, thumbnailSize = 2),
+                selectedImage(originalSize = 5, thumbnailSize = 2)
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+
+        val messages = fixture.messageDao
+            .queryPage("single:13800113800:13900113900", null, 20)
+            .sortedBy { it.createdAt }
+        assertEquals(
+            listOf(MessageStatus.SENDING, MessageStatus.UPLOAD_FAILED, MessageStatus.SENDING),
+            messages.map { it.status }
+        )
+        assertEquals(3, fixture.uploadApi.requests.size)
+        assertEquals(5, fixture.uploadApi.uploadCalls.size)
+        assertEquals(2, fixture.connection.sentPackets.size)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesParallelFanOutDoesNotProduceDuplicateMessageIds() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+
+        fixture.viewModel.sendImages(
+            listOf(
+                selectedImage(originalSize = 3, thumbnailSize = 2),
+                selectedImage(originalSize = 4, thumbnailSize = 2),
+                selectedImage(originalSize = 5, thumbnailSize = 2)
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+
+        fixture.viewModel.sendImages(
+            listOf(
+                selectedImage(originalSize = 6, thumbnailSize = 2),
+                selectedImage(originalSize = 7, thumbnailSize = 2),
+                selectedImage(originalSize = 8, thumbnailSize = 2)
+            ),
+            now = 2_000L
+        )
+        runCurrent()
+
+        val messages = fixture.messageDao.queryPage("single:13800113800:13900113900", null, 20)
+        assertEquals(6, messages.size)
+        // 6 distinct messageIds — MessageIdGenerator did not collide across
+        // the two batches even though they are issued from the same coroutine.
+        assertEquals(6, messages.map { it.messageId }.distinct().size)
+        // clientSeq is strictly increasing per conversationId, no gaps.
+        assertEquals(
+            listOf(1L, 2L, 3L, 4L, 5L, 6L),
+            messages.sortedBy { it.clientSeq }.map { it.clientSeq }
+        )
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun sendImagesTriggersExactlyOneRefreshAtInsertTime() = runTest {
+        val fixture = Fixture(this)
+        fixture.viewModel.selectPeer("13900113900")
+        runCurrent()
+
+        // Subscribe to state and record every emission's messages.size. A
+        // "refresh" is any positive jump. The old code inserted rows one at a
+        // time and called refreshKeepingHistory after each, producing a
+        // 0 -> 1 -> 2 -> 3 staircase. The new code inserts all N rows in one
+        // transaction and refreshes once, so we should see exactly one jump
+        // of size 3.
+        val sizeProgression = mutableListOf<Int>()
+        val collectorJob = launch {
+            fixture.viewModel.state.collect { sizeProgression += it.messages.size }
+        }
+        runCurrent()
+
+        fixture.viewModel.sendImages(
+            listOf(
+                selectedImage(originalSize = 3, thumbnailSize = 2),
+                selectedImage(originalSize = 4, thumbnailSize = 2),
+                selectedImage(originalSize = 5, thumbnailSize = 2)
+            ),
+            now = 1_000L
+        )
+        runCurrent()
+        collectorJob.cancel()
+
+        val positiveJumps = sizeProgression
+            .zipWithNext { previous, next -> next - previous }
+            .filter { it > 0 }
+        assertEquals(listOf(3), positiveJumps)
     }
 
     @Test
@@ -1043,7 +1348,8 @@ class ChatViewModelTest {
         includeGroupRepository: Boolean = false,
         val validSessionProvider: suspend () -> AuthSession? = {
             AuthSession("mock-token-13800113800", "13800113800", "13800113800", expiresAtMillis = 2_000L)
-        }
+        },
+        dispatcherOverride: CoroutineDispatcher? = null
     ) {
         val connection = FakeConnection()
         val messageDao = InMemoryMessageDao()
@@ -1072,7 +1378,7 @@ class ChatViewModelTest {
                 imageUploadApi = uploadApi,
                 validSessionProvider = validSessionProvider,
                 scope = scope.backgroundScope,
-                dispatcher = StandardTestDispatcher(scope.testScheduler)
+                dispatcher = dispatcherOverride ?: StandardTestDispatcher(scope.testScheduler)
             )
         } else {
             ChatViewModel(
@@ -1085,7 +1391,7 @@ class ChatViewModelTest {
                 imageUploadApi = uploadApi,
                 validSessionProvider = validSessionProvider,
                 scope = scope.backgroundScope,
-                dispatcher = StandardTestDispatcher(scope.testScheduler)
+                dispatcher = dispatcherOverride ?: StandardTestDispatcher(scope.testScheduler)
             )
         }
 
@@ -1155,6 +1461,9 @@ class ChatViewModelTest {
         var sendSucceeds: Boolean = true
         val incoming = MutableSharedFlow<ImPacket>()
         val state = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
+        // sendImages now preserves selection order at SEND_MESSAGE time even if
+        // uploads finish out of order, so sentPackets are stable enough for
+        // order assertions in the multi-image tests.
         val sentPackets = mutableListOf<ImPacket>()
         override val states: StateFlow<ConnectionState> = state
         override val incomingPackets: SharedFlow<ImPacket> = incoming
@@ -1171,7 +1480,7 @@ class ChatViewModelTest {
         }
     }
 
-    private class FakeImageUploadApi(
+    private open class FakeImageUploadApi(
         private val targetResult: ImageUploadTargetsResult = ImageUploadTargetsResult.Success(
             ImageUploadTargets(
                 messageId = "unused",
@@ -1191,11 +1500,18 @@ class ChatViewModelTest {
             )
         ),
         private val uploadResult: AvatarPutResult = AvatarPutResult.Success,
-        val uploadResults: MutableList<AvatarPutResult> = mutableListOf()
+        val uploadResults: MutableList<AvatarPutResult> = mutableListOf(),
+        // Per-messageId upload result queue (thumb then original). Used by the
+        // parallel multi-image test paths where upload() call order is not
+        // deterministic. Falls back to [uploadResults] / [uploadResult] if no
+        // entry is registered for the messageId. Wrapped in ConcurrentHashMap
+        // for parity with production concurrent access.
+        val uploadResultsByMessageId: MutableMap<String, MutableList<AvatarPutResult>> = ConcurrentHashMap()
     ) : ImageUploadApi {
         val requests = mutableListOf<String>()
         val requestedAccessTokens = mutableListOf<String>()
         val uploadCalls = mutableListOf<String>()
+        private val uploadUrlToMessageId: MutableMap<String, String> = ConcurrentHashMap()
 
         override suspend fun requestUploadTargets(
             accessToken: String,
@@ -1205,15 +1521,38 @@ class ChatViewModelTest {
             requestedAccessTokens += accessToken
             requests += "$messageId|$contentType"
             return when (targetResult) {
-                is ImageUploadTargetsResult.Success -> ImageUploadTargetsResult.Success(
-                    targetResult.targets.copy(messageId = messageId)
-                )
+                is ImageUploadTargetsResult.Success -> {
+                    val thumbUrl = "https://signed/$messageId/thumb"
+                    val originUrl = "https://signed/$messageId/origin"
+                    uploadUrlToMessageId[thumbUrl] = messageId
+                    uploadUrlToMessageId[originUrl] = messageId
+                    ImageUploadTargetsResult.Success(
+                        targetResult.targets.copy(
+                            messageId = messageId,
+                            thumbnail = targetResult.targets.thumbnail.copy(
+                                uploadUrl = thumbUrl,
+                                objectKey = "chat-images/u/$messageId/thumb.jpg"
+                            ),
+                            original = targetResult.targets.original.copy(
+                                uploadUrl = originUrl,
+                                objectKey = "chat-images/u/$messageId/origin.jpg"
+                            )
+                        )
+                    )
+                }
                 is ImageUploadTargetsResult.Failure -> targetResult
             }
         }
 
         override suspend fun upload(uploadUrl: String, contentType: String, bytes: ByteArray): AvatarPutResult {
             uploadCalls += "$uploadUrl|$contentType|${bytes.size}"
+            val messageId = uploadUrlToMessageId[uploadUrl]
+            if (messageId != null) {
+                val queue = uploadResultsByMessageId[messageId]
+                if (queue != null && queue.isNotEmpty()) {
+                    return queue.removeAt(0)
+                }
+            }
             return if (uploadResults.isNotEmpty()) uploadResults.removeAt(0) else uploadResult
         }
     }

@@ -25,6 +25,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -231,12 +233,52 @@ class ChatViewModel(
     }
 
     suspend fun sendImages(selectedImages: List<SelectedChatImage>, now: Long = System.currentTimeMillis()) {
-        selectedImages
+        if (mutableState.value.peerId.isBlank()) {
+            return
+        }
+        val ordered = selectedImages
             .take(MAX_IMAGES_PER_SEND)
             .sortedBy { it.selectionOrder }
-            .forEachIndexed { index, selectedImage ->
-                sendImage(selectedImage, now + index)
+        if (ordered.isEmpty()) {
+            return
+        }
+        val batchNow = now
+        val targetId = mutableState.value.peerId
+        val isGroup = targetId.isGroupConversationId()
+        val receiverId: String? = if (isGroup) null else targetId
+        val groupId: String? = if (isGroup) targetId.removePrefix("group:") else null
+        // Phase 1+2: serialize id allocation + batch insert on the IO dispatcher,
+        // then trigger a single refresh so all N UPLOADING rows are visible at once.
+        val inserted: List<ChatMessage> = withContext(dispatcher) {
+            repository.createLocalImageMessages(
+                senderId = session.userId,
+                receiverId = receiverId,
+                groupId = groupId,
+                selectedImages = ordered,
+                nowBase = batchNow
+            )
+        }
+        refreshKeepingHistory()
+        // Phase 3: upload rows in parallel, but queue SEND_MESSAGE in selection
+        // order so serverSeq assignment cannot scramble the user's chosen order.
+        coroutineScope {
+            val preparedUploads = ordered.mapIndexed { index, selectedImage ->
+                async {
+                    runCatching {
+                        prepareImageUpload(inserted[index].messageId, selectedImage)
+                    }.getOrNull()
+                }
             }
+            preparedUploads.forEachIndexed { index, prepared ->
+                prepared.await()?.let { upload ->
+                    completePreparedImageSend(
+                        messageId = inserted[index].messageId,
+                        selectedImage = ordered[index],
+                        prepared = upload
+                    )
+                }
+            }
+        }
     }
 
     suspend fun retryImageMessage(messageId: String, now: Long = System.currentTimeMillis()) {
@@ -280,80 +322,96 @@ class ChatViewModel(
     }
 
     private suspend fun uploadImageAndQueueSend(messageId: String, selectedImage: SelectedChatImage) {
-            val validSession = validSessionProvider()
-            if (validSession == null) {
+        val prepared = prepareImageUpload(messageId, selectedImage) ?: return
+        completePreparedImageSend(messageId, selectedImage, prepared)
+    }
+
+    private suspend fun prepareImageUpload(messageId: String, selectedImage: SelectedChatImage): PreparedImageUpload? {
+        val validSession = validSessionProvider()
+        if (validSession == null) {
+            repository.markImageUploadFailed(messageId, System.currentTimeMillis())
+            mutableState.value = mutableState.value.copy(
+                errorMessage = "Image upload target request failed: Session expired"
+            )
+            refreshKeepingHistoryPreservingError()
+            return null
+        }
+
+        val targets = imageUploadApi.requestUploadTargets(
+            accessToken = validSession.accessToken,
+            messageId = messageId,
+            contentType = selectedImage.mimeType
+        )
+        when (targets) {
+            is ImageUploadTargetsResult.Failure -> {
                 repository.markImageUploadFailed(messageId, System.currentTimeMillis())
                 mutableState.value = mutableState.value.copy(
-                    errorMessage = "Image upload target request failed: Session expired"
+                    errorMessage = "Image upload target request failed: ${targets.message}"
                 )
                 refreshKeepingHistoryPreservingError()
-                return
+                return null
             }
+            is ImageUploadTargetsResult.Success -> Unit
+        }
 
-            val targets = imageUploadApi.requestUploadTargets(
-                accessToken = validSession.accessToken,
-                messageId = messageId,
-                contentType = selectedImage.mimeType
-            )
-            when (targets) {
-                is ImageUploadTargetsResult.Failure -> {
-                    repository.markImageUploadFailed(messageId, System.currentTimeMillis())
-                    mutableState.value = mutableState.value.copy(
-                        errorMessage = "Image upload target request failed: ${targets.message}"
-                    )
-                    refreshKeepingHistoryPreservingError()
-                    return
-                }
-                is ImageUploadTargetsResult.Success -> Unit
+        val thumbnailUpload = imageUploadApi.upload(
+            uploadUrl = targets.targets.thumbnail.uploadUrl,
+            contentType = selectedImage.mimeType,
+            bytes = selectedImage.thumbnailBytes
+        )
+        when (thumbnailUpload) {
+            is AvatarPutResult.Failure -> {
+                repository.markImageUploadFailed(messageId, System.currentTimeMillis())
+                mutableState.value = mutableState.value.copy(
+                    errorMessage = "Image upload failed: ${thumbnailUpload.message}"
+                )
+                refreshKeepingHistoryPreservingError()
+                return null
             }
+            AvatarPutResult.Success -> Unit
+        }
 
-            val thumbnailUpload = imageUploadApi.upload(
-                uploadUrl = targets.targets.thumbnail.uploadUrl,
-                contentType = selectedImage.mimeType,
-                bytes = selectedImage.thumbnailBytes
-            )
-            when (thumbnailUpload) {
-                is AvatarPutResult.Failure -> {
-                    repository.markImageUploadFailed(messageId, System.currentTimeMillis())
-                    mutableState.value = mutableState.value.copy(
-                        errorMessage = "Image upload failed: ${thumbnailUpload.message}"
-                    )
-                    refreshKeepingHistoryPreservingError()
-                    return
-                }
-                AvatarPutResult.Success -> Unit
+        val originalUpload = imageUploadApi.upload(
+            uploadUrl = targets.targets.original.uploadUrl,
+            contentType = selectedImage.mimeType,
+            bytes = selectedImage.originalBytes
+        )
+        when (originalUpload) {
+            is AvatarPutResult.Failure -> {
+                repository.markImageUploadFailed(messageId, System.currentTimeMillis())
+                mutableState.value = mutableState.value.copy(
+                    errorMessage = "Image upload failed: ${originalUpload.message}"
+                )
+                refreshKeepingHistoryPreservingError()
+                return null
             }
+            AvatarPutResult.Success -> Unit
+        }
 
-            val originalUpload = imageUploadApi.upload(
-                uploadUrl = targets.targets.original.uploadUrl,
-                contentType = selectedImage.mimeType,
-                bytes = selectedImage.originalBytes
-            )
-            when (originalUpload) {
-                is AvatarPutResult.Failure -> {
-                    repository.markImageUploadFailed(messageId, System.currentTimeMillis())
-                    mutableState.value = mutableState.value.copy(
-                        errorMessage = "Image upload failed: ${originalUpload.message}"
-                    )
-                    refreshKeepingHistoryPreservingError()
-                    return
-                }
-                AvatarPutResult.Success -> Unit
-            }
+        return PreparedImageUpload(
+            imageUrl = targets.targets.original.publicUrl,
+            thumbnailUrl = targets.targets.thumbnail.publicUrl
+        )
+    }
 
-            val sendPhaseNow = System.currentTimeMillis()
-            repository.completeImageUploadAndQueueSend(
-                messageId = messageId,
-                imageUrl = targets.targets.original.publicUrl,
-                thumbnailUrl = targets.targets.thumbnail.publicUrl,
-                imageWidth = selectedImage.width,
-                imageHeight = selectedImage.height,
-                mimeType = selectedImage.mimeType,
-                fileSizeBytes = selectedImage.originalBytes.size.toLong(),
-                now = sendPhaseNow
-            )
-            mutableState.value = mutableState.value.copy(errorMessage = null)
-            refreshKeepingHistory()
+    private fun completePreparedImageSend(
+        messageId: String,
+        selectedImage: SelectedChatImage,
+        prepared: PreparedImageUpload
+    ) {
+        val sendPhaseNow = System.currentTimeMillis()
+        repository.completeImageUploadAndQueueSend(
+            messageId = messageId,
+            imageUrl = prepared.imageUrl,
+            thumbnailUrl = prepared.thumbnailUrl,
+            imageWidth = selectedImage.width,
+            imageHeight = selectedImage.height,
+            mimeType = selectedImage.mimeType,
+            fileSizeBytes = selectedImage.originalBytes.size.toLong(),
+            now = sendPhaseNow
+        )
+        mutableState.value = mutableState.value.copy(errorMessage = null)
+        refreshKeepingHistory()
     }
 
     suspend fun loadMoreHistory() {
@@ -586,4 +644,9 @@ class ChatViewModel(
         const val RECALL_FAILURE_MESSAGE = "撤回失败，请重试"
         val THUMBNAIL_RETRY_DELAYS_MS = longArrayOf(2_000L, 10_000L, 30_000L)
     }
+
+    private data class PreparedImageUpload(
+        val imageUrl: String,
+        val thumbnailUrl: String
+    )
 }

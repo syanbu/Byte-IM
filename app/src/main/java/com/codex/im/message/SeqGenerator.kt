@@ -1,11 +1,13 @@
 package com.codex.im.message
 
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+
 class SeqGenerator {
-    private val nextSeqByConversation = mutableMapOf<String, Long>()
+    private val nextSeqByConversation = ConcurrentHashMap<String, AtomicLong>()
 
     fun next(conversationId: String): Long {
-        val next = (nextSeqByConversation[conversationId] ?: 0L) + 1L
-        nextSeqByConversation[conversationId] = next
-        return next
+        val counter = nextSeqByConversation.computeIfAbsent(conversationId) { AtomicLong(0L) }
+        return counter.incrementAndGet()
     }
 }
