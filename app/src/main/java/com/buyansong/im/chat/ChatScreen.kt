@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -345,6 +346,19 @@ fun ChatScreen(
                 modifier = Modifier.fillMaxSize()
             )
         }
+    }
+    // Back handling for in-screen overlays. Both overlays live inside
+    // ChatScreen (not in the NavHost), so without an explicit BackHandler
+    // the system back press would pop the entire Chat destination back to
+    // the conversations list, skipping the overlay. The album picker is
+    // rendered after the preview in the Box, so its BackHandler is
+    // registered first to consume the back press when both happen to be
+    // open at the same time.
+    BackHandler(enabled = showAlbumPicker) {
+        showAlbumPicker = false
+    }
+    BackHandler(enabled = previewMessage != null) {
+        previewMessage = null
     }
     previewMessage?.let { message ->
         ChatImagePreviewScreen(

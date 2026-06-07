@@ -1,6 +1,8 @@
 # B11 Image Message Design Status
 
-> **Last modified:** 2026-06-07 — Replaced the conversation-list-to-chat preload (5/10 recent local thumbnails enqueued when opening a conversation) with a per-bubble `LaunchedEffect` self-preload inside `ChatImageBubble`. The old approach had a late start (post-navigation), an unverifiable fire-and-forget path (`enqueue` with no result), and a hard-coded single-chat-only branch. The new approach runs from the bubble that actually needs the bitmap, works for both single and group chats, and only triggers `execute` for local files. Removed `ChatThumbnailPreloader`, `MessageDao.queryRecentImagesWithLocalThumbnail`, `MessageRepository.recentLocalThumbnailPaths`, and the `RECENT_THUMBNAIL_PRELOAD_LIMIT` constant.
+> **Last modified:** 2026-06-08 — Fixed in-screen overlay back-stack semantics. `ChatImagePreviewScreen` and `AlbumPickerScreen` are rendered as in-screen overlays inside `ChatScreen` (not as NavHost destinations), so without an explicit `BackHandler` the system back press propagated to the NavController and popped the entire `Chat` destination, returning the user straight to `Conversations`. Added two `BackHandler` blocks in `ChatScreen` — one for `showAlbumPicker`, one for `previewMessage` — registered before their respective overlays so back now dismisses the overlay first and the user lands back on the chat, not the messages list.
+>
+> **Earlier (2026-06-07):** Replaced the conversation-list-to-chat preload (5/10 recent local thumbnails enqueued when opening a conversation) with a per-bubble `LaunchedEffect` self-preload inside `ChatImageBubble`. The old approach had a late start (post-navigation), an unverifiable fire-and-forget path (`enqueue` with no result), and a hard-coded single-chat-only branch. The new approach runs from the bubble that actually needs the bitmap, works for both single and group chats, and only triggers `execute` for local files. Removed `ChatThumbnailPreloader`, `MessageDao.queryRecentImagesWithLocalThumbnail`, `MessageRepository.recentLocalThumbnailPaths`, and the `RECENT_THUMBNAIL_PRELOAD_LIMIT` constant.
 
 ## Requirement
 
@@ -67,6 +69,7 @@ Implemented for gallery image send with multi-select expansion into independent 
   - `AndroidManifest.xml` keeps `android:windowSoftInputMode="adjustNothing"`
   - this lets Compose own system bar and IME inset handling instead of relying on device/ROM-specific Activity resize behavior
 - `coil-compose` is now used for chat-image loading.
+- `ChatImagePreviewScreen` and `AlbumPickerScreen` register `BackHandler` blocks in `ChatScreen` so the system back press dismisses the overlay first; without these handlers, back would pop the entire `Chat` destination and return the user to the conversations list.
 
 ## Resolved Device Compatibility Notes
 
@@ -634,3 +637,9 @@ Likely new mock-server tests:
 - Detailed bug doc: [`docs/bug/Fix-MultiImageSendOrder.md`](../bug/Fix-MultiImageSendOrder.md).
 - One-line summary: `ActivityResultContracts.PickMultipleVisualMedia` returned the URIs in reverse selection order on the tested device, so `forEachIndexed { sendImage(img, now + index) }` produced `createdAt` in reverse tap order. The durable fix removes the system picker from this flow and uses app-owned `selectionOrder` instead.
 - 2026-06-05 update: the system Photo Picker entry was replaced by an app-owned `MediaStore` album picker whose primary action sends directly. `SelectedChatImage.selectionOrder` now carries the send-order contract, and `ChatViewModel.sendImages(...)` sorts by it before creating local image messages.
+
+### Image Preview / Album Picker Back Skips the Chat
+
+- Status: Fixed on 2026-06-08 by adding two `BackHandler` blocks in `ChatScreen`.
+- One-line summary: `ChatImagePreviewScreen` and `AlbumPickerScreen` are in-screen overlays (rendered with `if (...) { ... }` inside `ChatScreen`), not NavHost destinations. Without an explicit `BackHandler`, the system back press propagated to `NavController`, which popped the entire `Chat` destination and returned the user to the conversations list instead of dismissing the overlay.
+- Fix: register `BackHandler(enabled = showAlbumPicker) { showAlbumPicker = false }` and `BackHandler(enabled = previewMessage != null) { previewMessage = null }` inside the outer `Box` of `ChatScreen`, before the overlay blocks. The album-picker handler is registered first because it is the later (topmost) child in the `Box`.
