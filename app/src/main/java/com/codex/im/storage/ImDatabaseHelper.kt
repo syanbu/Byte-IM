@@ -142,7 +142,8 @@ class ImDatabaseHelper(
               avatar_url TEXT,
               owner_id TEXT NOT NULL,
               created_at INTEGER NOT NULL,
-              updated_at INTEGER NOT NULL
+              updated_at INTEGER NOT NULL,
+              member_count INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -182,6 +183,6 @@ class ImDatabaseHelper(
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 8
+        const val DATABASE_VERSION = 9
     }
 }

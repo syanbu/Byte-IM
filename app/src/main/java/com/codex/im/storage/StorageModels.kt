@@ -73,7 +73,8 @@ data class GroupInfo(
     val avatarUrl: String?,
     val ownerId: String,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val memberCount: Int = 0
 )
 
 data class GroupMember(

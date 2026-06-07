@@ -67,6 +67,24 @@ class AndroidGroupDao(private val database: SQLiteDatabase) : GroupDao {
         }
     }
 
+    override fun groupsForUser(userId: String): List<GroupInfo> {
+        return database.query(
+            "groups",
+            null,
+            null,
+            null,
+            null,
+            null,
+            "updated_at DESC"
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.toGroupInfo())
+                }
+            }
+        }
+    }
+
     private fun GroupInfo.toValues(): ContentValues {
         return ContentValues().apply {
             put("group_id", groupId)
@@ -75,6 +93,7 @@ class AndroidGroupDao(private val database: SQLiteDatabase) : GroupDao {
             put("owner_id", ownerId)
             put("created_at", createdAt)
             put("updated_at", updatedAt)
+            put("member_count", memberCount)
         }
     }
 
@@ -98,7 +117,8 @@ class AndroidGroupDao(private val database: SQLiteDatabase) : GroupDao {
             avatarUrl = if (isNull(avatarUrlIndex)) null else getString(avatarUrlIndex),
             ownerId = getString(getColumnIndexOrThrow("owner_id")),
             createdAt = getLong(getColumnIndexOrThrow("created_at")),
-            updatedAt = getLong(getColumnIndexOrThrow("updated_at"))
+            updatedAt = getLong(getColumnIndexOrThrow("updated_at")),
+            memberCount = getInt(getColumnIndexOrThrow("member_count"))
         )
     }
 

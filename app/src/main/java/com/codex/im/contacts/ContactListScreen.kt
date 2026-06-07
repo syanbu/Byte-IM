@@ -51,7 +51,8 @@ fun ContactListScreen(
     state: ContactListUiState,
     modifier: Modifier = Modifier,
     onStartGroupChat: () -> Unit,
-    onOpenContact: (String) -> Unit
+    onOpenContact: (String) -> Unit,
+    onOpenJoinedGroups: () -> Unit = {}
 ) {
     LaunchedEffect(viewModel) {
         viewModel.start()
@@ -112,7 +113,7 @@ fun ContactListScreen(
                         color = ByteImColors.Divider,
                         modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
                     )
-                    ContactEntryBlock()
+                    ContactEntryBlock(onOpenJoinedGroups = onOpenJoinedGroups)
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 items(state.items, key = { it.userId }) { item ->
@@ -260,7 +261,9 @@ private fun ContactEntryItem(
 }
 
 @Composable
-private fun ContactEntryBlock() {
+private fun ContactEntryBlock(
+    onOpenJoinedGroups: () -> Unit
+) {
     ContactEntryItem(
         iconResId = R.drawable.ic_contact_new_friend,
         title = "新的朋友",
@@ -273,7 +276,7 @@ private fun ContactEntryBlock() {
     ContactEntryItem(
         iconResId = R.drawable.ic_contact_group_chat,
         title = "群聊",
-        onClick = {}
+        onClick = onOpenJoinedGroups
     )
 }
 

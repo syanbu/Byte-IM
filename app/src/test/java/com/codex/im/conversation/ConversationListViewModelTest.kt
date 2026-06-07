@@ -924,6 +924,10 @@ class ConversationListViewModelTest {
         override fun localGroup(groupId: String): GroupInfo? {
             return groups.firstOrNull { it.groupId == groupId }
         }
+
+        override fun joinedGroups(userId: String): List<GroupInfo> {
+            return groups
+        }
     }
 
     private class CountingConversationDao(

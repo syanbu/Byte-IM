@@ -85,6 +85,8 @@ import com.codex.im.group.GroupCreateViewModel
 import com.codex.im.group.DefaultGroupRepository
 import com.codex.im.group.GroupInfoScreen
 import com.codex.im.group.GroupInfoViewModel
+import com.codex.im.group.JoinedGroupsScreen
+import com.codex.im.group.JoinedGroupsViewModel
 import com.codex.im.group.OkHttpGroupApi
 import com.codex.im.message.AndroidChatThumbnailCache
 import com.codex.im.message.CoilChatThumbnailPreloader
@@ -510,6 +512,11 @@ private fun AuthenticatedImNavHost(
                         },
                         onOpenContact = { peerUserId ->
                             SelfHostedImRoute.ContactProfile.createRoute(peerUserId)?.let { navController.navigate(it) }
+                        },
+                        onOpenJoinedGroups = {
+                            navController.navigate(SelfHostedImRoute.JoinedGroups.route) {
+                                launchSingleTop = true
+                            }
                         }
                     )
                     TopLevelBottomBar(
@@ -544,6 +551,26 @@ private fun AuthenticatedImNavHost(
                     onBack = { navController.popBackStack() },
                     onCreated = { conversationId ->
                         GroupCreateNavigationPolicy.destinationAfterCreated(conversationId)
+                            ?.let(navController::navigateToChat)
+                    }
+                )
+            }
+
+            composable(SelfHostedImRoute.JoinedGroups.route) {
+                val joinedGroupsViewModel = remember(session.userId) {
+                    JoinedGroupsViewModel(
+                        session = session,
+                        groupRepository = groupRepository,
+                        validSessionProvider = validSessionProvider
+                    )
+                }
+                val joinedGroupsState by joinedGroupsViewModel.state.collectAsState()
+                JoinedGroupsScreen(
+                    viewModel = joinedGroupsViewModel,
+                    state = joinedGroupsState,
+                    onBack = { navController.popBackStack() },
+                    onOpenGroup = { groupId ->
+                        SelfHostedImRoute.Chat.createRoute("group:$groupId")
                             ?.let(navController::navigateToChat)
                     }
                 )
@@ -601,12 +628,10 @@ private fun AuthenticatedImNavHost(
                     state = contactProfileState,
                     onBack = { navController.popBackStack() },
                     onSendMessage = { peerUserId ->
-                        SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)
-                            ?.let { navController.navigateToChat(it) }
-                    },
-                    onEditProfile = {
-                        navController.navigate(SelfHostedImRoute.Me.route) {
-                            launchSingleTop = true
+                        // self-to-self 是占位:目前不实现"自己给自己发消息",按钮先放着。
+                        if (peerUserId != session.userId) {
+                            SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)
+                                ?.let { navController.navigateToChat(it) }
                         }
                     }
                 )

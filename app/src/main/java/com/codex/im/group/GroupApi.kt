@@ -248,7 +248,8 @@ object GroupJsonParser {
             avatarUrl = optionalString("avatarUrl") ?: optionalString("avatar_url"),
             ownerId = requiredString("ownerId"),
             createdAt = optionalLong("createdAt") ?: 0L,
-            updatedAt = optionalLong("updatedAt") ?: optionalLong("createdAt") ?: 0L
+            updatedAt = optionalLong("updatedAt") ?: optionalLong("createdAt") ?: 0L,
+            memberCount = optionalArray("memberUserIds")?.size() ?: 0
         )
     }
 

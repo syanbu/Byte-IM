@@ -1146,6 +1146,8 @@ class ChatViewModelTest {
         override fun localMembers(groupId: String): List<GroupMember> = groupDao.members(groupId)
 
         override fun localGroup(groupId: String): GroupInfo? = groupDao.findGroup(groupId)
+
+        override fun joinedGroups(userId: String): List<GroupInfo> = emptyList()
     }
 
     private class FakeConnection : ImConnection {

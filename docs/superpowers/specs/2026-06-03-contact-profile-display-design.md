@@ -353,7 +353,7 @@ The profile page's own Back behavior is source-relative: top-bar Back and Androi
 | No cache, refresh in flight | Top bar + centered `CircularProgressIndicator`. |
 | No cache, refresh fails | Centered "加载失败" + "重试" button. `Scaffold.bottomBar` shows the send button but disabled. |
 | No cache, session expired | Centered "登录已过期，请重新登录" + "重试" button (which will not help; the user needs to log in again, but retry at least re-checks the session). Send button disabled. |
-| Profile fetched but is the current user | Unreachable in practice (DemoContactResolver never returns `session.userId`); even if it did, the page would render and the Send button would route to a self-chat conversation with the same `userId` on both sides. No additional guard is added; this is consistent with the contact → chat flow's existing behavior. |
+| Profile fetched but is the current user | Reachable: contacts list 自助的"我"行 tap → 跳到 `ContactProfile`,页面正常渲染(头像/昵称/性别/签名),底部按钮恒为 **"发送消息"**。`MainActivity` 的 `onSendMessage` 回调里识别 `peerUserId == session.userId` 时**不跳**(`self-to-self 聊天是占位`,未来再实现)。原"编辑资料"入口已移除(避免与 `Me` 重复),若需编辑资料请走 `Me` Tab。 |
 
 ## Reuse Entry Points
 

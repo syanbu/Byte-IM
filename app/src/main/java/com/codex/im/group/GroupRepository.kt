@@ -25,6 +25,8 @@ interface GroupRepository {
     fun localMembers(groupId: String): List<GroupMember>
 
     fun localGroup(groupId: String): GroupInfo?
+
+    fun joinedGroups(userId: String): List<GroupInfo>
 }
 
 class DefaultGroupRepository(
@@ -93,6 +95,8 @@ class DefaultGroupRepository(
     override fun localMembers(groupId: String): List<GroupMember> = groupDao.members(groupId)
 
     override fun localGroup(groupId: String): GroupInfo? = groupDao.findGroup(groupId)
+
+    override fun joinedGroups(userId: String): List<GroupInfo> = groupDao.groupsForUser(userId)
 
     private fun persist(result: GroupCreateResult.Success, now: Long) {
         val group = result.group
