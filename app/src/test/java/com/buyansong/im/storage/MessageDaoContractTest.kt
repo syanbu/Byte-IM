@@ -307,44 +307,6 @@ class MessageDaoContractTest {
         assertEquals(listOf("incoming-missing"), missing.map { it.messageId })
     }
 
-    @Test
-    fun queryRecentImagesWithLocalThumbnailReturnsOnlyCachedImagesNewestFirst() {
-        val dao = InMemoryMessageDao()
-        dao.insertOrIgnore(
-            sampleMessage(
-                messageId = "older-cached",
-                createdAt = 100,
-                content = "[图片]",
-                type = MessageType.IMAGE,
-                localThumbnailPath = "cache/older.jpg"
-            )
-        )
-        dao.insertOrIgnore(
-            sampleMessage(
-                messageId = "newer-cached",
-                createdAt = 300,
-                content = "[图片]",
-                type = MessageType.IMAGE,
-                localThumbnailPath = "cache/newer.jpg"
-            )
-        )
-        dao.insertOrIgnore(
-            sampleMessage(
-                messageId = "newer-uncached",
-                createdAt = 400,
-                content = "[图片]",
-                type = MessageType.IMAGE,
-                localThumbnailPath = null
-            )
-        )
-        dao.insertOrIgnore(sampleMessage(messageId = "text", createdAt = 500))
-
-        val images = dao.queryRecentImagesWithLocalThumbnail("single:u1:u2", limit = 20)
-
-        assertEquals(listOf("newer-cached", "older-cached"), images.map { it.messageId })
-        assertEquals(listOf("cache/newer.jpg", "cache/older.jpg"), images.map { it.localThumbnailPath })
-    }
-
     private fun sampleMessage(
         messageId: String,
         createdAt: Long,

@@ -4,9 +4,7 @@ import com.buyansong.im.auth.AuthSession
 import com.buyansong.im.auth.ValidSessionProvider
 import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
-import com.buyansong.im.message.ChatThumbnailPreloader
 import com.buyansong.im.message.MessageRepository
-import com.buyansong.im.message.NoopChatThumbnailPreloader
 import com.buyansong.im.profile.ProfileRepository
 import com.buyansong.im.group.GroupRepository
 import com.buyansong.im.storage.Conversation
@@ -52,7 +50,6 @@ class ConversationListViewModel(
     private val profileRepository: ProfileRepository,
     private val groupRepository: GroupRepository? = null,
     private val validSessionProvider: ValidSessionProvider = { session },
-    private val thumbnailPreloader: ChatThumbnailPreloader = NoopChatThumbnailPreloader,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -113,17 +110,6 @@ class ConversationListViewModel(
                 navigationTargetPeerId = if (trimmedTarget.startsWith("group:")) null else trimmedTarget,
                 navigationTargetConversationId = conversationId
             )
-            if (!trimmedTarget.startsWith("group:")) {
-                launch {
-                    thumbnailPreloader.preload(
-                        repository.recentLocalThumbnailPaths(
-                            userId = session.userId,
-                            peerId = trimmedTarget,
-                            limit = RECENT_THUMBNAIL_PRELOAD_LIMIT
-                        )
-                    )
-                }
-            }
         }
     }
 
@@ -412,6 +398,5 @@ class ConversationListViewModel(
 
     private companion object {
         const val CONVERSATION_PAGE_SIZE = 50
-        const val RECENT_THUMBNAIL_PRELOAD_LIMIT = 10
     }
 }

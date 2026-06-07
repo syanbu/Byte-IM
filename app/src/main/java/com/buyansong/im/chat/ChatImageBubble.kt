@@ -11,13 +11,17 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import coil.Coil
 import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.ui.ByteImColors
@@ -37,6 +41,22 @@ fun ChatImageBubble(
         imageWidth = message.imageWidth,
         imageHeight = message.imageHeight
     )
+    val context = LocalContext.current
+    // Self-managed preload: warm Coil's memory cache for this bubble's
+    // local thumbnail before SubcomposeAsyncImage triggers the same decode.
+    // Only local files are preloaded; never fetched from network here, since
+    // visible bubbles always have localThumbnailPath set under the strict
+    // receiver-side caching policy.
+    LaunchedEffect(message.localThumbnailPath) {
+        val path = message.localThumbnailPath ?: return@LaunchedEffect
+        Coil.imageLoader(context).execute(
+            ImageRequest.Builder(context)
+                .data(path)
+                .memoryCacheKey(path)
+                .diskCacheKey(path)
+                .build()
+        )
+    }
     Box(
         modifier = modifier
             .size(width = bubbleSize.widthDp.dp, height = bubbleSize.heightDp.dp)

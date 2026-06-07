@@ -1,5 +1,7 @@
 # B11 Image Message Design Status
 
+> **Last modified:** 2026-06-07 — Replaced the conversation-list-to-chat preload (5/10 recent local thumbnails enqueued when opening a conversation) with a per-bubble `LaunchedEffect` self-preload inside `ChatImageBubble`. The old approach had a late start (post-navigation), an unverifiable fire-and-forget path (`enqueue` with no result), and a hard-coded single-chat-only branch. The new approach runs from the bubble that actually needs the bitmap, works for both single and group chats, and only triggers `execute` for local files. Removed `ChatThumbnailPreloader`, `MessageDao.queryRecentImagesWithLocalThumbnail`, `MessageRepository.recentLocalThumbnailPaths`, and the `RECENT_THUMBNAIL_PRELOAD_LIMIT` constant.
+
 ## Requirement
 
 Support single-chat image messages with:
@@ -58,7 +60,6 @@ Implemented for gallery image send with multi-select expansion into independent 
   - strict receiver-side thumbnail display: incoming image messages are hidden from chat until `localThumbnailPath` is available
   - receiver-side thumbnail compensation retry on chat open and active conversation updates
   - receiver-side thumbnail downloads are routed through `ThumbnailDownloadScheduler` with `NORMAL` priority on message receive and `HIGH` priority for chat-open compensation
-  - Coil preloading for the target chat's recent local thumbnails before navigation from the conversation list
 - Chat screen keyboard handling has been stabilized across tested Android devices:
   - `MainActivity` calls `WindowCompat.setDecorFitsSystemWindows(window, false)`
   - the app root applies `systemBarsPadding()`
@@ -145,12 +146,14 @@ Sender-side original storage is a cache, not the authoritative copy after upload
 - if the local original cache is later cleared, preview must fall back to `imageUrl`
 - this pass does not require a local original cleanup policy
 
-Conversation-list-to-chat image preloading:
+Per-bubble self-preload (replaces conversation-list-to-chat preload):
 
-- when the user taps a conversation row, the conversation list ViewModel exposes the navigation target first and starts local thumbnail preloading in a fire-and-forget background task
-- the preload scope is intentionally narrow: the most recent 5 image messages that already have `localThumbnailPath`
-- the preloader only enqueues local thumbnail files into Coil; it does not download remote `thumbnailUrl` resources
-- this reduces first visible thumbnail decode/loading delay after app restart while keeping navigation lightweight and avoiding broad app-start cache scans
+- each `ChatImageBubble` runs `LaunchedEffect(message.localThumbnailPath) { Coil.imageLoader(context).execute(...) }` on first composition
+- the preload path is the bubble's own `localThumbnailPath`, so the warmed cache entry is exactly what `SubcomposeAsyncImage` will request milliseconds later
+- only local files are preloaded; never fetched from network here, because visible bubbles always have `localThumbnailPath` set under the strict receiver-side caching policy
+- `execute` (not `enqueue`) means the coroutine can observe the decode result; Coil still deduplicates with the `SubcomposeAsyncImage` request via shared memory/disk cache keys
+- works uniformly for single chat and group chat (the previous global limit `RECENT_THUMBNAIL_PRELOAD_LIMIT = 10` was hard-coded to skip group chats)
+- no cross-ViewModel dependency: `ConversationListViewModel` no longer carries `ChatThumbnailPreloader` and the conversation-list → chat transition no longer triggers any preload job
 
 Current optimized receiver-side strategy:
 
@@ -158,7 +161,7 @@ Current optimized receiver-side strategy:
 - chat-open missing-thumbnail compensation uses higher priority than normal receive-time thumbnail work
 - `CoroutineThumbnailDownloadScheduler` drains one thumbnail job at a time and orders queued work by `HIGH -> NORMAL -> LOW`
 - original image loading remains user-triggered from image preview
-- Coil preloading is a decode/cache warm-up for local thumbnail files, not a network fetch mechanism
+- the only cache warm-up for visible thumbnails is the per-bubble `LaunchedEffect` preload above; it is decode-only, not a network fetch mechanism
 
 Receiver-side end-to-end display flow:
 

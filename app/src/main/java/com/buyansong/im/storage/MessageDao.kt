@@ -7,8 +7,6 @@ interface MessageDao {
 
     fun queryIncomingImagesMissingLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage>
 
-    fun queryRecentImagesWithLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage>
-
     fun findByMessageId(messageId: String): ChatMessage?
 
     fun deleteByConversationId(conversationId: String): Int
@@ -66,17 +64,6 @@ class InMemoryMessageDao : MessageDao {
             .filter { it.direction == MessageDirection.INCOMING }
             .filter { it.type == MessageType.IMAGE }
             .filter { it.localThumbnailPath == null }
-            .let { MessageOrderingPolicy.sortNewestFirst(it.asIterable()) }
-            .take(limit)
-            .toList()
-    }
-
-    override fun queryRecentImagesWithLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage> {
-        return messagesById.values
-            .asSequence()
-            .filter { it.conversationId == conversationId }
-            .filter { it.type == MessageType.IMAGE }
-            .filter { it.localThumbnailPath != null }
             .let { MessageOrderingPolicy.sortNewestFirst(it.asIterable()) }
             .take(limit)
             .toList()

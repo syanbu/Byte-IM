@@ -89,7 +89,6 @@ import com.buyansong.im.group.JoinedGroupsScreen
 import com.buyansong.im.group.JoinedGroupsViewModel
 import com.buyansong.im.group.OkHttpGroupApi
 import com.buyansong.im.message.AndroidChatThumbnailCache
-import com.buyansong.im.message.CoilChatThumbnailPreloader
 import com.buyansong.im.message.CoroutineThumbnailDownloadScheduler
 import com.buyansong.im.message.MessageIdGenerator
 import com.buyansong.im.message.MessageOutboxWorker
@@ -463,8 +462,7 @@ private fun AuthenticatedImNavHost(
                         connection = connection,
                         profileRepository = profileRepository,
                         groupRepository = groupRepository,
-                        validSessionProvider = validSessionProvider,
-                        thumbnailPreloader = CoilChatThumbnailPreloader(context)
+                        validSessionProvider = validSessionProvider
                     )
                 }
                 val conversationState by conversationListViewModel.state.collectAsState()

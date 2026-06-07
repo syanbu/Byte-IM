@@ -69,41 +69,6 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
         }
     }
 
-    override fun queryRecentImagesWithLocalThumbnail(conversationId: String, limit: Int): List<ChatMessage> {
-        return database.query(
-            "messages",
-            null,
-            """
-            conversation_id = ?
-              AND message_type = ?
-              AND local_thumbnail_path IS NOT NULL
-            """.trimIndent(),
-            arrayOf(conversationId, MessageType.IMAGE.name),
-            null,
-            null,
-            """
-            CASE
-              WHEN server_seq IS NULL AND status IN ('UPLOADING', 'SENDING') THEN 0
-              WHEN server_seq IS NOT NULL THEN 1
-              ELSE 2
-            END ASC,
-            server_seq DESC,
-            created_at DESC,
-            client_seq DESC,
-            message_id DESC
-            """.trimIndent(),
-            null
-        ).use { cursor ->
-            buildList {
-                while (cursor.moveToNext()) {
-                    add(cursor.toChatMessage())
-                }
-            }
-                .let { MessageOrderingPolicy.sortNewestFirst(it) }
-                .take(limit)
-        }
-    }
-
     override fun findByMessageId(messageId: String): ChatMessage? {
         return database.query(
             "messages",

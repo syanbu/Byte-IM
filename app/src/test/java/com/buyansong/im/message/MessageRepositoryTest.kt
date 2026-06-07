@@ -941,40 +941,6 @@ class MessageRepositoryTest {
     }
 
     @Test
-    fun recentLocalThumbnailPathsReturnsCachedImagePathsForPeer() {
-        val fixture = Fixture()
-        fixture.messageDao.insertOrIgnore(
-            sampleImageMessage(
-                messageId = "image-older",
-                createdAt = 1_000L,
-                localThumbnailPath = "cache/older.jpg"
-            )
-        )
-        fixture.messageDao.insertOrIgnore(
-            sampleImageMessage(
-                messageId = "image-newer",
-                createdAt = 2_000L,
-                localThumbnailPath = "cache/newer.jpg"
-            )
-        )
-        fixture.messageDao.insertOrIgnore(
-            sampleImageMessage(
-                messageId = "image-uncached",
-                createdAt = 3_000L,
-                localThumbnailPath = null
-            )
-        )
-
-        val paths = fixture.repository.recentLocalThumbnailPaths(
-            userId = "u1",
-            peerId = "u2",
-            limit = 10
-        )
-
-        assertEquals(listOf("cache/newer.jpg", "cache/older.jpg"), paths)
-    }
-
-    @Test
     fun completeImageUploadAndQueueSendBuildsImagePayloadJson() {
         val fixture = Fixture()
         val message = fixture.repository.createLocalImageMessage(

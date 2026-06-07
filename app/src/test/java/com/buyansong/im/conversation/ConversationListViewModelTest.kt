@@ -3,10 +3,8 @@ package com.buyansong.im.conversation
 import com.buyansong.im.auth.AuthSession
 import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
-import com.buyansong.im.message.ChatThumbnailPreloader
 import com.buyansong.im.message.MessageIdGenerator
 import com.buyansong.im.message.MessageRepository
-import com.buyansong.im.message.NoopChatThumbnailPreloader
 import com.buyansong.im.message.SeqGenerator
 import com.buyansong.im.protocol.ImPacket
 import com.buyansong.im.storage.ChatMessage
@@ -675,40 +673,6 @@ class ConversationListViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
-    fun openConversationNavigatesBeforePreloadingRecentLocalThumbnails() = runTest {
-        val thumbnailPreloader = FakeThumbnailPreloader()
-        val fixture = Fixture(this, thumbnailPreloader = thumbnailPreloader)
-        fixture.messageDao.insertOrIgnore(
-            imageMessage(
-                messageId = "image-older",
-                createdAt = 1_000L,
-                localThumbnailPath = "cache/older.jpg"
-            )
-        )
-        fixture.messageDao.insertOrIgnore(
-            imageMessage(
-                messageId = "image-newer",
-                createdAt = 2_000L,
-                localThumbnailPath = "cache/newer.jpg"
-            )
-        )
-        fixture.messageDao.insertOrIgnore(
-            imageMessage(
-                messageId = "image-uncached",
-                createdAt = 3_000L,
-                localThumbnailPath = null
-            )
-        )
-
-        fixture.viewModel.openConversation("13900113900")
-        runCurrent()
-
-        assertEquals("13900113900", fixture.viewModel.state.value.navigationTargetPeerId)
-        assertEquals(listOf(listOf("cache/newer.jpg", "cache/older.jpg")), thumbnailPreloader.calls)
-    }
-
-    @Test
-    @OptIn(ExperimentalCoroutinesApi::class)
     fun consumeNavigationTargetClearsIt() = runTest {
         val fixture = Fixture(this)
         fixture.viewModel.openConversation("13900113900")
@@ -753,7 +717,6 @@ class ConversationListViewModelTest {
         scope: TestScope,
         profileApi: ProfileApi = FakeProfileApi(),
         val groupRepository: FakeGroupRepository? = null,
-        thumbnailPreloader: ChatThumbnailPreloader = NoopChatThumbnailPreloader,
         private val conversationDao: com.buyansong.im.storage.ConversationDao = InMemoryConversationDao()
     ) {
         val connection = FakeConnection()
@@ -777,7 +740,6 @@ class ConversationListViewModelTest {
             connection = connection,
             profileRepository = profileRepository,
             groupRepository = groupRepository,
-            thumbnailPreloader = thumbnailPreloader,
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )
@@ -797,14 +759,6 @@ class ConversationListViewModelTest {
         override fun disconnect() = Unit
 
         override fun send(packet: ImPacket): Boolean = true
-    }
-
-    private class FakeThumbnailPreloader : ChatThumbnailPreloader {
-        val calls = mutableListOf<List<String>>()
-
-        override fun preload(localThumbnailPaths: List<String>) {
-            calls += localThumbnailPaths
-        }
     }
 
     private fun imageMessage(

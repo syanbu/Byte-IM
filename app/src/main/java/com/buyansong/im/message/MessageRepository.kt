@@ -420,13 +420,6 @@ class MessageRepository(
         )
     }
 
-    fun recentLocalThumbnailPaths(userId: String, peerId: String, limit: Int): List<String> {
-        return messageDao.queryRecentImagesWithLocalThumbnail(
-            conversationId = conversationIdFor(userId, peerId),
-            limit = limit
-        ).mapNotNull { it.localThumbnailPath }
-    }
-
     fun conversations(limit: Int = 50) = conversationPage(
         beforeLastMessageTime = null,
         beforeConversationId = null,
