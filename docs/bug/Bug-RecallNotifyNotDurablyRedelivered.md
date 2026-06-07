@@ -54,7 +54,7 @@ auth; otherwise the peer can keep showing the original message.
 
 Server recall handling:
 
-- `mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java`
+- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java`
   `handleRecallMessage(...)` validates ownership, conversation, and the
   two-minute window.
 - On success it calls `acceptedMessageStore.markRecalled(messageId, requesterId,
@@ -228,23 +228,23 @@ Implemented the recommended `RECALL_NOTIFY_ACK` fix:
 
 Reviewed and changed these implementation paths:
 
-- `mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java`
-- `mock-server/src/main/java/com/codex/imserver/netty/WebSocketFrameHandler.java`
-- `mock-server/src/main/java/com/codex/imserver/protocol/ImCommand.java`
-- `mock-server/src/test/java/com/codex/imserver/session/MessageRouterTest.java`
-- `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- `app/src/main/java/com/codex/im/protocol/ImCommand.kt`
-- `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- `app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt`
-- `app/src/test/java/com/codex/im/chat/ChatViewModelTest.kt`
-- `app/src/test/java/com/codex/im/chat/ChatMessageRowLayoutTest.kt`
+- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java`
+- `mock-server/src/main/java/com/buyansong/imserver/netty/WebSocketFrameHandler.java`
+- `mock-server/src/main/java/com/buyansong/imserver/protocol/ImCommand.java`
+- `mock-server/src/test/java/com/buyansong/imserver/session/MessageRouterTest.java`
+- `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- `app/src/main/java/com/buyansong/im/protocol/ImCommand.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- `app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt`
+- `app/src/test/java/com/buyansong/im/chat/ChatViewModelTest.kt`
+- `app/src/test/java/com/buyansong/im/chat/ChatMessageRowLayoutTest.kt`
 
 Verification commands:
 
 ```text
-./gradlew :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --console=plain
-./gradlew :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --tests com.codex.im.chat.ChatViewModelTest --tests com.codex.im.chat.ChatMessageRowLayoutTest --console=plain
+./gradlew :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest --console=plain
+./gradlew :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest --tests com.buyansong.im.chat.ChatViewModelTest --tests com.buyansong.im.chat.ChatMessageRowLayoutTest --console=plain
 mvn -q -Dtest=MessageRouterTest test
 ```
 

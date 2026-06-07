@@ -67,7 +67,7 @@ is ConnectionState.Reconnecting -> connection.connect(session.token)
 Verified on 2026-06-06:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.connection.ConnectionLifecycleManagerTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.connection.ConnectionLifecycleManagerTest --console=plain
 ```
 
 Result:
@@ -78,6 +78,6 @@ Result:
 
 ## Related Files
 
-- `app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
-- `app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt`
+- `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
+- `app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt`
 - `docs/bug/Fix-StartupServerOfflineTokenUnavailableReconnect.md`

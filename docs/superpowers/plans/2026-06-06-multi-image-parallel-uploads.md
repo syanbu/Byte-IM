@@ -26,9 +26,9 @@ image #2 until image #1 has gone all the way to SENT/UPLOAD_FAILED.
 
 **What we already have that makes this fix small.** The row-level
 `CircularProgressIndicator` for `MessageStatus.UPLOADING` / `SENDING` is already
-wired in `OutgoingMessageStatus` ([`ChatScreen.kt:905-943`](app/src/main/java/com/codex/im/chat/ChatScreen.kt#L905-L943))
+wired in `OutgoingMessageStatus` ([`ChatScreen.kt:905-943`](app/src/main/java/com/buyansong/im/chat/ChatScreen.kt#L905-L943))
 and is policy-free. The bubble-internal overlay is intentionally locked off by
-[`ChatImageBubbleLoadingPolicy`](app/src/main/java/com/codex/im/chat/ChatImageBubbleLoadingPolicy.kt)
+[`ChatImageBubbleLoadingPolicy`](app/src/main/java/com/buyansong/im/chat/ChatImageBubbleLoadingPolicy.kt)
 and its unit test. The fix is therefore a server-/ViewModel-side restructuring,
 not a UI redesign.
 
@@ -83,7 +83,7 @@ and the album picker does not call it.
 
 ## Files to modify
 
-### 1. `app/src/main/java/com/codex/im/message/MessageRepository.kt`
+### 1. `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
 
 Add a new public function `createLocalImageMessages(...)` directly after
 `createLocalGroupImageMessage` (so reading order matches call order in the
@@ -116,7 +116,7 @@ canonical single-row entry point used by any future single-image flow.
 `markImageUploading` are **untouched** — they are invoked from per-row
 success/failure paths and each does its own `notifyConversationChanged()`.
 
-### 2. `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
+### 2. `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
 
 Rewrite `sendImages(selectedImages, now = System.currentTimeMillis())` (lines
 233-240) into the three-phase version. Specifically:
@@ -138,7 +138,7 @@ Rewrite `sendImages(selectedImages, now = System.currentTimeMillis())` (lines
 Keep `sendImage` (single) **untouched**. Keep `uploadImageAndQueueSend`
 **untouched** (lines 282-357).
 
-### 3. `app/src/test/java/com/codex/im/chat/ChatViewModelTest.kt`
+### 3. `app/src/test/java/com/buyansong/im/chat/ChatViewModelTest.kt`
 
 **Fixture refactor — `FakeImageUploadApi`** (lines 1170-1215).
 
@@ -216,16 +216,16 @@ completion order, not row order."
 
 ### 4. Files NOT modified (read-only references)
 
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt` — the album picker
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt` — the album picker
   callback at lines 369-382 already calls `viewModel.sendImages(preparedImages)`;
   the signature is preserved. The `OutgoingMessageStatus` spinner at lines
   905-943 is unchanged.
-- `app/src/main/java/com/codex/im/chat/AlbumPickerViewModel.kt` — `selectedInOrder()`
+- `app/src/main/java/com/buyansong/im/chat/AlbumPickerViewModel.kt` — `selectedInOrder()`
   and `selectionOrder` semantics stay.
-- `app/src/main/java/com/codex/im/chat/ChatImageBubbleLoadingPolicy.kt` and
+- `app/src/main/java/com/buyansong/im/chat/ChatImageBubbleLoadingPolicy.kt` and
   its unit test — `showInlineProgress()` and `showBubbleStatusProgress()`
   stay `false`.
-- `app/src/main/java/com/codex/im/message/MessageIdGenerator.kt` and
+- `app/src/main/java/com/buyansong/im/message/MessageIdGenerator.kt` and
   `SeqGenerator.kt` — left as-is. The fix relies on the batch function
   serializing the allocation step; we do not promote them to `AtomicLong` /
   `ConcurrentHashMap` in this pass. (Defense-in-depth option is noted under
@@ -247,7 +247,7 @@ completion order, not row order."
 - `ChatViewModel.refreshKeepingHistory` — called once after the batch insert.
 - `ChatViewModel.uploadImageAndQueueSend` — called from each parallel `launch`;
   unchanged.
-- `OutgoingMessageStatus` ([`ChatScreen.kt:905-943`](app/src/main/java/com/codex/im/chat/ChatScreen.kt#L905-L943))
+- `OutgoingMessageStatus` ([`ChatScreen.kt:905-943`](app/src/main/java/com/buyansong/im/chat/ChatScreen.kt#L905-L943))
   — already renders the `CircularProgressIndicator` for `UPLOADING` /
   `SENDING`; no UI change.
 
@@ -259,7 +259,7 @@ From the repo root `D:/Desktop/engin/Java/IM`, on PowerShell / Windows use
 `gradlew.bat`, on bash / macOS use `./gradlew`:
 
 ```
-gradlew :app:testDebugUnitTest --tests com.codex.im.chat.ChatViewModelTest.sendImagesAllRowsAppearBeforeAnyUploadCompletes --tests com.codex.im.chat.ChatViewModelTest.sendImagesPartialFailureKeepsSuccessfulRowsSENT --tests com.codex.im.chat.ChatViewModelTest.sendImagesParallelFanOutDoesNotProduceDuplicateMessageIds --tests com.codex.im.chat.ChatViewModelTest.sendImagesTriggersExactlyOneRefreshAtInsertTime --tests com.codex.im.chat.ChatViewModelTest.sendImagesContinuesAfterOneUploadFailure --tests com.codex.im.chat.ChatViewModelTest.sendImagesOrdersBySelectionOrderNotInputOrder --tests com.codex.im.chat.ChatViewModelTest.sendImagesLimitsBatchToNineImages --tests com.codex.im.chat.ChatViewModelTest.ackedImageSentAfterFailedUploadStaysNewestInChatState
+gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatViewModelTest.sendImagesAllRowsAppearBeforeAnyUploadCompletes --tests com.buyansong.im.chat.ChatViewModelTest.sendImagesPartialFailureKeepsSuccessfulRowsSENT --tests com.buyansong.im.chat.ChatViewModelTest.sendImagesParallelFanOutDoesNotProduceDuplicateMessageIds --tests com.buyansong.im.chat.ChatViewModelTest.sendImagesTriggersExactlyOneRefreshAtInsertTime --tests com.buyansong.im.chat.ChatViewModelTest.sendImagesContinuesAfterOneUploadFailure --tests com.buyansong.im.chat.ChatViewModelTest.sendImagesOrdersBySelectionOrderNotInputOrder --tests com.buyansong.im.chat.ChatViewModelTest.sendImagesLimitsBatchToNineImages --tests com.buyansong.im.chat.ChatViewModelTest.ackedImageSentAfterFailedUploadStaysNewestInChatState
 ```
 
 Then the full module test (regression):

@@ -24,9 +24,9 @@
 ### Task 2: Android Edit State
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/profile/MeViewModel.kt`
-- Modify: `app/src/main/java/com/codex/im/profile/MeScreen.kt`
-- Test: `app/src/test/java/com/codex/im/profile/MeViewModelTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/profile/MeViewModel.kt`
+- Modify: `app/src/main/java/com/buyansong/im/profile/MeScreen.kt`
+- Test: `app/src/test/java/com/buyansong/im/profile/MeViewModelTest.kt`
 
 - [x] **Step 1: Write failing tests for edit/save/cancel**
 - [x] **Step 2: Run targeted test and verify failure**
@@ -36,11 +36,11 @@
 ### Task 3: Android Avatar Upload Boundary
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/profile/AvatarUploadApi.kt`
-- Create: `app/src/main/java/com/codex/im/profile/AvatarUploadJsonParser.kt`
-- Create: `app/src/main/java/com/codex/im/profile/OkHttpAvatarUploadApi.kt`
-- Create: `app/src/main/java/com/codex/im/profile/AvatarImageCompressor.kt`
-- Test: `app/src/test/java/com/codex/im/profile/AvatarUploadJsonParserTest.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/AvatarUploadApi.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/AvatarUploadJsonParser.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/OkHttpAvatarUploadApi.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/AvatarImageCompressor.kt`
+- Test: `app/src/test/java/com/buyansong/im/profile/AvatarUploadJsonParserTest.kt`
 
 - [x] **Step 1: Write failing parser test**
 - [x] **Step 2: Run targeted test and verify failure**
@@ -50,9 +50,9 @@
 ### Task 4: Mock-Server OSS Upload Target
 
 **Files:**
-- Create: `mock-server/src/main/java/com/codex/imserver/oss/OssUploadService.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java`
-- Test: `mock-server/src/test/java/com/codex/imserver/oss/OssUploadServiceTest.java`
+- Create: `mock-server/src/main/java/com/buyansong/imserver/oss/OssUploadService.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/oss/OssUploadServiceTest.java`
 
 - [x] **Step 1: Write failing OSS target tests**
 - [x] **Step 2: Run mock-server tests and verify failure**

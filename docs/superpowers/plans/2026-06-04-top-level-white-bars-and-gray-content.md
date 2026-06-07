@@ -14,22 +14,22 @@
 
 | File | Change | Responsibility |
 |---|---|---|
-| `app/src/main/java/com/codex/im/ui/ByteImUi.kt` | Modify | Add an optional `containerColor` parameter to `ByteImListSurface` while keeping the default white background for existing non-top-level callers. |
-| `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt` | Modify | Make the Messages top bar explicitly white and make the Messages list container explicitly light gray without touching unread-count or connection-status behavior. |
-| `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt` | Modify | Make the Contacts top bar explicitly white, make the Contacts list container explicitly light gray, and remove the obsolete special gray separator-bar treatment after `ContactEntryBlock()`. |
+| `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt` | Modify | Add an optional `containerColor` parameter to `ByteImListSurface` while keeping the default white background for existing non-top-level callers. |
+| `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt` | Modify | Make the Messages top bar explicitly white and make the Messages list container explicitly light gray without touching unread-count or connection-status behavior. |
+| `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt` | Modify | Make the Contacts top bar explicitly white, make the Contacts list container explicitly light gray, and remove the obsolete special gray separator-bar treatment after `ContactEntryBlock()`. |
 
-`app/src/main/java/com/codex/im/MainActivity.kt` should not be edited in this task. Its `TopLevelBottomBar` is already fixed white and should remain a regression guard rather than a change target.
+`app/src/main/java/com/buyansong/im/MainActivity.kt` should not be edited in this task. Its `TopLevelBottomBar` is already fixed white and should remain a regression guard rather than a change target.
 
 ---
 
 ### Task 1: Add list-surface color support for top-level content containers
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/ui/ByteImUi.kt`
+- Modify: `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt`
 
 - [ ] **Step 1: Add `containerColor` to `ByteImListSurface`**
 
-Open `app/src/main/java/com/codex/im/ui/ByteImUi.kt` and change:
+Open `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt` and change:
 
 ```kotlin
 @Composable
@@ -83,11 +83,11 @@ Expected: the build may fail at callers until the next task is complete, but `By
 ### Task 2: Restore white Messages chrome and move the Messages list onto the gray content layer
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
 
 - [ ] **Step 1: Make the Messages list container explicitly gray**
 
-Open `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt` and change:
+Open `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt` and change:
 
 ```kotlin
         ByteImListSurface(modifier = Modifier.weight(1f)) {
@@ -173,11 +173,11 @@ Expected: `ConversationListScreen.kt` compiles, and there are no errors around `
 ### Task 3: Restore white Contacts chrome, move the Contacts list onto the gray content layer, and remove the obsolete separator-bar treatment
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
 
 - [ ] **Step 1: Make the Contacts list container explicitly gray**
 
-Open `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt` and change:
+Open `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt` and change:
 
 ```kotlin
         ByteImListSurface(modifier = Modifier.weight(1f)) {
@@ -260,9 +260,9 @@ Expected: `ContactListScreen.kt` compiles with the new `ByteImListSurface` param
 ### Task 4: Final regression verification and commit
 
 **Files:**
-- Verify only: `app/src/main/java/com/codex/im/MainActivity.kt`
-- Verify only: `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- Verify only: `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
+- Verify only: `app/src/main/java/com/buyansong/im/MainActivity.kt`
+- Verify only: `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- Verify only: `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
 
 - [ ] **Step 1: Re-run the compile target after all edits**
 
@@ -306,9 +306,9 @@ Also confirm the unread badge logic in `BottomNavigationIcon(...)` was not touch
 - [ ] **Step 3: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/ui/ByteImUi.kt \
-        app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt \
-        app/src/main/java/com/codex/im/contacts/ContactListScreen.kt \
+git add app/src/main/java/com/buyansong/im/ui/ByteImUi.kt \
+        app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt \
+        app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt \
         docs/superpowers/specs/2026-06-04-top-level-white-bars-and-gray-content-design.md \
         docs/superpowers/plans/2026-06-04-top-level-white-bars-and-gray-content.md
 git commit -m "docs: replace gray top-bar scheme with white chrome plan"

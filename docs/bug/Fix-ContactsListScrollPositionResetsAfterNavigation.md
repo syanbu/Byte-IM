@@ -98,7 +98,7 @@ val contactListViewModel = remember(session.userId) {
 验证命令：
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.contacts.* --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.contacts.* --console=plain
 ```
 
 结果：
@@ -108,8 +108,8 @@ val contactListViewModel = remember(session.userId) {
 
 ## 相关文件
 
-- `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
-- `app/src/main/java/com/codex/im/contacts/ContactListViewModel.kt`
-- `app/src/main/java/com/codex/im/MainActivity.kt`
-- `app/src/test/java/com/codex/im/contacts/ContactListViewModelTest.kt`
-- `app/src/test/java/com/codex/im/contacts/ContactListViewModelScopeTest.kt`
+- `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
+- `app/src/main/java/com/buyansong/im/contacts/ContactListViewModel.kt`
+- `app/src/main/java/com/buyansong/im/MainActivity.kt`
+- `app/src/test/java/com/buyansong/im/contacts/ContactListViewModelTest.kt`
+- `app/src/test/java/com/buyansong/im/contacts/ContactListViewModelScopeTest.kt`

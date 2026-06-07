@@ -19,15 +19,15 @@
 
 | File | Responsibility |
 |---|---|
-| `app/src/main/java/com/codex/im/alert/IncomingMessageAlert.kt` | New frozen alert data model emitted by the repository and rendered by the UI. |
-| `app/src/main/java/com/codex/im/alert/MessageAlertPolicy.kt` | Pure functions for text/image previews, group previews, and `HH:mm` time formatting. |
-| `app/src/main/java/com/codex/im/alert/MessageAlertController.kt` | Pure Kotlin controller for current alert state, single-alert replacement, auto-dismiss, dismiss, and click-open behavior. |
-| `app/src/main/java/com/codex/im/alert/MessageToastPopup.kt` | Compose overlay host and popup card UI. |
-| `app/src/main/java/com/codex/im/message/MessageRepository.kt` | Add `profileRepository` dependency, `messageAlerts` flow, and alert construction in `handleIncoming`. |
-| `app/src/main/java/com/codex/im/MainActivity.kt` | Pass `profileRepository` into `MessageRepository`; collect alerts; render `MessageAlertHost` above `NavHost`; dismiss stale popup on background. |
-| `app/src/test/java/com/codex/im/alert/MessageAlertPolicyTest.kt` | Unit tests for preview and time-format policy. |
-| `app/src/test/java/com/codex/im/alert/MessageAlertControllerTest.kt` | Unit tests for state replacement, auto-dismiss, dismiss, and open behavior. |
-| `app/src/test/java/com/codex/im/message/MessageRepositoryIncomingAlertTest.kt` | Repository tests for emit / no-emit branches and alert fields. |
+| `app/src/main/java/com/buyansong/im/alert/IncomingMessageAlert.kt` | New frozen alert data model emitted by the repository and rendered by the UI. |
+| `app/src/main/java/com/buyansong/im/alert/MessageAlertPolicy.kt` | Pure functions for text/image previews, group previews, and `HH:mm` time formatting. |
+| `app/src/main/java/com/buyansong/im/alert/MessageAlertController.kt` | Pure Kotlin controller for current alert state, single-alert replacement, auto-dismiss, dismiss, and click-open behavior. |
+| `app/src/main/java/com/buyansong/im/alert/MessageToastPopup.kt` | Compose overlay host and popup card UI. |
+| `app/src/main/java/com/buyansong/im/message/MessageRepository.kt` | Add `profileRepository` dependency, `messageAlerts` flow, and alert construction in `handleIncoming`. |
+| `app/src/main/java/com/buyansong/im/MainActivity.kt` | Pass `profileRepository` into `MessageRepository`; collect alerts; render `MessageAlertHost` above `NavHost`; dismiss stale popup on background. |
+| `app/src/test/java/com/buyansong/im/alert/MessageAlertPolicyTest.kt` | Unit tests for preview and time-format policy. |
+| `app/src/test/java/com/buyansong/im/alert/MessageAlertControllerTest.kt` | Unit tests for state replacement, auto-dismiss, dismiss, and open behavior. |
+| `app/src/test/java/com/buyansong/im/message/MessageRepositoryIncomingAlertTest.kt` | Repository tests for emit / no-emit branches and alert fields. |
 | Existing tests that construct `MessageRepository` | Update fixtures to pass a `ProfileRepository`. |
 
 No Android instrumented tests and no new dependencies are required.
@@ -35,18 +35,18 @@ No Android instrumented tests and no new dependencies are required.
 ## Task 1: Add Alert Model and Policy
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/alert/IncomingMessageAlert.kt`
-- Create: `app/src/main/java/com/codex/im/alert/MessageAlertPolicy.kt`
-- Create: `app/src/test/java/com/codex/im/alert/MessageAlertPolicyTest.kt`
+- Create: `app/src/main/java/com/buyansong/im/alert/IncomingMessageAlert.kt`
+- Create: `app/src/main/java/com/buyansong/im/alert/MessageAlertPolicy.kt`
+- Create: `app/src/test/java/com/buyansong/im/alert/MessageAlertPolicyTest.kt`
 
 - [ ] **Step 1: Create the failing policy tests**
 
-Create `app/src/test/java/com/codex/im/alert/MessageAlertPolicyTest.kt` with:
+Create `app/src/test/java/com/buyansong/im/alert/MessageAlertPolicyTest.kt` with:
 
 ```kotlin
-package com.codex.im.alert
+package com.buyansong.im.alert
 
-import com.codex.im.storage.MessageType
+import com.buyansong.im.storage.MessageType
 import java.util.TimeZone
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -149,17 +149,17 @@ class MessageAlertPolicyTest {
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.alert.MessageAlertPolicyTest --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.alert.MessageAlertPolicyTest --console=plain
 ```
 
 Expected: FAIL with compile errors for unresolved `MessageAlertPolicy`.
 
 - [ ] **Step 3: Create the alert data model**
 
-Create `app/src/main/java/com/codex/im/alert/IncomingMessageAlert.kt` with:
+Create `app/src/main/java/com/buyansong/im/alert/IncomingMessageAlert.kt` with:
 
 ```kotlin
-package com.codex.im.alert
+package com.buyansong.im.alert
 
 data class IncomingMessageAlert(
     val conversationId: String,
@@ -173,12 +173,12 @@ data class IncomingMessageAlert(
 
 - [ ] **Step 4: Create the policy implementation**
 
-Create `app/src/main/java/com/codex/im/alert/MessageAlertPolicy.kt` with:
+Create `app/src/main/java/com/buyansong/im/alert/MessageAlertPolicy.kt` with:
 
 ```kotlin
-package com.codex.im.alert
+package com.buyansong.im.alert
 
-import com.codex.im.storage.MessageType
+import com.buyansong.im.storage.MessageType
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -230,7 +230,7 @@ object MessageAlertPolicy {
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.alert.MessageAlertPolicyTest --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.alert.MessageAlertPolicyTest --console=plain
 ```
 
 Expected: PASS.
@@ -238,45 +238,45 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/alert/IncomingMessageAlert.kt app/src/main/java/com/codex/im/alert/MessageAlertPolicy.kt app/src/test/java/com/codex/im/alert/MessageAlertPolicyTest.kt
+git add app/src/main/java/com/buyansong/im/alert/IncomingMessageAlert.kt app/src/main/java/com/buyansong/im/alert/MessageAlertPolicy.kt app/src/test/java/com/buyansong/im/alert/MessageAlertPolicyTest.kt
 git commit -m "feat(alert): add incoming message alert policy"
 ```
 
 ## Task 2: Emit Incoming Alerts from `MessageRepository`
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Modify: `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 - Modify: existing test fixtures that call `MessageRepository(...)`
-- Create: `app/src/test/java/com/codex/im/message/MessageRepositoryIncomingAlertTest.kt`
+- Create: `app/src/test/java/com/buyansong/im/message/MessageRepositoryIncomingAlertTest.kt`
 
 - [ ] **Step 1: Create the failing repository alert tests**
 
-Create `app/src/test/java/com/codex/im/message/MessageRepositoryIncomingAlertTest.kt` with:
+Create `app/src/test/java/com/buyansong/im/message/MessageRepositoryIncomingAlertTest.kt` with:
 
 ```kotlin
-package com.codex.im.message
+package com.buyansong.im.message
 
-import com.codex.im.connection.ConnectionEvent
-import com.codex.im.connection.ConnectionState
-import com.codex.im.connection.ImConnection
-import com.codex.im.profile.ProfileApi
-import com.codex.im.profile.ProfileBatchResult
-import com.codex.im.profile.ProfileRepository
-import com.codex.im.profile.ProfileResult
-import com.codex.im.protocol.ImCommand
-import com.codex.im.protocol.ImPacket
-import com.codex.im.storage.Conversation
-import com.codex.im.storage.ConversationType
-import com.codex.im.storage.InMemoryConversationDao
-import com.codex.im.storage.InMemoryMessageDao
-import com.codex.im.storage.InMemoryPendingMessageDao
-import com.codex.im.storage.InMemoryUserProfileDao
-import com.codex.im.storage.MessageDirection
-import com.codex.im.storage.MessageStatus
-import com.codex.im.storage.MessageType
-import com.codex.im.storage.TransactionRunner
-import com.codex.im.storage.UserProfile
+import com.buyansong.im.connection.ConnectionEvent
+import com.buyansong.im.connection.ConnectionState
+import com.buyansong.im.connection.ImConnection
+import com.buyansong.im.profile.ProfileApi
+import com.buyansong.im.profile.ProfileBatchResult
+import com.buyansong.im.profile.ProfileRepository
+import com.buyansong.im.profile.ProfileResult
+import com.buyansong.im.protocol.ImCommand
+import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.storage.Conversation
+import com.buyansong.im.storage.ConversationType
+import com.buyansong.im.storage.InMemoryConversationDao
+import com.buyansong.im.storage.InMemoryMessageDao
+import com.buyansong.im.storage.InMemoryPendingMessageDao
+import com.buyansong.im.storage.InMemoryUserProfileDao
+import com.buyansong.im.storage.MessageDirection
+import com.buyansong.im.storage.MessageStatus
+import com.buyansong.im.storage.MessageType
+import com.buyansong.im.storage.TransactionRunner
+import com.buyansong.im.storage.UserProfile
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
@@ -453,7 +453,7 @@ class MessageRepositoryIncomingAlertTest {
             nickname: String,
             avatarUrl: String?,
             avatarObjectKey: String?,
-            gender: com.codex.im.storage.Gender?,
+            gender: com.buyansong.im.storage.Gender?,
             signature: String?
         ): ProfileResult = ProfileResult.Failure
     }
@@ -521,19 +521,19 @@ class MessageRepositoryIncomingAlertTest {
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryIncomingAlertTest --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryIncomingAlertTest --console=plain
 ```
 
 Expected: FAIL with compile errors for missing `profileRepository` constructor parameter and missing `messageAlerts`.
 
 - [ ] **Step 3: Add alert flow and `ProfileRepository` dependency**
 
-In `app/src/main/java/com/codex/im/message/MessageRepository.kt`, add imports:
+In `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`, add imports:
 
 ```kotlin
-import com.codex.im.alert.IncomingMessageAlert
-import com.codex.im.alert.MessageAlertPolicy
-import com.codex.im.profile.ProfileRepository
+import com.buyansong.im.alert.IncomingMessageAlert
+import com.buyansong.im.alert.MessageAlertPolicy
+import com.buyansong.im.profile.ProfileRepository
 ```
 
 Change the constructor by adding `profileRepository` after `transactionRunner`:
@@ -614,7 +614,7 @@ This preserves the spec's trigger: `inserted == true && message.conversationId !
 
 - [ ] **Step 6: Update production `MessageRepository` construction**
 
-In `app/src/main/java/com/codex/im/MainActivity.kt`, update the existing `MessageRepository(...)` call to include:
+In `app/src/main/java/com/buyansong/im/MainActivity.kt`, update the existing `MessageRepository(...)` call to include:
 
 ```kotlin
 profileRepository = profileRepository,
@@ -649,7 +649,7 @@ Use the local test file's existing `FakeProfileApi` if present. If none exists, 
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryIncomingAlertTest --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryIncomingAlertTest --console=plain
 ```
 
 Expected: PASS.
@@ -659,7 +659,7 @@ Expected: PASS.
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests "com.codex.im.message.*" --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests "com.buyansong.im.message.*" --console=plain
 ```
 
 Expected: PASS. If compile errors remain, update remaining `MessageRepository(...)` fixtures with `profileRepository`.
@@ -667,22 +667,22 @@ Expected: PASS. If compile errors remain, update remaining `MessageRepository(..
 - [ ] **Step 10: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/message/MessageRepository.kt app/src/main/java/com/codex/im/MainActivity.kt app/src/test/java
+git add app/src/main/java/com/buyansong/im/message/MessageRepository.kt app/src/main/java/com/buyansong/im/MainActivity.kt app/src/test/java
 git commit -m "feat(alert): emit incoming message alerts from repository"
 ```
 
 ## Task 3: Add `MessageAlertController`
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/alert/MessageAlertController.kt`
-- Create: `app/src/test/java/com/codex/im/alert/MessageAlertControllerTest.kt`
+- Create: `app/src/main/java/com/buyansong/im/alert/MessageAlertController.kt`
+- Create: `app/src/test/java/com/buyansong/im/alert/MessageAlertControllerTest.kt`
 
 - [ ] **Step 1: Create the failing controller tests**
 
-Create `app/src/test/java/com/codex/im/alert/MessageAlertControllerTest.kt` with:
+Create `app/src/test/java/com/buyansong/im/alert/MessageAlertControllerTest.kt` with:
 
 ```kotlin
-package com.codex.im.alert
+package com.buyansong.im.alert
 
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -797,17 +797,17 @@ class MessageAlertControllerTest {
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.alert.MessageAlertControllerTest --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.alert.MessageAlertControllerTest --console=plain
 ```
 
 Expected: FAIL with unresolved `MessageAlertController`.
 
 - [ ] **Step 3: Create the controller implementation**
 
-Create `app/src/main/java/com/codex/im/alert/MessageAlertController.kt` with:
+Create `app/src/main/java/com/buyansong/im/alert/MessageAlertController.kt` with:
 
 ```kotlin
-package com.codex.im.alert
+package com.buyansong.im.alert
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -854,7 +854,7 @@ class MessageAlertController(
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.alert.MessageAlertControllerTest --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.alert.MessageAlertControllerTest --console=plain
 ```
 
 Expected: PASS.
@@ -862,21 +862,21 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/alert/MessageAlertController.kt app/src/test/java/com/codex/im/alert/MessageAlertControllerTest.kt
+git add app/src/main/java/com/buyansong/im/alert/MessageAlertController.kt app/src/test/java/com/buyansong/im/alert/MessageAlertControllerTest.kt
 git commit -m "feat(alert): add message alert controller"
 ```
 
 ## Task 4: Add Compose Message Toast Popup UI
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/alert/MessageToastPopup.kt`
+- Create: `app/src/main/java/com/buyansong/im/alert/MessageToastPopup.kt`
 
 - [ ] **Step 1: Create the popup UI file**
 
-Create `app/src/main/java/com/codex/im/alert/MessageToastPopup.kt` with:
+Create `app/src/main/java/com/buyansong/im/alert/MessageToastPopup.kt` with:
 
 ```kotlin
-package com.codex.im.alert
+package com.buyansong.im.alert
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -909,8 +909,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.codex.im.ui.AvatarImage
-import com.codex.im.ui.ByteImColors
+import com.buyansong.im.ui.AvatarImage
+import com.buyansong.im.ui.ByteImColors
 
 @Composable
 fun MessageAlertHost(
@@ -1031,14 +1031,14 @@ Expected: PASS.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/alert/MessageToastPopup.kt
+git add app/src/main/java/com/buyansong/im/alert/MessageToastPopup.kt
 git commit -m "feat(alert): add message toast popup ui"
 ```
 
 ## Task 5: Integrate Popup Host in `MainActivity`
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 
 - [ ] **Step 1: Add imports**
 
@@ -1049,8 +1049,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.codex.im.alert.MessageAlertController
-import com.codex.im.alert.MessageAlertHost
+import com.buyansong.im.alert.MessageAlertController
+import com.buyansong.im.alert.MessageAlertHost
 ```
 
 If any lifecycle imports are already present, keep one copy only.
@@ -1153,7 +1153,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/MainActivity.kt
+git add app/src/main/java/com/buyansong/im/MainActivity.kt
 git commit -m "feat(alert): show incoming message popup in nav host"
 ```
 
@@ -1167,7 +1167,7 @@ git commit -m "feat(alert): show incoming message popup in nav host"
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests "com.codex.im.alert.*" --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests "com.buyansong.im.alert.*" --console=plain
 ```
 
 Expected: PASS.
@@ -1177,7 +1177,7 @@ Expected: PASS.
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryIncomingAlertTest --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryIncomingAlertTest --console=plain
 ```
 
 Expected: PASS.

@@ -32,11 +32,11 @@ Record files changed, tests run, and remaining risks.
 ### Task 2: Android Profile Storage
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/storage/StorageModels.kt`
-- Create: `app/src/main/java/com/codex/im/storage/UserProfileDao.kt`
-- Create: `app/src/main/java/com/codex/im/storage/AndroidUserProfileDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt`
-- Test: `app/src/test/java/com/codex/im/storage/UserProfileDaoContractTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
+- Create: `app/src/main/java/com/buyansong/im/storage/UserProfileDao.kt`
+- Create: `app/src/main/java/com/buyansong/im/storage/AndroidUserProfileDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt`
+- Test: `app/src/test/java/com/buyansong/im/storage/UserProfileDaoContractTest.kt`
 
 - [x] **Step 1: Write failing DAO contract test**
 
@@ -44,7 +44,7 @@ Assert an in-memory DAO stores profile fields, updates nickname/avatar, and retu
 
 - [x] **Step 2: Run test and verify failure**
 
-Run: `gradle-9.0.0\bin\gradle.bat :app:testDebugUnitTest --tests com.codex.im.storage.UserProfileDaoContractTest --console=plain`
+Run: `gradle-9.0.0\bin\gradle.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.UserProfileDaoContractTest --console=plain`
 
 - [x] **Step 3: Implement model and DAO**
 
@@ -57,16 +57,16 @@ Run the same test command.
 ### Task 3: Android Profile API and Repository
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/profile/UserProfileModels.kt`
-- Create: `app/src/main/java/com/codex/im/profile/ProfileApi.kt`
-- Create: `app/src/main/java/com/codex/im/profile/ProfileJsonParser.kt`
-- Create: `app/src/main/java/com/codex/im/profile/OkHttpProfileApi.kt`
-- Create: `app/src/main/java/com/codex/im/profile/ProfileRepository.kt`
-- Modify: `app/src/main/java/com/codex/im/auth/AuthModels.kt`
-- Modify: `app/src/main/java/com/codex/im/auth/AuthJsonParser.kt`
-- Test: `app/src/test/java/com/codex/im/auth/AuthJsonParserTest.kt`
-- Test: `app/src/test/java/com/codex/im/profile/ProfileJsonParserTest.kt`
-- Test: `app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/UserProfileModels.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/ProfileApi.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/ProfileJsonParser.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/OkHttpProfileApi.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt`
+- Modify: `app/src/main/java/com/buyansong/im/auth/AuthModels.kt`
+- Modify: `app/src/main/java/com/buyansong/im/auth/AuthJsonParser.kt`
+- Test: `app/src/test/java/com/buyansong/im/auth/AuthJsonParserTest.kt`
+- Test: `app/src/test/java/com/buyansong/im/profile/ProfileJsonParserTest.kt`
+- Test: `app/src/test/java/com/buyansong/im/profile/ProfileRepositoryTest.kt`
 
 - [x] **Step 1: Write failing parser/repository tests**
 
@@ -87,18 +87,18 @@ Run the same targeted tests.
 ### Task 4: Android UI State and Navigation
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- Modify: `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
-- Modify: `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- Create: `app/src/main/java/com/codex/im/profile/MeViewModel.kt`
-- Create: `app/src/main/java/com/codex/im/profile/MeScreen.kt`
-- Create: `app/src/main/java/com/codex/im/ui/AvatarImage.kt`
-- Test: `app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt`
-- Test: `app/src/test/java/com/codex/im/chat/ChatViewModelTest.kt`
-- Test: `app/src/test/java/com/codex/im/profile/MeViewModelTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/MeViewModel.kt`
+- Create: `app/src/main/java/com/buyansong/im/profile/MeScreen.kt`
+- Create: `app/src/main/java/com/buyansong/im/ui/AvatarImage.kt`
+- Test: `app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt`
+- Test: `app/src/test/java/com/buyansong/im/chat/ChatViewModelTest.kt`
+- Test: `app/src/test/java/com/buyansong/im/profile/MeViewModelTest.kt`
 
 - [x] **Step 1: Write failing ViewModel tests**
 
@@ -119,12 +119,12 @@ Run targeted ViewModel tests.
 ### Task 5: Mock-Server Profile Endpoints
 
 **Files:**
-- Modify: `mock-server/src/main/java/com/codex/imserver/auth/UserRecord.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/auth/UserStore.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/auth/AuthService.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java`
-- Test: `mock-server/src/test/java/com/codex/imserver/auth/AuthServiceTest.java`
-- Test: `mock-server/src/test/java/com/codex/imserver/auth/UserStoreTest.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/auth/UserRecord.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/auth/UserStore.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/auth/AuthService.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/auth/AuthServiceTest.java`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/auth/UserStoreTest.java`
 
 - [x] **Step 1: Write failing backend tests**
 

@@ -25,19 +25,19 @@ The user sees the bottom bar appear "instantly" (frame N) while the conversation
 
 ## Source Context
 
-- Affected file: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Affected file: `app/src/main/java/com/buyansong/im/MainActivity.kt`
   - `Scaffold` and its `bottomBar` slot: lines 338–364
   - `BottomNavigationIcon` (existing private Composable): lines 555–580
   - `navigateToTopLevelTab` (existing extension on `NavHostController`): lines 524–532
   - Top-level destinations: lines 378–409 (`Conversations`), 411–438 (`Contacts`), 462–480 (`Me`)
   - Non-top-level destinations (unchanged): lines 440–460 (`GroupCreate`), 482–507 (`Chat`)
-- Navigation route definitions: `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`
-- Bottom navigation spec (tab metadata): `app/src/main/java/com/codex/im/BottomNavigationSpec.kt`
-- UI constants: `app/src/main/java/com/codex/im/ui/ByteImUi.kt` (`ByteImColors.Surface`, `ByteImDimensions.BottomBarHeight`)
+- Navigation route definitions: `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt`
+- Bottom navigation spec (tab metadata): `app/src/main/java/com/buyansong/im/BottomNavigationSpec.kt`
+- UI constants: `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt` (`ByteImColors.Surface`, `ByteImDimensions.BottomBarHeight`)
 - Screen Composables (each already accepts `modifier: Modifier = Modifier`):
-  - `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-  - `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
-  - `app/src/main/java/com/codex/im/profile/MeScreen.kt`
+  - `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+  - `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
+  - `app/src/main/java/com/buyansong/im/profile/MeScreen.kt`
 
 ## Scope
 
@@ -55,7 +55,7 @@ Out of scope:
 - All ViewModels, repositories, navigation routes, protocol, database, or any non-UI logic.
 - Any transition / animation, including `NavHost`'s `enterTransition` / `popEnterTransition` (currently `EnterTransition.None`, left as-is).
 - Build, install, and on-device verification — handled by the human partner, not part of the implementation work.
-- The pre-existing test compile error in `app/src/test/java/com/codex/im/chat/ChatDisplayPolicyTest.kt` (unrelated to this change).
+- The pre-existing test compile error in `app/src/test/java/com/buyansong/im/chat/ChatDisplayPolicyTest.kt` (unrelated to this change).
 
 ## Visual System
 
@@ -69,7 +69,7 @@ Reuse existing constants. No new colors or dimensions.
 
 ## Component Change: New `TopLevelBottomBar` Composable
 
-In `app/src/main/java/com/codex/im/MainActivity.kt`, add a new private Composable immediately above the existing `BottomNavigationIcon` (or just below `TopLevelRouteBackHandler` — exact placement is unimportant, group it with the other private navigation helpers).
+In `app/src/main/java/com/buyansong/im/MainActivity.kt`, add a new private Composable immediately above the existing `BottomNavigationIcon` (or just below `TopLevelRouteBackHandler` — exact placement is unimportant, group it with the other private navigation helpers).
 
 ```kotlin
 @Composable
@@ -384,7 +384,7 @@ No new tests. The change is purely visual ordering:
 
 - The fix is exercised by the human partner on a real device (per the agreed workflow).
 - The existing `ContactListViewModelTest` and any other unit tests are unaffected (no logic changed).
-- The pre-existing test compile error in `app/src/test/java/com/codex/im/chat/ChatDisplayPolicyTest.kt` (introduced in commit `aca0e37`, before all this work) is unrelated to this change and remains out of scope.
+- The pre-existing test compile error in `app/src/test/java/com/buyansong/im/chat/ChatDisplayPolicyTest.kt` (introduced in commit `aca0e37`, before all this work) is unrelated to this change and remains out of scope.
 
 ## Risk
 

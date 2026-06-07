@@ -55,9 +55,9 @@ This deliberately avoids B8/B9 behavior: reconnect does not replay pending messa
 
 | Date | Area | Command | Result |
 |---|---|---|---|
-| 2026-05-25 | B7 focused unit tests | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.connection.ReconnectPolicyTest --tests com.codex.im.connection.ConnectionLifecycleManagerTest --console=plain` | Passed: reconnect delay sequence, reset, heartbeat send, ACK liveness, heartbeat timeout reconnect, auth reset, stop cancellation, background 75s heartbeat, background reconnect, and foreground 15s restore behavior. |
+| 2026-05-25 | B7 focused unit tests | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.connection.ReconnectPolicyTest --tests com.buyansong.im.connection.ConnectionLifecycleManagerTest --console=plain` | Passed: reconnect delay sequence, reset, heartbeat send, ACK liveness, heartbeat timeout reconnect, auth reset, stop cancellation, background 75s heartbeat, background reconnect, and foreground 15s restore behavior. |
 | 2026-05-25 | Android unit tests | `.\gradlew.bat :app:testDebugUnitTest --console=plain` | Passed. |
 | 2026-05-25 | Android debug build | `.\gradlew.bat :app:assembleDebug --console=plain` | Passed. |
 | 2026-05-25 | Mock server tests | `mvn -q test` in `mock-server` | Passed. |
-| 2026-05-31 | Send-failure/network-restore reconnect regression | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.connection.ConnectionLifecycleManagerTest --console=plain` | Passed: failed packet send disconnects the stale socket, enters `Reconnecting(1s, "send failed")`, reconnects with the existing token provider/backoff path, and network availability cancels a pending backoff delay for immediate reconnect. |
+| 2026-05-31 | Send-failure/network-restore reconnect regression | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.connection.ConnectionLifecycleManagerTest --console=plain` | Passed: failed packet send disconnects the stale socket, enters `Reconnecting(1s, "send failed")`, reconnects with the existing token provider/backoff path, and network availability cancels a pending backoff delay for immediate reconnect. |
 

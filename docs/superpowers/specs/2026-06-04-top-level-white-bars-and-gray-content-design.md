@@ -28,11 +28,11 @@ This is closer to the user's stated WeChat reference and creates a more consiste
 
 - Supersedes deleted spec: `docs/superpowers/specs/2026-06-03-topbar-gray-and-contact-separator-design.md`
 - Supersedes deleted plan: `docs/superpowers/plans/2026-06-03-topbar-gray-and-contact-separator.md`
-- Shared UI primitives: `app/src/main/java/com/codex/im/ui/ByteImUi.kt`
-- Messages screen: `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- Contacts screen: `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
-- Top-level nav host and bottom bar: `app/src/main/java/com/codex/im/MainActivity.kt`
-- Me screen: `app/src/main/java/com/codex/im/profile/MeScreen.kt`
+- Shared UI primitives: `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt`
+- Messages screen: `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- Contacts screen: `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
+- Top-level nav host and bottom bar: `app/src/main/java/com/buyansong/im/MainActivity.kt`
+- Me screen: `app/src/main/java/com/buyansong/im/profile/MeScreen.kt`
 
 ## In Scope
 

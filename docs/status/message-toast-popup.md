@@ -125,32 +125,32 @@ Messages, Contacts, Me, and other non-active screens.
 
 Android main code:
 
-- [`../../app/src/main/java/com/codex/im/alert/IncomingMessageAlert.kt`](../../app/src/main/java/com/codex/im/alert/IncomingMessageAlert.kt)
-- [`../../app/src/main/java/com/codex/im/alert/MessageAlertPolicy.kt`](../../app/src/main/java/com/codex/im/alert/MessageAlertPolicy.kt)
-- [`../../app/src/main/java/com/codex/im/alert/MessageAlertController.kt`](../../app/src/main/java/com/codex/im/alert/MessageAlertController.kt)
-- [`../../app/src/main/java/com/codex/im/alert/MessageToastPopup.kt`](../../app/src/main/java/com/codex/im/alert/MessageToastPopup.kt)
-- [`../../app/src/main/java/com/codex/im/message/MessageRepository.kt`](../../app/src/main/java/com/codex/im/message/MessageRepository.kt)
-- [`../../app/src/main/java/com/codex/im/MainActivity.kt`](../../app/src/main/java/com/codex/im/MainActivity.kt)
+- [`../../app/src/main/java/com/buyansong/im/alert/IncomingMessageAlert.kt`](../../app/src/main/java/com/buyansong/im/alert/IncomingMessageAlert.kt)
+- [`../../app/src/main/java/com/buyansong/im/alert/MessageAlertPolicy.kt`](../../app/src/main/java/com/buyansong/im/alert/MessageAlertPolicy.kt)
+- [`../../app/src/main/java/com/buyansong/im/alert/MessageAlertController.kt`](../../app/src/main/java/com/buyansong/im/alert/MessageAlertController.kt)
+- [`../../app/src/main/java/com/buyansong/im/alert/MessageToastPopup.kt`](../../app/src/main/java/com/buyansong/im/alert/MessageToastPopup.kt)
+- [`../../app/src/main/java/com/buyansong/im/message/MessageRepository.kt`](../../app/src/main/java/com/buyansong/im/message/MessageRepository.kt)
+- [`../../app/src/main/java/com/buyansong/im/MainActivity.kt`](../../app/src/main/java/com/buyansong/im/MainActivity.kt)
 
 Tests:
 
-- [`../../app/src/test/java/com/codex/im/alert/MessageAlertPolicyTest.kt`](../../app/src/test/java/com/codex/im/alert/MessageAlertPolicyTest.kt)
-- [`../../app/src/test/java/com/codex/im/alert/MessageAlertControllerTest.kt`](../../app/src/test/java/com/codex/im/alert/MessageAlertControllerTest.kt)
-- [`../../app/src/test/java/com/codex/im/message/MessageRepositoryIncomingAlertTest.kt`](../../app/src/test/java/com/codex/im/message/MessageRepositoryIncomingAlertTest.kt)
+- [`../../app/src/test/java/com/buyansong/im/alert/MessageAlertPolicyTest.kt`](../../app/src/test/java/com/buyansong/im/alert/MessageAlertPolicyTest.kt)
+- [`../../app/src/test/java/com/buyansong/im/alert/MessageAlertControllerTest.kt`](../../app/src/test/java/com/buyansong/im/alert/MessageAlertControllerTest.kt)
+- [`../../app/src/test/java/com/buyansong/im/message/MessageRepositoryIncomingAlertTest.kt`](../../app/src/test/java/com/buyansong/im/message/MessageRepositoryIncomingAlertTest.kt)
 
 ## Verification Records
 
 2026-06-04:
 
 - `.\gradlew.bat :app:compileDebugKotlin --console=plain` passed.
-- `.\gradlew.bat :app:testDebugUnitTest --tests "com.codex.im.alert.*" --console=plain` passed.
-- `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryIncomingAlertTest --console=plain` passed.
-- `.\gradlew.bat :app:testDebugUnitTest --tests "com.codex.im.message.*" --console=plain` passed.
+- `.\gradlew.bat :app:testDebugUnitTest --tests "com.buyansong.im.alert.*" --console=plain` passed.
+- `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryIncomingAlertTest --console=plain` passed.
+- `.\gradlew.bat :app:testDebugUnitTest --tests "com.buyansong.im.message.*" --console=plain` passed.
 - `.\gradlew.bat :app:assembleDebug --console=plain` passed.
 
 2026-06-05:
 
-- `./gradlew :app:testDebugUnitTest --tests "com.codex.im.alert.MessageAlertPolicyTest" --tests "com.codex.im.message.MessageRepositoryIncomingAlertTest" --console=plain` passed.
+- `./gradlew :app:testDebugUnitTest --tests "com.buyansong.im.alert.MessageAlertPolicyTest" --tests "com.buyansong.im.message.MessageRepositoryIncomingAlertTest" --console=plain` passed.
 - Updated the popup to display image previews as `[图片]`.
 - Removed the in-app close affordance; popups now disappear by timer, opening
   the chat, replacement by a newer alert, or app background dismissal.

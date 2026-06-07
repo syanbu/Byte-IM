@@ -43,7 +43,7 @@ The 1ms step of `now + index` is also too coarse to absorb any platform reorderi
 
 Add `.reversed()` to the URI list inside the `PickMultipleVisualMedia` callback in `ChatScreen.kt` before compression, so the tap order is restored for this specific Photo Picker build. Record the rationale in a comment next to the change so the next reader does not delete it as a no-op.
 
-Code change in `app/src/main/java/com/codex/im/chat/ChatScreen.kt`:
+Code change in `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`:
 
 ```kotlin
 // AndroidX `PickMultipleVisualMedia` does not guarantee that the returned URI
@@ -62,7 +62,7 @@ val preparedImages = orderedUris.mapNotNull { uri ->
 
 ## Affected Files
 
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt` (picker callback; added `.reversed()` plus a rationale comment)
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt` (picker callback; added `.reversed()` plus a rationale comment)
 
 ## Alternative Considered
 

@@ -100,22 +100,22 @@ Update the message ordering policy as follows:
 
 ## Affected Files
 
-- `app/src/main/java/com/codex/im/storage/MessageOrderingPolicy.kt`
-- `app/src/main/java/com/codex/im/storage/AndroidMessageDao.kt`
-- `app/src/test/java/com/codex/im/storage/MessageDaoContractTest.kt`
-- `app/src/androidTest/java/com/codex/im/storage/AndroidDaoInstrumentedTest.kt`
+- `app/src/main/java/com/buyansong/im/storage/MessageOrderingPolicy.kt`
+- `app/src/main/java/com/buyansong/im/storage/AndroidMessageDao.kt`
+- `app/src/test/java/com/buyansong/im/storage/MessageDaoContractTest.kt`
+- `app/src/androidTest/java/com/buyansong/im/storage/AndroidDaoInstrumentedTest.kt`
 
 ## Verification Plan
 
 Run targeted unit tests:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.MessageDaoContractTest --console=plain
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatViewModelTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.MessageDaoContractTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatViewModelTest --console=plain
 ```
 
 Run Android DAO instrumentation when a device/emulator is available:
 
 ```powershell
-.\gradlew.bat :app:connectedDebugAndroidTest --tests com.codex.im.storage.AndroidDaoInstrumentedTest
+.\gradlew.bat :app:connectedDebugAndroidTest --tests com.buyansong.im.storage.AndroidDaoInstrumentedTest
 ```

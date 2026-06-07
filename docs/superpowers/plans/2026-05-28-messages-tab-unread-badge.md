@@ -13,8 +13,8 @@
 ### Task 1: Add unread-count query coverage
 
 **Files:**
-- Modify: `app/src/test/java/com/codex/im/storage/ConversationDaoContractTest.kt`
-- Modify: `app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt`
+- Modify: `app/src/test/java/com/buyansong/im/storage/ConversationDaoContractTest.kt`
+- Modify: `app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt`
 
 - [ ] **Step 1: Write the failing DAO test**
 
@@ -27,9 +27,9 @@
 ### Task 2: Add unread-count query implementation
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/storage/ConversationDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt`
-- Modify: `app/src/main/java/com/codex/im/message/MessageRepository.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/ConversationDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
 
 - [ ] **Step 1: Add `totalUnreadCount()` to the DAO interface and in-memory implementation**
 
@@ -42,8 +42,8 @@
 ### Task 3: Add bottom-tab badge display rules
 
 **Files:**
-- Create: `app/src/test/java/com/codex/im/MessagesTabBadgePolicyTest.kt`
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Create: `app/src/test/java/com/buyansong/im/MessagesTabBadgePolicyTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 
 - [ ] **Step 1: Write failing badge policy tests for hidden/1/99/99+ cases**
 
@@ -56,8 +56,8 @@
 ### Task 4: Wire live badge updates into bottom navigation
 
 **Files:**
-- Modify: `app/src/test/java/com/codex/im/MainActivity` or nearby app-level tests if needed
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Modify: `app/src/test/java/com/buyansong/im/MainActivity` or nearby app-level tests if needed
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 
 - [ ] **Step 1: Add a failing test for live badge refresh if the existing test surface supports it; otherwise rely on repository/DAO tests plus manual Compose logic inspection**
 

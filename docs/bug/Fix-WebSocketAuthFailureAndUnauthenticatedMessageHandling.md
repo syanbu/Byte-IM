@@ -35,7 +35,7 @@ After the fix:
 Verified with targeted automated tests on 2026-05-28:
 
 - Android:
-  - `bash ./gradlew :app:testDebugUnitTest --tests 'com.codex.im.auth.AuthRepositoryTest' --tests 'com.codex.im.auth.LoginViewModelTest' --tests 'com.codex.im.connection.ConnectionLifecycleManagerTest' --tests 'com.codex.im.connection.ConnectionStateReducerTest'`
+  - `bash ./gradlew :app:testDebugUnitTest --tests 'com.buyansong.im.auth.AuthRepositoryTest' --tests 'com.buyansong.im.auth.LoginViewModelTest' --tests 'com.buyansong.im.connection.ConnectionLifecycleManagerTest' --tests 'com.buyansong.im.connection.ConnectionStateReducerTest'`
 - Mock server:
   - `mvn -q -Dtest=WebSocketFrameHandlerTest,MessageRouterTest test`
 

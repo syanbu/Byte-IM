@@ -25,7 +25,7 @@ import sys
 import time
 from typing import List, Optional, Tuple
 
-PKG = "com.codex.im"
+PKG = "com.buyansong.im"
 # DB 文件名按登录账号作用域命名（见 AccountScopedDatabaseName.forUser）：
 # 规则：trim → 非 [A-Za-z0-9_] 替换为 _ → 空则 "unknown" → 前缀 self_hosted_im_ / 后缀 .db
 # 用 --user-a 决定实际路径；具体值在 main() 里根据 args 解析后填入。

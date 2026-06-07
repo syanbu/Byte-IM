@@ -522,10 +522,10 @@ CREATE TABLE conversation_read_cursors (
 
 修改：
 
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- `app/src/main/java/com/codex/im/chat/ChatDisplayPolicy.kt`
-- 可新增 `app/src/main/java/com/codex/im/chat/ChatTextBubble.kt`
-- 可新增 `app/src/main/java/com/codex/im/chat/ChatMessageActionMenu.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatDisplayPolicy.kt`
+- 可新增 `app/src/main/java/com/buyansong/im/chat/ChatTextBubble.kt`
+- 可新增 `app/src/main/java/com/buyansong/im/chat/ChatMessageActionMenu.kt`
 
 目标：
 
@@ -545,8 +545,8 @@ CREATE TABLE conversation_read_cursors (
 
 修改 Android 和 mock-server 的 `ImCommand`：
 
-- Android：`app/src/main/java/com/codex/im/protocol/ImCommand.kt`
-- Mock server：`mock-server/src/main/java/com/codex/imserver/protocol/ImCommand.java`
+- Android：`app/src/main/java/com/buyansong/im/protocol/ImCommand.kt`
+- Mock server：`mock-server/src/main/java/com/buyansong/imserver/protocol/ImCommand.java`
 
 新增：
 
@@ -562,12 +562,12 @@ RECALL_NOTIFY(17)
 
 修改：
 
-- `app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt`
-- `app/src/main/java/com/codex/im/storage/StorageModels.kt`
-- `app/src/main/java/com/codex/im/storage/MessageDao.kt`
-- `app/src/main/java/com/codex/im/storage/AndroidMessageDao.kt`
-- `app/src/main/java/com/codex/im/storage/ConversationDao.kt`
-- `app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt`
+- `app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
+- `app/src/main/java/com/buyansong/im/storage/MessageDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/AndroidMessageDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/ConversationDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt`
 
 消息表新增撤回字段：
 
@@ -595,8 +595,8 @@ DAO 增加能力：
 
 修改：
 
-- `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
+- `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
 
 在进入聊天页时：
 
@@ -615,8 +615,8 @@ openConversation(currentUserId, peerId)
 
 修改：
 
-- `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- `app/src/main/java/com/codex/im/message/MessagePacketProcessor.kt`
+- `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- `app/src/main/java/com/buyansong/im/message/MessagePacketProcessor.kt`
 
 `handlePacket()` 中处理 `READ_ACK`：
 
@@ -638,8 +638,8 @@ Chat UI 根据会话读游标渲染自己发出消息末尾的状态：
 
 修改：
 
-- `mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java`
-- `mock-server/src/main/java/com/codex/imserver/netty/WebSocketFrameHandler.java`
+- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java`
+- `mock-server/src/main/java/com/buyansong/imserver/netty/WebSocketFrameHandler.java`
 
 服务端收到 `READ_ACK`：
 
@@ -654,9 +654,9 @@ Chat UI 根据会话读游标渲染自己发出消息末尾的状态：
 
 修改：
 
-- `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
 
 UI 长按自己发送成功的消息时，显示撤回入口：
 
@@ -674,7 +674,7 @@ now - message.createdAt <= 2 分钟
 
 修改：
 
-- `mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java`
+- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java`
 - mock-server accepted message persistence 相关结构
 
 服务端收到 `RECALL_MESSAGE`：
@@ -694,10 +694,10 @@ now - message.createdAt <= 2 分钟
 
 修改：
 
-- `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- `app/src/main/java/com/codex/im/chat/ChatDisplayPolicy.kt`
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- `app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
+- `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatDisplayPolicy.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
 
 处理：
 

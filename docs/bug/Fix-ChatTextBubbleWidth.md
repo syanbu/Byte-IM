@@ -43,7 +43,7 @@
 
 实现要点：
 
-1. 新增 [ChatTextBubbleLayoutPolicy.kt](app/src/main/java/com/codex/im/chat/ChatTextBubbleLayoutPolicy.kt)：
+1. 新增 [ChatTextBubbleLayoutPolicy.kt](app/src/main/java/com/buyansong/im/chat/ChatTextBubbleLayoutPolicy.kt)：
 
    - `MaxBubbleWidthFraction = 0.72f`
    - `maxBubbleWidth(availableRowWidthDp: Int): Int` 接收父容器可用宽度（dp，向下取整），返回气泡允许的最大宽度。
@@ -85,9 +85,9 @@
 
 ## 涉及文件
 
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- `app/src/main/java/com/codex/im/chat/ChatTextBubbleLayoutPolicy.kt`（新增）
-- `app/src/test/java/com/codex/im/chat/ChatTextBubbleLayoutPolicyTest.kt`（新增）
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatTextBubbleLayoutPolicy.kt`（新增）
+- `app/src/test/java/com/buyansong/im/chat/ChatTextBubbleLayoutPolicyTest.kt`（新增）
 - `docs/status/B2-single-chat.md`
 
 ## 验证
@@ -95,7 +95,7 @@
 自动化测试（2026-06-06）：
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatTextBubbleLayoutPolicyTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatTextBubbleLayoutPolicyTest --console=plain
 ```
 
 - `BUILD SUCCESSFUL`。

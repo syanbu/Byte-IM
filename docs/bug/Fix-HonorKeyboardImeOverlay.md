@@ -45,8 +45,8 @@ composer according to the reported IME inset.
 ## Changed Files
 
 - `app/src/main/AndroidManifest.xml`
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- `app/src/test/java/com/codex/im/chat/ChatKeyboardInsetsPolicyTest.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- `app/src/test/java/com/buyansong/im/chat/ChatKeyboardInsetsPolicyTest.kt`
 
 ## Result
 
@@ -63,8 +63,8 @@ After the fix:
 Verified with automated tests on 2026-05-30:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatKeyboardInsetsPolicyTest --console=plain
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.* --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatKeyboardInsetsPolicyTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.* --console=plain
 .\gradlew.bat :app:testDebugUnitTest --console=plain
 ```
 

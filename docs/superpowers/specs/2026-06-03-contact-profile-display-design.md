@@ -33,24 +33,24 @@ Out of scope:
 
 Files relevant to the change:
 
-- `app/src/main/java/com/codex/im/SelfHostedImRoute.kt` — sealed route definitions; `Chat` already shows the `{conversationId}` path-arg pattern.
-- `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt` — current `onOpenContact` callback navigates straight to chat.
-- `app/src/main/java/com/codex/im/contacts/ContactListViewModel.kt` — `openContact(userId)` sets `navigationTargetPeerId`.
-- `app/src/main/java/com/codex/im/MainActivity.kt` — composes the `NavHost`, builds `ContactListViewModel`, wires `onOpenContact` and chat avatar taps to profile navigation, and keeps "发送消息" routing to `SelfHostedImRoute.Chat.createSingleRoute(...)`.
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt` — renders message avatars and forwards avatar-tap user IDs to `MainActivity`.
-- `app/src/main/java/com/codex/im/chat/ChatDisplayPolicy.kt` — resolves which user ID belongs to a rendered message avatar.
-- `app/src/main/java/com/codex/im/profile/ProfileRepository.kt` — `localProfile(userId)` reads cached profiles from `user_profiles`; add/use a force-refresh path (`refreshProfile(accessToken, userId)`) that always calls `GET /users/{userId}`, persists the returned `UserProfile`, and returns it for UI replacement. Do not use `getProfile(accessToken, userId)` as the background-refresh path because it returns cached data immediately when the DAO already has a row.
-- `app/src/main/java/com/codex/im/storage/StorageModels.kt` — `UserProfile` already carries `gender: Gender?` and `signature: String?`.
-- `app/src/main/java/com/codex/im/ui/ByteImUi.kt` — `ByteImTopBar`, `ByteImListSurface`, `ByteImColors`, `ByteImDimensions`, `ByteImShapes`.
-- `app/src/main/java/com/codex/im/ui/AvatarImage.kt` — existing avatar composable with byte and decoded-bitmap caching.
-- `app/src/main/java/com/codex/im/profile/MeDisplayPolicy.kt` — existing labels and `genderLabel(...)` helper; used as a reference, not a dependency.
-- `app/src/main/java/com/codex/im/profile/MeScreen.kt` — read-only profile row styling is the visual reference for the new page.
+- `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt` — sealed route definitions; `Chat` already shows the `{conversationId}` path-arg pattern.
+- `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt` — current `onOpenContact` callback navigates straight to chat.
+- `app/src/main/java/com/buyansong/im/contacts/ContactListViewModel.kt` — `openContact(userId)` sets `navigationTargetPeerId`.
+- `app/src/main/java/com/buyansong/im/MainActivity.kt` — composes the `NavHost`, builds `ContactListViewModel`, wires `onOpenContact` and chat avatar taps to profile navigation, and keeps "发送消息" routing to `SelfHostedImRoute.Chat.createSingleRoute(...)`.
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt` — renders message avatars and forwards avatar-tap user IDs to `MainActivity`.
+- `app/src/main/java/com/buyansong/im/chat/ChatDisplayPolicy.kt` — resolves which user ID belongs to a rendered message avatar.
+- `app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt` — `localProfile(userId)` reads cached profiles from `user_profiles`; add/use a force-refresh path (`refreshProfile(accessToken, userId)`) that always calls `GET /users/{userId}`, persists the returned `UserProfile`, and returns it for UI replacement. Do not use `getProfile(accessToken, userId)` as the background-refresh path because it returns cached data immediately when the DAO already has a row.
+- `app/src/main/java/com/buyansong/im/storage/StorageModels.kt` — `UserProfile` already carries `gender: Gender?` and `signature: String?`.
+- `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt` — `ByteImTopBar`, `ByteImListSurface`, `ByteImColors`, `ByteImDimensions`, `ByteImShapes`.
+- `app/src/main/java/com/buyansong/im/ui/AvatarImage.kt` — existing avatar composable with byte and decoded-bitmap caching.
+- `app/src/main/java/com/buyansong/im/profile/MeDisplayPolicy.kt` — existing labels and `genderLabel(...)` helper; used as a reference, not a dependency.
+- `app/src/main/java/com/buyansong/im/profile/MeScreen.kt` — read-only profile row styling is the visual reference for the new page.
 
 Mock-server is already sufficient:
 
-- `mock-server/src/main/java/com/codex/imserver/auth/UserRecord.java` carries `gender` and `signature`.
-- `mock-server/src/main/java/com/codex/imserver/auth/UserStore.java` stores them in the `users` table and the migration adds the columns if missing.
-- `mock-server/src/main/java/com/codex/imserver/auth/AuthService.java` includes `gender` and `signature` in the JSON profile response (with `JsonNull` when unset).
+- `mock-server/src/main/java/com/buyansong/imserver/auth/UserRecord.java` carries `gender` and `signature`.
+- `mock-server/src/main/java/com/buyansong/imserver/auth/UserStore.java` stores them in the `users` table and the migration adds the columns if missing.
+- `mock-server/src/main/java/com/buyansong/imserver/auth/AuthService.java` includes `gender` and `signature` in the JSON profile response (with `JsonNull` when unset).
 
 No mock-server changes are required. Demo accounts simply have null `gender` and null `signature` today, which the design handles with the same `未设置` / `未填写` fallbacks the `Me` profile detail uses.
 
@@ -390,14 +390,14 @@ These are NOT this slice's work; they are listed so the next design can pick the
 
 | File | Change |
 |---|---|
-| `app/src/main/java/com/codex/im/SelfHostedImRoute.kt` | Add `data object ContactProfile` with `userId` path arg. |
-| `app/src/main/java/com/codex/im/profile/ProfileRepository.kt` | **Modify** — add `refreshProfile(accessToken, userId)` for force-refreshing a single user's profile even when local cache exists. |
-| `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt` | **New** — read-only ViewModel, cached-first + background force-refresh. |
-| `app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt` | **New** — public `ContactProfileScreen(...)` + private `ContactProfileScreenContent`, `ContactProfileHeader`, `ContactProfileDataRows`, `ContactProfileSendMessageBar`. |
-| `app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt` | **New** — pure-Kotlin label constants and `genderLabel(...)`. |
-| `app/src/main/java/com/codex/im/MainActivity.kt` | Add `composable(SelfHostedImRoute.ContactProfile.pattern)` block; change `onOpenContact` in the `Contacts` block to navigate to `ContactProfile.createRoute(...)` instead of `Chat.createSingleRoute(...)`. |
-| `app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt` | **New** — testable labels and `genderLabel`. |
-| `app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt` | **New** — see "Testing" below. |
+| `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt` | Add `data object ContactProfile` with `userId` path arg. |
+| `app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt` | **Modify** — add `refreshProfile(accessToken, userId)` for force-refreshing a single user's profile even when local cache exists. |
+| `app/src/main/java/com/buyansong/im/contacts/ContactProfileViewModel.kt` | **New** — read-only ViewModel, cached-first + background force-refresh. |
+| `app/src/main/java/com/buyansong/im/contacts/ContactProfileScreen.kt` | **New** — public `ContactProfileScreen(...)` + private `ContactProfileScreenContent`, `ContactProfileHeader`, `ContactProfileDataRows`, `ContactProfileSendMessageBar`. |
+| `app/src/main/java/com/buyansong/im/contacts/ContactProfileDisplayPolicy.kt` | **New** — pure-Kotlin label constants and `genderLabel(...)`. |
+| `app/src/main/java/com/buyansong/im/MainActivity.kt` | Add `composable(SelfHostedImRoute.ContactProfile.pattern)` block; change `onOpenContact` in the `Contacts` block to navigate to `ContactProfile.createRoute(...)` instead of `Chat.createSingleRoute(...)`. |
+| `app/src/test/java/com/buyansong/im/contacts/ContactProfileDisplayPolicyTest.kt` | **New** — testable labels and `genderLabel`. |
+| `app/src/test/java/com/buyansong/im/contacts/ContactProfileViewModelTest.kt` | **New** — see "Testing" below. |
 
 No changes to: `ProfileApi`, `ProfileJsonParser`, `UserProfile`, `UserProfileDao`, `ChatViewModel`, `ConversationListScreen`, `ContactListScreen` (besides the wire-up change), `MeScreen`, `MeViewModel`, the mock-server, the SQLite schema, the WebSocket protocol, or any other route.
 

@@ -14,7 +14,7 @@
 
 | File | Change | Responsibility |
 |---|---|---|
-| `app/src/main/java/com/codex/im/MainActivity.kt` | Modify | (a) Add a new private `TopLevelBottomBar` Composable. (b) Remove the `bottomBar` slot from the global `Scaffold` in `AuthenticatedImNavHost`. (c) Wrap each of the three top-level destination bodies (`Conversations`, `Contacts`, `Me`) in a `Column` that includes the screen Composable and the new bottom bar. |
+| `app/src/main/java/com/buyansong/im/MainActivity.kt` | Modify | (a) Add a new private `TopLevelBottomBar` Composable. (b) Remove the `bottomBar` slot from the global `Scaffold` in `AuthenticatedImNavHost`. (c) Wrap each of the three top-level destination bodies (`Conversations`, `Contacts`, `Me`) in a `Column` that includes the screen Composable and the new bottom bar. |
 
 No new files. No new tests. No other files are touched.
 
@@ -23,11 +23,11 @@ No new files. No new tests. No other files are touched.
 ## Task 1: Apply the refactor to `MainActivity.kt`
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt` (multiple distinct regions: add new Composable, remove Scaffold slot, update three destinations)
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt` (multiple distinct regions: add new Composable, remove Scaffold slot, update three destinations)
 
 - [ ] **Step 1: Add the new `TopLevelBottomBar` private Composable**
 
-Add this Composable to `app/src/main/java/com/codex/im/MainActivity.kt`, placed immediately above the existing private `BottomNavigationIcon` Composable (which currently lives at lines 555–580). The new Composable is a verbatim extraction of what the `Scaffold`'s `bottomBar` slot currently renders, with two small refactors: `currentRoute` is a parameter instead of being closed over, and the `navController.navigateToTopLevelTab(tab.route)` call is abstracted to an `onNavigateToTab` callback.
+Add this Composable to `app/src/main/java/com/buyansong/im/MainActivity.kt`, placed immediately above the existing private `BottomNavigationIcon` Composable (which currently lives at lines 555–580). The new Composable is a verbatim extraction of what the `Scaffold`'s `bottomBar` slot currently renders, with two small refactors: `currentRoute` is a parameter instead of being closed over, and the `navController.navigateToTopLevelTab(tab.route)` call is abstracted to an `onNavigateToTab` callback.
 
 ```kotlin
 @Composable
@@ -62,7 +62,7 @@ The `NavigationBar`, `NavigationBarItem`, `BottomNavigationSpec`, `BottomNavigat
 
 - [ ] **Step 2: Remove the `bottomBar` slot from the global `Scaffold`**
 
-In `app/src/main/java/com/codex/im/MainActivity.kt`, inside the `AuthenticatedImNavHost` Composable, find the `Scaffold(...)` call (currently at lines 338–365) and change it from:
+In `app/src/main/java/com/buyansong/im/MainActivity.kt`, inside the `AuthenticatedImNavHost` Composable, find the `Scaffold(...)` call (currently at lines 338–365) and change it from:
 
 ```kotlin
     Scaffold(

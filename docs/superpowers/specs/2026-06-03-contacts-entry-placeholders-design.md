@@ -27,9 +27,9 @@ Out of scope:
 
 ## Source Context
 
-- Target file: `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
+- Target file: `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
 - Drawable convention reference: `app/src/main/res/drawable/ic_add_circle.xml` (28dp, single-color stroke)
-- UI constants: `app/src/main/java/com/codex/im/ui/ByteImUi.kt` (`ByteImColors`, `ByteImDimensions`)
+- UI constants: `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt` (`ByteImColors`, `ByteImDimensions`)
 - ByteIM UI redesign spec: `docs/superpowers/specs/2026-06-01-byteim-ui-redesign-design.md`
 
 ## Visual System
@@ -59,7 +59,7 @@ Both use `android:width="28dp"`, `android:height="28dp"`, `android:viewportWidth
 
 ### `ContactEntryItem`
 
-Private Composable in `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt` (kept in the same file for now — small enough that a separate file adds no value).
+Private Composable in `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt` (kept in the same file for now — small enough that a separate file adds no value).
 
 Signature:
 

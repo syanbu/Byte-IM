@@ -625,43 +625,43 @@ Bug note:
 
 Android:
 
-- `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`
-- `app/src/main/java/com/codex/im/MainActivity.kt`
-- `app/src/main/java/com/codex/im/storage/StorageModels.kt`
-- `app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt`
-- `app/src/main/java/com/codex/im/storage/MessageDao.kt`
-- `app/src/main/java/com/codex/im/storage/AndroidMessageDao.kt`
-- `app/src/main/java/com/codex/im/storage/ConversationDao.kt`
-- `app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt`
-- `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- `app/src/main/java/com/codex/im/chat/ChatDisplayPolicy.kt`
-- `app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
-- `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- `app/src/main/java/com/codex/im/group/GroupCreateViewModel.kt`
-- `app/src/main/java/com/codex/im/group/GroupCreateScreen.kt`
+- `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt`
+- `app/src/main/java/com/buyansong/im/MainActivity.kt`
+- `app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
+- `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt`
+- `app/src/main/java/com/buyansong/im/storage/MessageDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/AndroidMessageDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/ConversationDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt`
+- `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatDisplayPolicy.kt`
+- `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
+- `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- `app/src/main/java/com/buyansong/im/group/GroupCreateViewModel.kt`
+- `app/src/main/java/com/buyansong/im/group/GroupCreateScreen.kt`
 
 Likely new Android files:
 
-- `app/src/main/java/com/codex/im/group/GroupApi.kt`
-- `app/src/main/java/com/codex/im/group/OkHttpGroupApi.kt`
-- `app/src/main/java/com/codex/im/group/GroupJsonParser.kt`
-- `app/src/main/java/com/codex/im/group/GroupRepository.kt`
-- `app/src/main/java/com/codex/im/storage/GroupDao.kt`
-- `app/src/main/java/com/codex/im/storage/AndroidGroupDao.kt`
-- `app/src/main/java/com/codex/im/chat/MentionDisplayPolicy.kt`
+- `app/src/main/java/com/buyansong/im/group/GroupApi.kt`
+- `app/src/main/java/com/buyansong/im/group/OkHttpGroupApi.kt`
+- `app/src/main/java/com/buyansong/im/group/GroupJsonParser.kt`
+- `app/src/main/java/com/buyansong/im/group/GroupRepository.kt`
+- `app/src/main/java/com/buyansong/im/storage/GroupDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/AndroidGroupDao.kt`
+- `app/src/main/java/com/buyansong/im/chat/MentionDisplayPolicy.kt`
 
 Mock-server:
 
-- `mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java`
-- `mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java`
-- `mock-server/src/main/java/com/codex/imserver/protocol/ImCommand.java`
+- `mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java`
+- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java`
+- `mock-server/src/main/java/com/buyansong/imserver/protocol/ImCommand.java`
 
 Likely new mock-server files:
 
-- `mock-server/src/main/java/com/codex/imserver/group/GroupService.java`
-- `mock-server/src/main/java/com/codex/imserver/group/GroupStore.java`
+- `mock-server/src/main/java/com/buyansong/imserver/group/GroupService.java`
+- `mock-server/src/main/java/com/buyansong/imserver/group/GroupStore.java`
 
 ## Test Plan
 
@@ -691,7 +691,7 @@ Mock-server tests:
 Suggested verification commands:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.group.* --tests com.codex.im.message.*Group* --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.group.* --tests com.buyansong.im.message.*Group* --console=plain
 ```
 
 ```powershell

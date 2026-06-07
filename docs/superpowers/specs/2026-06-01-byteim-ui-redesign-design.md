@@ -19,13 +19,13 @@ The app brand changes from `SelfHostedIM` to `ByteIM` for user-visible product t
 
 The current client is an Android Kotlin single-module app using Jetpack Compose. The UI surface is mainly implemented in:
 
-- `app/src/main/java/com/codex/im/auth/LoginScreen.kt`
-- `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- `app/src/main/java/com/codex/im/chat/ChatImagePreviewScreen.kt`
-- `app/src/main/java/com/codex/im/group/GroupCreateScreen.kt`
-- `app/src/main/java/com/codex/im/profile/MeScreen.kt`
+- `app/src/main/java/com/buyansong/im/auth/LoginScreen.kt`
+- `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatImagePreviewScreen.kt`
+- `app/src/main/java/com/buyansong/im/group/GroupCreateScreen.kt`
+- `app/src/main/java/com/buyansong/im/profile/MeScreen.kt`
 
 ## Scope
 

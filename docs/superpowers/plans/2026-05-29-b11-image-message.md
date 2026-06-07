@@ -13,11 +13,11 @@
 ### Task 1: Expand Storage Model For Image Messages
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/storage/StorageModels.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/MessageDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/AndroidMessageDao.kt`
-- Test: `app/src/test/java/com/codex/im/storage/MessageDaoContractTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/MessageDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/AndroidMessageDao.kt`
+- Test: `app/src/test/java/com/buyansong/im/storage/MessageDaoContractTest.kt`
 
 - [ ] **Step 1: Write the failing DAO tests**
 
@@ -85,7 +85,7 @@ fun updateImageUploadResultTransitionsToSendingWithoutCreatingNewRow() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.MessageDaoContractTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.MessageDaoContractTest --console=plain`
 
 Expected: FAIL because `ChatMessage` has no image fields and `MessageDao` lacks image update/query APIs.
 
@@ -143,28 +143,28 @@ interface MessageDao {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.MessageDaoContractTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.MessageDaoContractTest --console=plain`
 
 Expected: PASS with image field persistence and update coverage green.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/storage/StorageModels.kt app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt app/src/main/java/com/codex/im/storage/MessageDao.kt app/src/main/java/com/codex/im/storage/AndroidMessageDao.kt app/src/test/java/com/codex/im/storage/MessageDaoContractTest.kt
+git add app/src/main/java/com/buyansong/im/storage/StorageModels.kt app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt app/src/main/java/com/buyansong/im/storage/MessageDao.kt app/src/main/java/com/buyansong/im/storage/AndroidMessageDao.kt app/src/test/java/com/buyansong/im/storage/MessageDaoContractTest.kt
 git commit -m "feat: expand storage for image messages"
 ```
 
 ### Task 2: Add Chat Image Upload Target API
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/profile/AvatarUploadApi.kt`
-- Create: `app/src/main/java/com/codex/im/message/ImageUploadModels.kt`
-- Create: `app/src/main/java/com/codex/im/message/ImageUploadJsonParser.kt`
-- Create: `app/src/main/java/com/codex/im/message/OkHttpImageUploadApi.kt`
-- Test: `app/src/test/java/com/codex/im/message/ImageUploadJsonParserTest.kt`
-- Modify: `mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/oss/OssUploadService.java`
-- Test: `mock-server/src/test/java/com/codex/imserver/oss/OssUploadServiceTest.java`
+- Modify: `app/src/main/java/com/buyansong/im/profile/AvatarUploadApi.kt`
+- Create: `app/src/main/java/com/buyansong/im/message/ImageUploadModels.kt`
+- Create: `app/src/main/java/com/buyansong/im/message/ImageUploadJsonParser.kt`
+- Create: `app/src/main/java/com/buyansong/im/message/OkHttpImageUploadApi.kt`
+- Test: `app/src/test/java/com/buyansong/im/message/ImageUploadJsonParserTest.kt`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/oss/OssUploadService.java`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/oss/OssUploadServiceTest.java`
 
 - [ ] **Step 1: Write failing parser and server tests**
 
@@ -201,7 +201,7 @@ public void messageImageUploadTargetsIncludeThumbnailAndOriginal() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.ImageUploadJsonParserTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.ImageUploadJsonParserTest --console=plain`
 
 Run: `mvn -q test -Dtest=OssUploadServiceTest` in `mock-server`
 
@@ -242,7 +242,7 @@ public String messageImageUploadTargets(String userId, String messageId, String 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.ImageUploadJsonParserTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.ImageUploadJsonParserTest --console=plain`
 
 Run: `mvn -q test -Dtest=OssUploadServiceTest` in `mock-server`
 
@@ -251,17 +251,17 @@ Expected: PASS with both Android parser and backend target generation green.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/message/ImageUploadModels.kt app/src/main/java/com/codex/im/message/ImageUploadJsonParser.kt app/src/main/java/com/codex/im/message/OkHttpImageUploadApi.kt app/src/test/java/com/codex/im/message/ImageUploadJsonParserTest.kt mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java mock-server/src/main/java/com/codex/imserver/oss/OssUploadService.java mock-server/src/test/java/com/codex/imserver/oss/OssUploadServiceTest.java
+git add app/src/main/java/com/buyansong/im/message/ImageUploadModels.kt app/src/main/java/com/buyansong/im/message/ImageUploadJsonParser.kt app/src/main/java/com/buyansong/im/message/OkHttpImageUploadApi.kt app/src/test/java/com/buyansong/im/message/ImageUploadJsonParserTest.kt mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java mock-server/src/main/java/com/buyansong/imserver/oss/OssUploadService.java mock-server/src/test/java/com/buyansong/imserver/oss/OssUploadServiceTest.java
 git commit -m "feat: add chat image upload target API"
 ```
 
 ### Task 3: Split Upload Failure From Send Failure In Repository
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/ConversationDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt`
-- Test: `app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/ConversationDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt`
+- Test: `app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt`
 
 - [ ] **Step 1: Write the failing repository tests**
 
@@ -315,7 +315,7 @@ fun markImageUploadFailedDoesNotCreatePendingEntry() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest --console=plain`
 
 Expected: FAIL because image-message repository APIs and conversation preview branching do not exist.
 
@@ -356,24 +356,24 @@ fun createLocalImageMessage(...): ChatMessage {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest --console=plain`
 
 Expected: PASS with upload-vs-send failure split verified.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/message/MessageRepository.kt app/src/main/java/com/codex/im/storage/ConversationDao.kt app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt
+git add app/src/main/java/com/buyansong/im/message/MessageRepository.kt app/src/main/java/com/buyansong/im/storage/ConversationDao.kt app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt
 git commit -m "feat: separate image upload and send reliability"
 ```
 
 ### Task 4: Extend Packet JSON And Incoming Persistence For Image Messages
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- Modify: `mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java`
-- Test: `app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt`
-- Test: `mock-server/src/test/java/com/codex/imserver/session/MessageRouterTest.java`
+- Modify: `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java`
+- Test: `app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/session/MessageRouterTest.java`
 
 - [ ] **Step 1: Write failing tests for outgoing JSON and incoming persistence**
 
@@ -408,7 +408,7 @@ public void duplicateImageMessageIdReturnsOriginalAckOnly() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest --console=plain`
 
 Run: `mvn -q -Dtest=MessageRouterTest test` in `mock-server`
 
@@ -447,7 +447,7 @@ private fun ChatMessage.toSendBody(): String {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest --console=plain`
 
 Run: `mvn -q -Dtest=MessageRouterTest test` in `mock-server`
 
@@ -456,16 +456,16 @@ Expected: PASS with image send/receive JSON and idempotent retry behavior preser
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/message/MessageRepository.kt app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java mock-server/src/test/java/com/codex/imserver/session/MessageRouterTest.java
+git add app/src/main/java/com/buyansong/im/message/MessageRepository.kt app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java mock-server/src/test/java/com/buyansong/imserver/session/MessageRouterTest.java
 git commit -m "feat: persist image payloads through IM packets"
 ```
 
 ### Task 5: Orchestrate Image Pick, Upload, And Retry In ChatViewModel
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/message/ChatImageCompressor.kt`
-- Modify: `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
-- Test: `app/src/test/java/com/codex/im/chat/ChatViewModelTest.kt`
+- Create: `app/src/main/java/com/buyansong/im/message/ChatImageCompressor.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
+- Test: `app/src/test/java/com/buyansong/im/chat/ChatViewModelTest.kt`
 
 - [ ] **Step 1: Write the failing view-model tests**
 
@@ -496,7 +496,7 @@ fun sendImageMarksUploadFailedWhenOssUploadFails() = runTest {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatViewModelTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatViewModelTest --console=plain`
 
 Expected: FAIL because `sendImage` orchestration and image upload dependencies do not exist.
 
@@ -542,14 +542,14 @@ suspend fun sendImage(selected: SelectedChatImage, now: Long = System.currentTim
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatViewModelTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatViewModelTest --console=plain`
 
 Expected: PASS with upload success and upload failure flows covered.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/message/ChatImageCompressor.kt app/src/main/java/com/codex/im/chat/ChatViewModel.kt app/src/test/java/com/codex/im/chat/ChatViewModelTest.kt
+git add app/src/main/java/com/buyansong/im/message/ChatImageCompressor.kt app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt app/src/test/java/com/buyansong/im/chat/ChatViewModelTest.kt
 git commit -m "feat: orchestrate image upload from chat view model"
 ```
 
@@ -557,10 +557,10 @@ git commit -m "feat: orchestrate image upload from chat view model"
 
 **Files:**
 - Modify: `app/build.gradle`
-- Modify: `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- Create: `app/src/main/java/com/codex/im/chat/ChatImageBubble.kt`
-- Create: `app/src/main/java/com/codex/im/chat/ChatImagePreviewScreen.kt`
-- Test: `app/src/test/java/com/codex/im/chat/ChatDisplayPolicyTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- Create: `app/src/main/java/com/buyansong/im/chat/ChatImageBubble.kt`
+- Create: `app/src/main/java/com/buyansong/im/chat/ChatImagePreviewScreen.kt`
+- Test: `app/src/test/java/com/buyansong/im/chat/ChatDisplayPolicyTest.kt`
 
 - [ ] **Step 1: Write the failing display-policy test**
 
@@ -599,7 +599,7 @@ fun imageMessagePreviewUsesPlaceholderCopy() {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatDisplayPolicyTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --console=plain`
 
 Expected: FAIL because image preview behavior and image bubble support are not wired.
 
@@ -630,14 +630,14 @@ fun ChatImageBubble(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatDisplayPolicyTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --console=plain`
 
 Expected: PASS and project compiles with Coil dependency added.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/build.gradle app/src/main/java/com/codex/im/chat/ChatScreen.kt app/src/main/java/com/codex/im/chat/ChatImageBubble.kt app/src/main/java/com/codex/im/chat/ChatImagePreviewScreen.kt app/src/test/java/com/codex/im/chat/ChatDisplayPolicyTest.kt
+git add app/build.gradle app/src/main/java/com/buyansong/im/chat/ChatScreen.kt app/src/main/java/com/buyansong/im/chat/ChatImageBubble.kt app/src/main/java/com/buyansong/im/chat/ChatImagePreviewScreen.kt app/src/test/java/com/buyansong/im/chat/ChatDisplayPolicyTest.kt
 git commit -m "feat: render chat images with coil"
 ```
 
@@ -649,7 +649,7 @@ git commit -m "feat: render chat images with coil"
 
 - [ ] **Step 1: Run focused Android tests**
 
-Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.MessageDaoContractTest --tests com.codex.im.message.MessageRepositoryTest --tests com.codex.im.chat.ChatViewModelTest --tests com.codex.im.chat.ChatDisplayPolicyTest --console=plain`
+Run: `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.MessageDaoContractTest --tests com.buyansong.im.message.MessageRepositoryTest --tests com.buyansong.im.chat.ChatViewModelTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --console=plain`
 
 Expected: PASS with image-message storage, repository, and chat-flow coverage green.
 

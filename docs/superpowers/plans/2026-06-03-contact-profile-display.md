@@ -18,32 +18,32 @@
 
 | File | Responsibility |
 |---|---|
-| `app/src/main/java/com/codex/im/SelfHostedImRoute.kt` (modify) | Add `ContactProfile` data object with `userId` path arg. |
-| `app/src/main/java/com/codex/im/profile/ProfileRepository.kt` (modify) | Add `refreshProfile(accessToken, userId)` that always calls `GET /users/{userId}` and persists the result even when local cache exists. |
-| `app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt` (new) | Pure-Kotlin label constants and `genderLabel(gender)` helper. |
-| `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt` (new) | Read-only state machine: cached-first render, background force-refresh, error handling, retry. |
-| `app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt` (new) | `ContactProfileScreen(...)` + `ContactProfileHeader`, `ContactProfileDataRows`, `ContactProfileSendMessageBar`, `ContactProfileFailureBlock`. |
-| `app/src/main/java/com/codex/im/MainActivity.kt` (modify) | Add `composable(SelfHostedImRoute.ContactProfile.pattern)` block. Change Contacts block's `onOpenContact` to navigate to `ContactProfile` instead of `Chat`. Route chat avatar taps to `ContactProfile` or `Me`. |
-| `app/src/main/java/com/codex/im/chat/ChatScreen.kt` (modify) | Make incoming/outgoing message avatars clickable and emit the tapped user ID. |
-| `app/src/main/java/com/codex/im/chat/ChatDisplayPolicy.kt` (modify) | Resolve which user ID belongs to a rendered message avatar. |
-| `app/src/test/java/com/codex/im/SelfHostedImRouteTest.kt` (modify) | Add 4 tests for `ContactProfile.createRoute`. |
-| `app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt` (modify) | Add tests for `refreshProfile` forcing remote fetch and persisting fresh data. |
-| `app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt` (new) | Testable label constants and `genderLabel`. |
-| `app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt` (new) | ViewModel state machine tests (8 tests). |
-| `app/src/test/java/com/codex/im/chat/ChatDisplayPolicyTest.kt` (modify) | Cover avatar-to-user-id resolution. |
-| `app/src/test/java/com/codex/im/chat/ChatMessageRowLayoutTest.kt` (modify) | Guard chat avatar click wiring. |
+| `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt` (modify) | Add `ContactProfile` data object with `userId` path arg. |
+| `app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt` (modify) | Add `refreshProfile(accessToken, userId)` that always calls `GET /users/{userId}` and persists the result even when local cache exists. |
+| `app/src/main/java/com/buyansong/im/contacts/ContactProfileDisplayPolicy.kt` (new) | Pure-Kotlin label constants and `genderLabel(gender)` helper. |
+| `app/src/main/java/com/buyansong/im/contacts/ContactProfileViewModel.kt` (new) | Read-only state machine: cached-first render, background force-refresh, error handling, retry. |
+| `app/src/main/java/com/buyansong/im/contacts/ContactProfileScreen.kt` (new) | `ContactProfileScreen(...)` + `ContactProfileHeader`, `ContactProfileDataRows`, `ContactProfileSendMessageBar`, `ContactProfileFailureBlock`. |
+| `app/src/main/java/com/buyansong/im/MainActivity.kt` (modify) | Add `composable(SelfHostedImRoute.ContactProfile.pattern)` block. Change Contacts block's `onOpenContact` to navigate to `ContactProfile` instead of `Chat`. Route chat avatar taps to `ContactProfile` or `Me`. |
+| `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt` (modify) | Make incoming/outgoing message avatars clickable and emit the tapped user ID. |
+| `app/src/main/java/com/buyansong/im/chat/ChatDisplayPolicy.kt` (modify) | Resolve which user ID belongs to a rendered message avatar. |
+| `app/src/test/java/com/buyansong/im/SelfHostedImRouteTest.kt` (modify) | Add 4 tests for `ContactProfile.createRoute`. |
+| `app/src/test/java/com/buyansong/im/profile/ProfileRepositoryTest.kt` (modify) | Add tests for `refreshProfile` forcing remote fetch and persisting fresh data. |
+| `app/src/test/java/com/buyansong/im/contacts/ContactProfileDisplayPolicyTest.kt` (new) | Testable label constants and `genderLabel`. |
+| `app/src/test/java/com/buyansong/im/contacts/ContactProfileViewModelTest.kt` (new) | ViewModel state machine tests (8 tests). |
+| `app/src/test/java/com/buyansong/im/chat/ChatDisplayPolicyTest.kt` (modify) | Cover avatar-to-user-id resolution. |
+| `app/src/test/java/com/buyansong/im/chat/ChatMessageRowLayoutTest.kt` (modify) | Guard chat avatar click wiring. |
 
 ---
 
 ## Task 1: Add `ContactProfile` route to `SelfHostedImRoute`
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`
-- Modify: `app/src/test/java/com/codex/im/SelfHostedImRouteTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt`
+- Modify: `app/src/test/java/com/buyansong/im/SelfHostedImRouteTest.kt`
 
 - [ ] **Step 1: Add failing tests for the new route**
 
-Open `app/src/test/java/com/codex/im/SelfHostedImRouteTest.kt` and add these four tests after the existing `singleChatRouteBuildsCanonicalSingleConversationId` test (inside the class, before the closing brace):
+Open `app/src/test/java/com/buyansong/im/SelfHostedImRouteTest.kt` and add these four tests after the existing `singleChatRouteBuildsCanonicalSingleConversationId` test (inside the class, before the closing brace):
 
 ```kotlin
 @Test
@@ -70,13 +70,13 @@ fun contactProfileRouteIgnoresBlankUserId() {
 
 - [ ] **Step 2: Run the new tests to verify they fail**
 
-Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.SelfHostedImRouteTest --console=plain`
 
 Expected: FAIL with compile error `Unresolved reference: ContactProfile` (the data object does not exist yet).
 
 - [ ] **Step 3: Add the `ContactProfile` data object to `SelfHostedImRoute.kt`**
 
-Open `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`. After the existing `data object Me : SelfHostedImRoute("me")` line, add the new object before the `data object Chat` block:
+Open `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt`. After the existing `data object Me : SelfHostedImRoute("me")` line, add the new object before the `data object Chat` block:
 
 ```kotlin
     data object ContactProfile : SelfHostedImRoute("contact-profile/{userId}") {
@@ -95,14 +95,14 @@ Open `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`. After the existing `
 
 - [ ] **Step 4: Run the new tests to verify they pass**
 
-Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.SelfHostedImRouteTest --console=plain`
 
 Expected: PASS (all 11 tests in the file pass — 7 pre-existing + 4 new).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/SelfHostedImRoute.kt app/src/test/java/com/codex/im/SelfHostedImRouteTest.kt && git commit -m "feat(contacts): add ContactProfile route with userId path arg"
+git add app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt app/src/test/java/com/buyansong/im/SelfHostedImRouteTest.kt && git commit -m "feat(contacts): add ContactProfile route with userId path arg"
 ```
 
 ---
@@ -110,17 +110,17 @@ git add app/src/main/java/com/codex/im/SelfHostedImRoute.kt app/src/test/java/co
 ## Task 2: Create `ContactProfileDisplayPolicy` (TDD)
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt`
-- Create: `app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt`
+- Create: `app/src/main/java/com/buyansong/im/contacts/ContactProfileDisplayPolicy.kt`
+- Create: `app/src/test/java/com/buyansong/im/contacts/ContactProfileDisplayPolicyTest.kt`
 
 - [ ] **Step 1: Write the failing test file**
 
-Create `app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt` with:
+Create `app/src/test/java/com/buyansong/im/contacts/ContactProfileDisplayPolicyTest.kt` with:
 
 ```kotlin
-package com.codex.im.contacts
+package com.buyansong.im.contacts
 
-import com.codex.im.storage.Gender
+import com.buyansong.im.storage.Gender
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -170,18 +170,18 @@ class ContactProfileDisplayPolicyTest {
 
 - [ ] **Step 2: Run the test file to verify it fails**
 
-Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileDisplayPolicyTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.contacts.ContactProfileDisplayPolicyTest --console=plain`
 
 Expected: FAIL with compile error `Unresolved reference: ContactProfileDisplayPolicy`.
 
 - [ ] **Step 3: Create the display policy file**
 
-Create `app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt` with:
+Create `app/src/main/java/com/buyansong/im/contacts/ContactProfileDisplayPolicy.kt` with:
 
 ```kotlin
-package com.codex.im.contacts
+package com.buyansong.im.contacts
 
-import com.codex.im.storage.Gender
+import com.buyansong.im.storage.Gender
 
 object ContactProfileDisplayPolicy {
     const val title = "详细资料"
@@ -205,14 +205,14 @@ object ContactProfileDisplayPolicy {
 
 - [ ] **Step 4: Run the test file to verify it passes**
 
-Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileDisplayPolicyTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.contacts.ContactProfileDisplayPolicyTest --console=plain`
 
 Expected: PASS (7 tests, all green).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt app/src/test/java/com/codex/im/contacts/ContactProfileDisplayPolicyTest.kt && git commit -m "feat(contacts): add ContactProfileDisplayPolicy with testable labels"
+git add app/src/main/java/com/buyansong/im/contacts/ContactProfileDisplayPolicy.kt app/src/test/java/com/buyansong/im/contacts/ContactProfileDisplayPolicyTest.kt && git commit -m "feat(contacts): add ContactProfileDisplayPolicy with testable labels"
 ```
 
 ---
@@ -220,14 +220,14 @@ git add app/src/main/java/com/codex/im/contacts/ContactProfileDisplayPolicy.kt a
 ## Task 3: Create `ContactProfileViewModel` (TDD)
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/profile/ProfileRepository.kt`
-- Modify: `app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt`
-- Create: `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt`
-- Create: `app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt`
+- Modify: `app/src/test/java/com/buyansong/im/profile/ProfileRepositoryTest.kt`
+- Create: `app/src/main/java/com/buyansong/im/contacts/ContactProfileViewModel.kt`
+- Create: `app/src/test/java/com/buyansong/im/contacts/ContactProfileViewModelTest.kt`
 
 - [ ] **Step 0: Add the force-refresh repository path (TDD)**
 
-Open `app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt`, add `import org.junit.Assert.assertNull`, and add tests proving:
+Open `app/src/test/java/com/buyansong/im/profile/ProfileRepositoryTest.kt`, add `import org.junit.Assert.assertNull`, and add tests proving:
 
 ```kotlin
 @Test
@@ -271,25 +271,25 @@ suspend fun refreshProfile(accessToken: String, userId: String): UserProfile? {
 }
 ```
 
-Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.profile.ProfileRepositoryTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.profile.ProfileRepositoryTest --console=plain`
 
 Expected: PASS after the implementation. This method is intentionally different from `getProfile(...)`: `getProfile(...)` may return local cache without network; `refreshProfile(...)` always attempts the remote single-user endpoint.
 
 - [ ] **Step 1: Write the failing test file**
 
-Create `app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt` with:
+Create `app/src/test/java/com/buyansong/im/contacts/ContactProfileViewModelTest.kt` with:
 
 ```kotlin
-package com.codex.im.contacts
+package com.buyansong.im.contacts
 
-import com.codex.im.auth.AuthSession
-import com.codex.im.profile.ProfileApi
-import com.codex.im.profile.ProfileBatchResult
-import com.codex.im.profile.ProfileRepository
-import com.codex.im.profile.ProfileResult
-import com.codex.im.storage.Gender
-import com.codex.im.storage.InMemoryUserProfileDao
-import com.codex.im.storage.UserProfile
+import com.buyansong.im.auth.AuthSession
+import com.buyansong.im.profile.ProfileApi
+import com.buyansong.im.profile.ProfileBatchResult
+import com.buyansong.im.profile.ProfileRepository
+import com.buyansong.im.profile.ProfileResult
+import com.buyansong.im.storage.Gender
+import com.buyansong.im.storage.InMemoryUserProfileDao
+import com.buyansong.im.storage.UserProfile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -513,21 +513,21 @@ class ContactProfileViewModelTest {
 
 - [ ] **Step 2: Run the test file to verify it fails**
 
-Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileViewModelTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.contacts.ContactProfileViewModelTest --console=plain`
 
 Expected: FAIL with compile error `Unresolved reference: ContactProfileViewModel` / `ContactProfileUiState` (the display policy already exists from Task 2).
 
 - [ ] **Step 3: Create the ViewModel file**
 
-Create `app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt` with:
+Create `app/src/main/java/com/buyansong/im/contacts/ContactProfileViewModel.kt` with:
 
 ```kotlin
-package com.codex.im.contacts
+package com.buyansong.im.contacts
 
-import com.codex.im.auth.AuthSession
-import com.codex.im.auth.ValidSessionProvider
-import com.codex.im.profile.ProfileRepository
-import com.codex.im.storage.UserProfile
+import com.buyansong.im.auth.AuthSession
+import com.buyansong.im.auth.ValidSessionProvider
+import com.buyansong.im.profile.ProfileRepository
+import com.buyansong.im.storage.UserProfile
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -600,14 +600,14 @@ class ContactProfileViewModel(
 
 - [ ] **Step 4: Run the test file to verify it passes**
 
-Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.contacts.ContactProfileViewModelTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.contacts.ContactProfileViewModelTest --console=plain`
 
 Expected: PASS (8 tests, all green).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/profile/ProfileRepository.kt app/src/test/java/com/codex/im/profile/ProfileRepositoryTest.kt app/src/main/java/com/codex/im/contacts/ContactProfileViewModel.kt app/src/test/java/com/codex/im/contacts/ContactProfileViewModelTest.kt && git commit -m "feat(contacts): add ContactProfileViewModel with cached-first refresh"
+git add app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt app/src/test/java/com/buyansong/im/profile/ProfileRepositoryTest.kt app/src/main/java/com/buyansong/im/contacts/ContactProfileViewModel.kt app/src/test/java/com/buyansong/im/contacts/ContactProfileViewModelTest.kt && git commit -m "feat(contacts): add ContactProfileViewModel with cached-first refresh"
 ```
 
 ---
@@ -615,16 +615,16 @@ git add app/src/main/java/com/codex/im/profile/ProfileRepository.kt app/src/test
 ## Task 4: Create `ContactProfileScreen` (compile-verified)
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt`
+- Create: `app/src/main/java/com/buyansong/im/contacts/ContactProfileScreen.kt`
 
 This task does not have unit tests. Compose UI in this project is verified by JVM unit tests of the underlying state machines and policies, plus a `assembleDebug` build. Visual behavior is verified by manual emulator runs documented in the spec's Acceptance Criteria.
 
 - [ ] **Step 1: Create the Composable file**
 
-Create `app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt` with:
+Create `app/src/main/java/com/buyansong/im/contacts/ContactProfileScreen.kt` with:
 
 ```kotlin
-package com.codex.im.contacts
+package com.buyansong.im.contacts
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -657,12 +657,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.codex.im.storage.UserProfile
-import com.codex.im.ui.AvatarImage
-import com.codex.im.ui.ByteImColors
-import com.codex.im.ui.ByteImDimensions
-import com.codex.im.ui.ByteImListSurface
-import com.codex.im.ui.ByteImTopBar
+import com.buyansong.im.storage.UserProfile
+import com.buyansong.im.ui.AvatarImage
+import com.buyansong.im.ui.ByteImColors
+import com.buyansong.im.ui.ByteImDimensions
+import com.buyansong.im.ui.ByteImListSurface
+import com.buyansong.im.ui.ByteImTopBar
 
 @Composable
 fun ContactProfileScreen(
@@ -901,12 +901,12 @@ Run: `bash ./gradlew :app:assembleDebug --console=plain`
 
 Expected: BUILD SUCCESSFUL. The `ContactProfileScreen` file references `ContactProfileViewModel`, `ContactProfileUiState`, `ContactProfileDisplayPolicy` (all created in Tasks 1-3), and existing `AvatarImage`, `ByteImTopBar`, `ByteImListSurface`, `ByteImColors`, `ByteImDimensions`. No new import surprises — every import is to a symbol that already exists in the codebase or was created in earlier tasks.
 
-If the build fails with "Unresolved reference" for `ByteImColors.PrimaryGreen`, `ByteImDimensions.ProfileAvatarSize`, `AvatarImage`, `ByteImTopBar`, or `ByteImListSurface`, those are existing symbols defined in `app/src/main/java/com/codex/im/ui/ByteImUi.kt` and `app/src/main/java/com/codex/im/ui/AvatarImage.kt`. Re-check the import list.
+If the build fails with "Unresolved reference" for `ByteImColors.PrimaryGreen`, `ByteImDimensions.ProfileAvatarSize`, `AvatarImage`, `ByteImTopBar`, or `ByteImListSurface`, those are existing symbols defined in `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt` and `app/src/main/java/com/buyansong/im/ui/AvatarImage.kt`. Re-check the import list.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt && git commit -m "feat(contacts): add ContactProfileScreen with read-only profile and sticky send-message bar"
+git add app/src/main/java/com/buyansong/im/contacts/ContactProfileScreen.kt && git commit -m "feat(contacts): add ContactProfileScreen with read-only profile and sticky send-message bar"
 ```
 
 ---
@@ -914,20 +914,20 @@ git add app/src/main/java/com/codex/im/contacts/ContactProfileScreen.kt && git c
 ## Task 5: Wire `ContactProfileScreen` into `MainActivity`
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 
 This task does not have unit tests. The wiring is verified by `bash ./gradlew :app:assembleDebug` (compile) and `bash ./gradlew :app:testDebugUnitTest` (no regression on existing tests).
 
 - [ ] **Step 1: Add the import for `ContactProfileScreen` and `ContactProfileViewModel`**
 
-Open `app/src/main/java/com/codex/im/MainActivity.kt`. In the `import com.codex.im.contacts.ContactListScreen` block, add two new imports (alphabetical order):
+Open `app/src/main/java/com/buyansong/im/MainActivity.kt`. In the `import com.buyansong.im.contacts.ContactListScreen` block, add two new imports (alphabetical order):
 
 ```kotlin
-import com.codex.im.contacts.ContactListScreen
-import com.codex.im.contacts.ContactListViewModel
-import com.codex.im.contacts.ContactProfileScreen
-import com.codex.im.contacts.ContactProfileViewModel
-import com.codex.im.contacts.DemoContactResolver
+import com.buyansong.im.contacts.ContactListScreen
+import com.buyansong.im.contacts.ContactListViewModel
+import com.buyansong.im.contacts.ContactProfileScreen
+import com.buyansong.im.contacts.ContactProfileViewModel
+import com.buyansong.im.contacts.DemoContactResolver
 ```
 
 - [ ] **Step 2: Change `onOpenContact` in the `Contacts` composable to navigate to `ContactProfile`**
@@ -988,18 +988,18 @@ Run: `bash ./gradlew :app:assembleDebug --console=plain`
 
 Expected: BUILD SUCCESSFUL.
 
-If the build fails with `Unresolved reference: ContactProfileScreen` or `Unresolved reference: ContactProfileViewModel`, re-check the imports added in Step 1 — they must be on their own lines and point to the new files in `com.codex.im.contacts`.
+If the build fails with `Unresolved reference: ContactProfileScreen` or `Unresolved reference: ContactProfileViewModel`, re-check the imports added in Step 1 — they must be on their own lines and point to the new files in `com.buyansong.im.contacts`.
 
 - [ ] **Step 5: Re-run existing tests to confirm no regression**
 
-Run: `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --tests com.codex.im.contacts.ContactListViewModelTest --tests com.codex.im.BottomNavigationSpecTest --tests com.codex.im.TopLevelBackPolicyTest --tests com.codex.im.ChatBackPolicyTest --console=plain`
+Run: `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.SelfHostedImRouteTest --tests com.buyansong.im.contacts.ContactListViewModelTest --tests com.buyansong.im.BottomNavigationSpecTest --tests com.buyansong.im.TopLevelBackPolicyTest --tests com.buyansong.im.ChatBackPolicyTest --console=plain`
 
 Expected: PASS. The change in Step 2 only altered the `onOpenContact` lambda body; the lambda signature is unchanged, so `ContactListScreen` accepts it without recompilation issues. The change in Step 3 added a new `composable` block without removing any existing one, so the chat back policy and top-level back policy tests stay green.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/MainActivity.kt && git commit -m "feat(contacts): wire ContactProfileScreen into MainActivity NavHost"
+git add app/src/main/java/com/buyansong/im/MainActivity.kt && git commit -m "feat(contacts): wire ContactProfileScreen into MainActivity NavHost"
 ```
 
 ---
@@ -1071,7 +1071,7 @@ This plan was self-reviewed against the spec before saving:
    - Tapping a contact row navigates to the new page → Task 5 Step 2.
    - Page shows avatar / nickname / gender / signature → Task 4 (`ContactProfileContent` + `ContactProfileDataRows`).
    - Page does NOT show `userId` / `phone` → Task 4 (no ID row in `ContactProfileDataRows`).
-   - Page uses existing ByteIM UI constants → Task 4 (all imports from `com.codex.im.ui.*`).
+   - Page uses existing ByteIM UI constants → Task 4 (all imports from `com.buyansong.im.ui.*`).
    - Sticky bottom "发送消息" button, enabled only when profile loaded → Task 4 (`ContactProfileSendMessageBar` + `enabled = state.profile != null`).
    - Tapping "发送消息" navigates to single-chat → Task 5 Step 3 (`onSendMessage` callback).
    - Tapping top-bar Back returns to the previous route (Contacts for the Contacts entry point; chat for chat-avatar entry points) → Task 5 Step 3 (`onBack = { navController.popBackStack() }`).

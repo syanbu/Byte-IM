@@ -13,11 +13,11 @@
 ### Task 1: Retry Failed Image Messages
 
 **Files:**
-- Modify: `app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt`
-- Modify: `app/src/test/java/com/codex/im/chat/ChatViewModelTest.kt`
-- Modify: `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- Modify: `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
-- Modify: `app/src/main/java/com/codex/im/message/ImageUploadModels.kt`
+- Modify: `app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt`
+- Modify: `app/src/test/java/com/buyansong/im/chat/ChatViewModelTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
+- Modify: `app/src/main/java/com/buyansong/im/message/ImageUploadModels.kt`
 
 - [ ] Write failing repository tests for requeueing a failed image message with existing OSS URLs.
 - [ ] Write failing ViewModel tests for `UPLOAD_FAILED` retry using local cached files and for `FAILED` retry without OSS upload.
@@ -29,7 +29,7 @@
 ### Task 2: Failure Icon Click
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
 
 - [ ] Wire the existing red failure indicator to call `retryImageMessage(messageId)` for `UPLOAD_FAILED` and `FAILED`.
 - [ ] Keep the visual label as the same red exclamation mark.
@@ -37,9 +37,9 @@
 ### Task 3: Multi-Image Selection
 
 **Files:**
-- Modify: `app/src/test/java/com/codex/im/chat/ChatViewModelTest.kt`
-- Modify: `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
-- Modify: `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
+- Modify: `app/src/test/java/com/buyansong/im/chat/ChatViewModelTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
 - Modify: `docs/status/B11-image-message-design-status.md`
 
 - [ ] Write failing ViewModel test that `sendImages` continues after one image fails.

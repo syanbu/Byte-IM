@@ -83,7 +83,7 @@ After the fix:
 
 Verified on 2026-06-04:
 
-- `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.connection.ConnectionLifecycleManagerTest --console=plain`
+- `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.connection.ConnectionLifecycleManagerTest --console=plain`
   - Passed.
   - Covers initial connect when `tokenProvider` is temporarily unavailable.
   - Covers reconnect when `tokenProvider` is temporarily unavailable after a prior authenticated session.
@@ -99,7 +99,7 @@ Full Android unit test run:
 
 ## Related Files
 
-- `app/src/main/java/com/codex/im/connection/ConnectionLifecycleManager.kt`
-- `app/src/test/java/com/codex/im/connection/ConnectionLifecycleManagerTest.kt`
+- `app/src/main/java/com/buyansong/im/connection/ConnectionLifecycleManager.kt`
+- `app/src/test/java/com/buyansong/im/connection/ConnectionLifecycleManagerTest.kt`
 - `docs/status/B7-heartbeat-reconnect.md`
 - `docs/bug/Fix-WebSocketAuthFailureAndUnauthenticatedMessageHandling.md`

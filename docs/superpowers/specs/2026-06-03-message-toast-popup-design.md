@@ -61,10 +61,10 @@
 
 ### 5.1 新增文件
 
-全部放在 `app/src/main/java/com/codex/im/alert/`：
+全部放在 `app/src/main/java/com/buyansong/im/alert/`：
 
 ```
-com/codex/im/alert/
+com/buyansong/im/alert/
 ├── IncomingMessageAlert.kt        # 数据类
 ├── MessageAlertPolicy.kt          # 纯函数：预览截断、时间格式、群消息发送者拼接
 ├── MessageAlertController.kt      # 状态机：当前 alert + 4秒计时 + 单条替换 + 跳转回调
@@ -73,10 +73,10 @@ com/codex/im/alert/
 
 ### 5.2 修改文件
 
-- `app/src/main/java/com/codex/im/message/MessageRepository.kt`
+- `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
   - 新增 `messageAlerts: SharedFlow<IncomingMessageAlert>` 公开 API
   - 在 `handleIncoming` 现有 `if (inserted)` 分支里构造 `IncomingMessageAlert` 并 `tryEmit`
-- `app/src/main/java/com/codex/im/MainActivity.kt`
+- `app/src/main/java/com/buyansong/im/MainActivity.kt`
   - 在 `AuthenticatedImNavHost` 外层包一个 `Box`
   - 把 `MessageAlertHost(controller, onOpenConversation = { conversationId -> navController.navigate("chat/${conversationId}") })` 放在 Box 内，盖在 `NavHost` 上方
   - 启动一个 `LaunchedEffect(Unit)` 收集 `messageRepository.messageAlerts` 并喂给 `alertController.show(...)`
@@ -269,7 +269,7 @@ val shouldPopup = inserted && message.conversationId != activeConversationId
 
 4 个 JVM 单测 + 1 份手测 checklist，**全部不依赖 Android instrumented 测试**，跑在 `./gradlew :app:testDebugUnitTest`。
 
-### 9.1 `MessageAlertPolicyTest`（`com.codex.im.alert`）
+### 9.1 `MessageAlertPolicyTest`（`com.buyansong.im.alert`）
 
 纯函数，0 依赖：
 
@@ -283,7 +283,7 @@ val shouldPopup = inserted && message.conversationId != activeConversationId
 - `groupPreviewText(null, "在吗？")` → 降级用 `senderId` 拼接（用 `senderId="u4"` 时 → `"u4: 在吗？"`）
 - `formatTime(epochMillis)` → `HH:mm` 格式（注入 `Clock` 避免 flaky）
 
-### 9.2 `MessageRepositoryIncomingAlertTest`（`com.codex.im.message`）
+### 9.2 `MessageRepositoryIncomingAlertTest`（`com.buyansong.im.message`）
 
 验证 `messageAlerts` flow 的 emit / 不 emit 分支：
 
@@ -298,7 +298,7 @@ val shouldPopup = inserted && message.conversationId != activeConversationId
 
 收集方式：`flow.first(timeout)` 或 `MutableSharedFlow.replayCache`。
 
-### 9.3 `MessageAlertControllerTest`（`com.codex.im.alert`）
+### 9.3 `MessageAlertControllerTest`（`com.buyansong.im.alert`）
 
 验证状态机和计时器（用 `StandardTestDispatcher` + `advanceTimeBy(...)`）：
 

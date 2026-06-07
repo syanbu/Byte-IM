@@ -37,12 +37,12 @@
 
 在当前项目里，`Messages` 页展示的是“会话摘要列表”，而不是完整聊天记录。对应代码主要有：
 
-- 会话摘要模型：`app/src/main/java/com/codex/im/storage/StorageModels.kt`
-- 会话摘要存储：`app/src/main/java/com/codex/im/storage/ConversationDao.kt`
-- SQLite 会话摘要实现：`app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt`
-- 消息收发后更新摘要：`app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- `Messages` 页列表映射：`app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
-- 底部 `Messages` 未读角标：`app/src/main/java/com/codex/im/MessagesTabUnreadBadge.kt`
+- 会话摘要模型：`app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
+- 会话摘要存储：`app/src/main/java/com/buyansong/im/storage/ConversationDao.kt`
+- SQLite 会话摘要实现：`app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt`
+- 消息收发后更新摘要：`app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- `Messages` 页列表映射：`app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
+- 底部 `Messages` 未读角标：`app/src/main/java/com/buyansong/im/MessagesTabUnreadBadge.kt`
 
 当前项目是单 `Activity` + Compose 导航架构，`Messages`、`Contacts`、`Me` 都在同一个 `MainActivity` 下切换，因此消息首页列表和底部角标都需要用全局可复用的数据源，而不是依赖某一个页面单独计算。
 

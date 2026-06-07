@@ -107,7 +107,7 @@ LaunchedEffect(viewModel, listState, state.items.size,
 
 把判定逻辑抽出为纯对象，便于单测与复用：
 
-- 新增 [ConversationListLoadMorePolicy.kt](app/src/main/java/com/codex/im/conversation/ConversationListLoadMorePolicy.kt)：
+- 新增 [ConversationListLoadMorePolicy.kt](app/src/main/java/com/buyansong/im/conversation/ConversationListLoadMorePolicy.kt)：
   - `LOAD_MORE_THRESHOLD_ITEMS = 10`（距离列表底部 10 条时触发）
   - `shouldLoadMore(visibleLastIndex, itemCount, hasMore, isLoadingMore)` 返回布尔。
   - 把"列表为空 / 已无更多 / 正在加载 / 未到阈值 / 列表短于阈值"几条边界全部覆盖。
@@ -146,12 +146,12 @@ private var prefetchJob: Job? = null
 
 ## 涉及文件
 
-- `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- `app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
-- `app/src/main/java/com/codex/im/conversation/ConversationListLoadMorePolicy.kt`（新增）
-- `app/src/test/java/com/codex/im/conversation/ConversationListLoadMorePolicyTest.kt`（新增）
-- `app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt`（新增 2 个测试 + `CountingConversationDao` 包装器）
-- `app/src/test/java/com/codex/im/conversation/ConversationRowLayoutTest.kt`（sniff assertion 由 `snapshotFlow` 改为 `derivedStateOf`）
+- `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
+- `app/src/main/java/com/buyansong/im/conversation/ConversationListLoadMorePolicy.kt`（新增）
+- `app/src/test/java/com/buyansong/im/conversation/ConversationListLoadMorePolicyTest.kt`（新增）
+- `app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt`（新增 2 个测试 + `CountingConversationDao` 包装器）
+- `app/src/test/java/com/buyansong/im/conversation/ConversationRowLayoutTest.kt`（sniff assertion 由 `snapshotFlow` 改为 `derivedStateOf`）
 - `docs/status/B3-conversation-list.md`（新增 "Post-Implementation Refinements (2026-06-06)" 章节）
 
 ## 验证
@@ -159,7 +159,7 @@ private var prefetchJob: Job? = null
 自动化测试（2026-06-06）：
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListLoadMorePolicyTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.conversation.ConversationRowLayoutTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListLoadMorePolicyTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest --console=plain
 ```
 
 - `BUILD SUCCESSFUL`。

@@ -554,15 +554,15 @@ Required expansion:
 
 Android:
 
-- `app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt`
-- `app/src/main/java/com/codex/im/storage/StorageModels.kt`
-- `app/src/main/java/com/codex/im/storage/MessageDao.kt`
-- `app/src/main/java/com/codex/im/storage/AndroidMessageDao.kt`
-- `app/src/main/java/com/codex/im/storage/ConversationDao.kt`
-- `app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt`
-- `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- `app/src/main/java/com/codex/im/chat/ChatViewModel.kt`
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt`
+- `app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
+- `app/src/main/java/com/buyansong/im/storage/MessageDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/AndroidMessageDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/ConversationDao.kt`
+- `app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt`
+- `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
 - `app/build.gradle`
 
 Likely new Android files:
@@ -575,9 +575,9 @@ Likely new Android files:
 
 Mock-server:
 
-- `mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java`
-- `mock-server/src/main/java/com/codex/imserver/oss/OssUploadService.java`
-- `mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java`
+- `mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java`
+- `mock-server/src/main/java/com/buyansong/imserver/oss/OssUploadService.java`
+- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java`
 
 Likely new mock-server tests:
 

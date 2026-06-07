@@ -5,16 +5,16 @@
 
 ## Context
 
-当前 通讯录 顶部的 `ContactEntryBlock` 含两个静态占位条目：`新的朋友`、`群聊`，它们的 `onClick = {}`，见 [contacts/ContactListScreen.kt:250-266](../../app/src/main/java/com/codex/im/contacts/ContactListScreen.kt#L250-L266)。点 `群聊` 当前没有任何反应。
+当前 通讯录 顶部的 `ContactEntryBlock` 含两个静态占位条目：`新的朋友`、`群聊`，它们的 `onClick = {}`，见 [contacts/ContactListScreen.kt:250-266](../../app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt#L250-L266)。点 `群聊` 当前没有任何反应。
 
 需求：点击 `群聊` → 进入 **"已加入的群聊"** 列表页 → 列出当前用户作为成员的所有群 → 点任一行进入对应群聊聊天界面。
 
 底层数据流早已就绪：
 
-- 服务端 `GET /groups` 已按"成员资格"过滤返回，见 [mock-server/.../GroupService.java:70-80, 169-180](../../mock-server/src/main/java/com/codex/imserver/group/GroupService.java#L70-L80)；路由在 [HttpAuthHandler.java:231-234](../../mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java#L231-L234)。
-- Android 侧 [group/GroupRepository.kt:70-78](../../app/src/main/java/com/codex/im/group/GroupRepository.kt#L70-L78) 的 `DefaultGroupRepository.syncGroups(token)` 已经会拉这个接口并把 `GroupInfo` upsert 到本地 `groups` 表；[conversation/ConversationListViewModel.kt:239](../../app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt#L239) 在刷新会话列表时就会调用一次，所以 `groups` 表通常已经有缓存数据。
-- Chat 路由 `chat/{conversationId}` 已识别 `group:<groupId>`，见 [SelfHostedImRoute.kt:25-37](../../app/src/main/java/com/codex/im/SelfHostedImRoute.kt#L25-L37)、[group/GroupCreateNavigationPolicy.kt](../../app/src/main/java/com/codex/im/group/GroupCreateNavigationPolicy.kt)、[MainActivity.kt:608-643](../../app/src/main/java/com/codex/im/MainActivity.kt#L608-L643)；创建群聊成功后就走这条路径。
-- `ChatViewModel` 已识别 `group:` 前缀并走群聊流程：`sendGroupText` / `openConversationById` / `historyPageByConversationId` / `renameGroup`，见 [chat/ChatViewModel.kt:147,546,554,568](../../app/src/main/java/com/codex/im/chat/ChatViewModel.kt#L546)。
+- 服务端 `GET /groups` 已按"成员资格"过滤返回，见 [mock-server/.../GroupService.java:70-80, 169-180](../../mock-server/src/main/java/com/buyansong/imserver/group/GroupService.java#L70-L80)；路由在 [HttpAuthHandler.java:231-234](../../mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java#L231-L234)。
+- Android 侧 [group/GroupRepository.kt:70-78](../../app/src/main/java/com/buyansong/im/group/GroupRepository.kt#L70-L78) 的 `DefaultGroupRepository.syncGroups(token)` 已经会拉这个接口并把 `GroupInfo` upsert 到本地 `groups` 表；[conversation/ConversationListViewModel.kt:239](../../app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt#L239) 在刷新会话列表时就会调用一次，所以 `groups` 表通常已经有缓存数据。
+- Chat 路由 `chat/{conversationId}` 已识别 `group:<groupId>`，见 [SelfHostedImRoute.kt:25-37](../../app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt#L25-L37)、[group/GroupCreateNavigationPolicy.kt](../../app/src/main/java/com/buyansong/im/group/GroupCreateNavigationPolicy.kt)、[MainActivity.kt:608-643](../../app/src/main/java/com/buyansong/im/MainActivity.kt#L608-L643)；创建群聊成功后就走这条路径。
+- `ChatViewModel` 已识别 `group:` 前缀并走群聊流程：`sendGroupText` / `openConversationById` / `historyPageByConversationId` / `renameGroup`，见 [chat/ChatViewModel.kt:147,546,554,568](../../app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt#L546)。
 
 **所以本次只是把已经持久化的数据暴露为一个新页面 + 一个新的导航出口。不动协议，不改 `messages` / `conversations` / `group_members` 三张表的 schema（只在 `groups` 表加一列）。**
 
@@ -48,26 +48,26 @@ JoinedGroupsScreen ── tap row ──▶ chat/group:<groupId>
 
 | 用途 | 路径 | 备注 |
 |---|---|---|
-| `GET /groups` 按成员过滤 | [mock-server/.../GroupService.java:70-80, 169-180](../../mock-server/src/main/java/com/codex/imserver/group/GroupService.java#L70) | 已实现；返回 `groupId, name, ownerId, createdAt, updatedAt, memberUserIds` |
-| `DefaultGroupRepository.syncGroups(token)` | [group/GroupRepository.kt:70-78](../../app/src/main/java/com/codex/im/group/GroupRepository.kt#L70-L78) | 拉远端 → 每个 `GroupInfo` upsert 到 `groupDao` + PATCH 任意已存在的 `conversations` 行 |
-| `GroupDao.groupIdsForUser(userId)` | [storage/GroupDao.kt:11](../../app/src/main/java/com/codex/im/storage/GroupDao.kt#L11)、[storage/AndroidGroupDao.kt:52-68](../../app/src/main/java/com/codex/im/storage/AndroidGroupDao.kt#L52-L68) | 已带索引 `idx_group_members_user`，单字段查询；本次新增的 `groupsForUser` JOIN 复用同一索引 |
-| `GroupInfo` / `GroupMember` 数据模型 | [storage/StorageModels.kt](../../app/src/main/java/com/codex/im/storage/StorageModels.kt) | `GroupInfo` 新增 `memberCount: Int = 0` 字段（默认 0 保兼容） |
-| `chat/{conversationId}` 通用路由 | [SelfHostedImRoute.kt:25-37](../../app/src/main/java/com/codex/im/SelfHostedImRoute.kt#L25-L37) | `Chat.createRoute("group:$gid")` 已可用 |
-| `MainActivity.navigateToChat` 私有扩展 | [MainActivity.kt:679-686](../../app/src/main/java/com/codex/im/MainActivity.kt#L679-L686) | 与"发起群聊创建成功后跳聊天"完全同款的导航 |
-| `ByteImTopBar` / `ByteImListSurface` / `ByteImListRowPolicy.dividerStartPadding()` | [ui/ByteImUi.kt:7-10, 68-130, 147-159](../../app/src/main/java/com/codex/im/ui/ByteImUi.kt#L7) | 直接复用，不新增 token |
-| `AvatarImage(avatarUrl, displayName, isGroup, modifier)` | [ui/AvatarImage.kt](../../app/src/main/java/com/codex/im/ui/AvatarImage.kt) | `isGroup = true` 渲染 `"群"` 字占位（与 `ConversationListScreen` 群聊行一致） |
-| `ContactRow` 单行版式参考 | [contacts/ContactListScreen.kt:170-207](../../app/src/main/java/com/codex/im/contacts/ContactListScreen.kt#L170-L207) | `JoinedGroupRow` 直接镜像其结构（Row + ListItemHeight + Surface + clickable + 头像 + 两行文本） |
-| `GroupCreateViewModel` 的 ViewModel 形态 | [group/GroupCreateViewModel.kt](../../app/src/main/java/com/codex/im/group/GroupCreateViewModel.kt) | `JoinedGroupsViewModel` 完全镜像它的 `start()` / `stop()` / `refresh()` / `MutableStateFlow` 模式 |
-| `AccountScopedRepositories.groupRepository` 注入点 | [MainActivity.kt:340-343](../../app/src/main/java/com/codex/im/MainActivity.kt#L340-L343) | 现有 `DefaultGroupRepository(OkHttpGroupApi, AndroidGroupDao, conversationDao)` 直接复用 |
-| 测试模板（JUnit4 + InMemory DAO + Fake Api） | [test/.../group/GroupRepositoryTest.kt](../../app/src/test/java/com/codex/im/group/GroupRepositoryTest.kt)、[test/.../storage/GroupDaoContractTest.kt](../../app/src/test/java/com/codex/im/storage/GroupDaoContractTest.kt) | 新增 ViewModel + DAO 测试时同款 |
+| `GET /groups` 按成员过滤 | [mock-server/.../GroupService.java:70-80, 169-180](../../mock-server/src/main/java/com/buyansong/imserver/group/GroupService.java#L70) | 已实现；返回 `groupId, name, ownerId, createdAt, updatedAt, memberUserIds` |
+| `DefaultGroupRepository.syncGroups(token)` | [group/GroupRepository.kt:70-78](../../app/src/main/java/com/buyansong/im/group/GroupRepository.kt#L70-L78) | 拉远端 → 每个 `GroupInfo` upsert 到 `groupDao` + PATCH 任意已存在的 `conversations` 行 |
+| `GroupDao.groupIdsForUser(userId)` | [storage/GroupDao.kt:11](../../app/src/main/java/com/buyansong/im/storage/GroupDao.kt#L11)、[storage/AndroidGroupDao.kt:52-68](../../app/src/main/java/com/buyansong/im/storage/AndroidGroupDao.kt#L52-L68) | 已带索引 `idx_group_members_user`，单字段查询；本次新增的 `groupsForUser` JOIN 复用同一索引 |
+| `GroupInfo` / `GroupMember` 数据模型 | [storage/StorageModels.kt](../../app/src/main/java/com/buyansong/im/storage/StorageModels.kt) | `GroupInfo` 新增 `memberCount: Int = 0` 字段（默认 0 保兼容） |
+| `chat/{conversationId}` 通用路由 | [SelfHostedImRoute.kt:25-37](../../app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt#L25-L37) | `Chat.createRoute("group:$gid")` 已可用 |
+| `MainActivity.navigateToChat` 私有扩展 | [MainActivity.kt:679-686](../../app/src/main/java/com/buyansong/im/MainActivity.kt#L679-L686) | 与"发起群聊创建成功后跳聊天"完全同款的导航 |
+| `ByteImTopBar` / `ByteImListSurface` / `ByteImListRowPolicy.dividerStartPadding()` | [ui/ByteImUi.kt:7-10, 68-130, 147-159](../../app/src/main/java/com/buyansong/im/ui/ByteImUi.kt#L7) | 直接复用，不新增 token |
+| `AvatarImage(avatarUrl, displayName, isGroup, modifier)` | [ui/AvatarImage.kt](../../app/src/main/java/com/buyansong/im/ui/AvatarImage.kt) | `isGroup = true` 渲染 `"群"` 字占位（与 `ConversationListScreen` 群聊行一致） |
+| `ContactRow` 单行版式参考 | [contacts/ContactListScreen.kt:170-207](../../app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt#L170-L207) | `JoinedGroupRow` 直接镜像其结构（Row + ListItemHeight + Surface + clickable + 头像 + 两行文本） |
+| `GroupCreateViewModel` 的 ViewModel 形态 | [group/GroupCreateViewModel.kt](../../app/src/main/java/com/buyansong/im/group/GroupCreateViewModel.kt) | `JoinedGroupsViewModel` 完全镜像它的 `start()` / `stop()` / `refresh()` / `MutableStateFlow` 模式 |
+| `AccountScopedRepositories.groupRepository` 注入点 | [MainActivity.kt:340-343](../../app/src/main/java/com/buyansong/im/MainActivity.kt#L340-L343) | 现有 `DefaultGroupRepository(OkHttpGroupApi, AndroidGroupDao, conversationDao)` 直接复用 |
+| 测试模板（JUnit4 + InMemory DAO + Fake Api） | [test/.../group/GroupRepositoryTest.kt](../../app/src/test/java/com/buyansong/im/group/GroupRepositoryTest.kt)、[test/.../storage/GroupDaoContractTest.kt](../../app/src/test/java/com/buyansong/im/storage/GroupDaoContractTest.kt) | 新增 ViewModel + DAO 测试时同款 |
 
 ## 改动清单
 
 ### 新增
 
-#### 1. `app/src/main/java/com/codex/im/group/JoinedGroupsScreen.kt`
+#### 1. `app/src/main/java/com/buyansong/im/group/JoinedGroupsScreen.kt`
 
-全屏 Compose 页面。结构与 [contacts/ContactListScreen.kt](../../app/src/main/java/com/codex/im/contacts/ContactListScreen.kt) 对称：
+全屏 Compose 页面。结构与 [contacts/ContactListScreen.kt](../../app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt) 对称：
 
 ```kotlin
 @Composable
@@ -141,9 +141,9 @@ private fun JoinedGroupRow(item: JoinedGroupItem, onClick: () -> Unit) {
 }
 ```
 
-#### 2. `app/src/main/java/com/codex/im/group/JoinedGroupsViewModel.kt`
+#### 2. `app/src/main/java/com/buyansong/im/group/JoinedGroupsViewModel.kt`
 
-镜像 [group/GroupCreateViewModel.kt](../../app/src/main/java/com/codex/im/group/GroupCreateViewModel.kt) 的形态：
+镜像 [group/GroupCreateViewModel.kt](../../app/src/main/java/com/buyansong/im/group/GroupCreateViewModel.kt) 的形态：
 
 ```kotlin
 data class JoinedGroupItem(
@@ -209,20 +209,20 @@ class JoinedGroupsViewModel(
 
 要点：
 - `refresh()` 三段式：先 emit 本地缓存（首屏立现）→ 调网络 → emit 远端覆盖。
-- `syncGroups` 失败时返回 `emptyList()`（见 [GroupRepository.kt:76](../../app/src/main/java/com/codex/im/group/GroupRepository.kt#L76)），不会清空本地，第 (3) 步重读本地依然能拿到上次缓存。
+- `syncGroups` 失败时返回 `emptyList()`（见 [GroupRepository.kt:76](../../app/src/main/java/com/buyansong/im/group/GroupRepository.kt#L76)），不会清空本地，第 (3) 步重读本地依然能拿到上次缓存。
 - `validSession == null`（token 失效）跳过网络步直接收尾，避免空白闪烁。
 
-#### 3. `app/src/test/java/com/codex/im/group/JoinedGroupsViewModelTest.kt`
+#### 3. `app/src/test/java/com/buyansong/im/group/JoinedGroupsViewModelTest.kt`
 
-JUnit 4 + `runTest` / `StandardTestDispatcher` / `runCurrent`，参照 [test/.../conversation/ConversationListViewModelTest.kt](../../app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt) 的 Fixture 风格：
+JUnit 4 + `runTest` / `StandardTestDispatcher` / `runCurrent`，参照 [test/.../conversation/ConversationListViewModelTest.kt](../../app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt) 的 Fixture 风格：
 
-- Fixture：`InMemoryGroupDao` + `InMemoryConversationDao` + `FakeGroupApi`（参照 [GroupRepositoryTest.kt:131-147](../../app/src/test/java/com/codex/im/group/GroupRepositoryTest.kt#L131-L147) 的 `FakeGroupApi`，返回固定 `GroupListResult.Success(groups)`）+ `DefaultGroupRepository` + `JoinedGroupsViewModel`。
+- Fixture：`InMemoryGroupDao` + `InMemoryConversationDao` + `FakeGroupApi`（参照 [GroupRepositoryTest.kt:131-147](../../app/src/test/java/com/buyansong/im/group/GroupRepositoryTest.kt#L131-L147) 的 `FakeGroupApi`，返回固定 `GroupListResult.Success(groups)`）+ `DefaultGroupRepository` + `JoinedGroupsViewModel`。
 - Test 1 `localCacheRendersBeforeSyncReturns`：预先 `groupDao.upsertGroup(...)` + `replaceMembers(...)` 写两个群（含当前用户），`fakeGroupApi.groupsResult = GroupListResult.Failure(...)`。`start()` + `runCurrent()` 后,断言 `state.items.size == 2`,顺序按 `updatedAt DESC`。
 - Test 2 `syncAddsRemoteGroupsToList`：本地无任何群，`fakeGroupApi.groupsResult = GroupListResult.Success(listOf(GroupInfo(...), GroupInfo(...)))`，每个含 `memberCount = 3`。`start()` + `runCurrent()`,断言最终 `state.items.size == 2`,`memberCount == 3`,`isLoading == false`。
 - Test 3 `syncFailureKeepsLocalCache`：本地写一个群，`fakeGroupApi.groupsResult = GroupListResult.Failure("network")`。`start()` 后 state 仍含本地那个群。
 - Test 4 `userWithoutMembershipShowsEmpty`：本地有群但当前用户不是任何群的 member。`state.items.isEmpty() == true`。
 
-#### 4. `app/src/test/java/com/codex/im/storage/GroupDaoContractTest.kt` 内追加
+#### 4. `app/src/test/java/com/buyansong/im/storage/GroupDaoContractTest.kt` 内追加
 
 新增 `@Test fun groupsForUserFiltersByMembershipAndSortsByUpdatedAtDesc()`：
 - 预先 `upsertGroup(g1, updatedAt=1000)` / `upsertGroup(g2, updatedAt=2000)` / `upsertGroup(g3, updatedAt=3000)`。
@@ -231,11 +231,11 @@ JUnit 4 + `runTest` / `StandardTestDispatcher` / `runCurrent`，参照 [test/...
 
 ### 修改
 
-#### 5. `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`
+#### 5. `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt`
 
 新增 `data object JoinedGroups : SelfHostedImRoute("joined-groups")`。无 args，不需要 `createRoute` 工具方法（直接用 `route` 即可）。
 
-#### 6. `app/src/main/java/com/codex/im/storage/StorageModels.kt`
+#### 6. `app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
 
 `data class GroupInfo` 新增字段 `val memberCount: Int = 0`，默认 0 保证现有调用点不需要改：
 
@@ -251,12 +251,12 @@ data class GroupInfo(
 )
 ```
 
-#### 7. `app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt`
+#### 7. `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt`
 
 - `groups` 表 schema 加列：`member_count INTEGER NOT NULL DEFAULT 0`。
 - `DATABASE_VERSION` 从 `8` 改为 `9`。`onUpgrade` 现行是 drop + recreate（demo 数据，无生产迁移负担），无需写迁移 SQL。
 
-#### 8. `app/src/main/java/com/codex/im/storage/GroupDao.kt`
+#### 8. `app/src/main/java/com/buyansong/im/storage/GroupDao.kt`
 
 接口加：
 
@@ -276,7 +276,7 @@ override fun groupsForUser(userId: String): List<GroupInfo> {
 }
 ```
 
-#### 9. `app/src/main/java/com/codex/im/storage/AndroidGroupDao.kt`
+#### 9. `app/src/main/java/com/buyansong/im/storage/AndroidGroupDao.kt`
 
 - `upsertGroup` / `findGroup`：读写新增的 `member_count` 列。
 - 新增 `groupsForUser` 一次 `rawQuery`：
@@ -297,9 +297,9 @@ override fun groupsForUser(userId: String): List<GroupInfo> {
 }
 ```
 
-复用现有 `idx_group_members_user` 索引（[ImDatabaseHelper.kt:166](../../app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt#L166)）；JOIN 走 `groups.group_id` 主键，无需新增索引。
+复用现有 `idx_group_members_user` 索引（[ImDatabaseHelper.kt:166](../../app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt#L166)）；JOIN 走 `groups.group_id` 主键，无需新增索引。
 
-#### 10. `app/src/main/java/com/codex/im/group/GroupApi.kt`
+#### 10. `app/src/main/java/com/buyansong/im/group/GroupApi.kt`
 
 `GroupJsonParser.toGroupInfo()` 解析 `memberUserIds.size`（若存在）写入 `memberCount`：
 
@@ -320,7 +320,7 @@ private fun JsonObject.toGroupInfo(): GroupInfo {
 
 这是单点改动；`parseGroup` / `parseGroups` / `parseCreateGroup` / `parseMembers` 因为都走 `toGroupInfo()` 自动生效。
 
-#### 11. `app/src/main/java/com/codex/im/group/GroupRepository.kt`
+#### 11. `app/src/main/java/com/buyansong/im/group/GroupRepository.kt`
 
 `GroupRepository` 接口加：
 
@@ -337,15 +337,15 @@ override fun joinedGroups(userId: String): List<GroupInfo> =
 
 不调网络（网络刷新走已有的 `syncGroups`）。`persist(...)` / `persistGroupInfo(...)` 调 `groupDao.upsertGroup(group)` 时把 `memberCount` 一起写进去（已经透传，无需额外改动）。
 
-#### 12. `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
+#### 12. `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
 
 - `ContactListScreen` 函数签名追加参数 `onOpenJoinedGroups: () -> Unit`。
 - `ContactEntryBlock()` 改为 `ContactEntryBlock(onOpenJoinedGroups: () -> Unit)`，把 `群聊` 行的 `onClick = {}` 替换为 `onClick = onOpenJoinedGroups`。`新的朋友` 行保持空 onClick（不在本次范围）。
 - 调用位置（同文件内的 `LazyColumn` 第一项）改为 `ContactEntryBlock(onOpenJoinedGroups = onOpenJoinedGroups)`。
 
-#### 13. `app/src/main/java/com/codex/im/MainActivity.kt`
+#### 13. `app/src/main/java/com/buyansong/im/MainActivity.kt`
 
-(1) `Contacts` 路由 `composable` 块（[MainActivity.kt:497-526](../../app/src/main/java/com/codex/im/MainActivity.kt#L497-L526)）：`ContactListScreen(...)` 调用追加参数
+(1) `Contacts` 路由 `composable` 块（[MainActivity.kt:497-526](../../app/src/main/java/com/buyansong/im/MainActivity.kt#L497-L526)）：`ContactListScreen(...)` 调用追加参数
 
 ```kotlin
 onOpenJoinedGroups = {
@@ -355,9 +355,9 @@ onOpenJoinedGroups = {
 }
 ```
 
-模式与现有 `onStartGroupChat`（[MainActivity.kt:504-508](../../app/src/main/java/com/codex/im/MainActivity.kt#L504-L508)）一致。
+模式与现有 `onStartGroupChat`（[MainActivity.kt:504-508](../../app/src/main/java/com/buyansong/im/MainActivity.kt#L504-L508)）一致。
 
-(2) 新增 `composable(SelfHostedImRoute.JoinedGroups.route)` 块，结构参照 [MainActivity.kt:528-548](../../app/src/main/java/com/codex/im/MainActivity.kt#L528-L548) 的 `GroupCreate`：
+(2) 新增 `composable(SelfHostedImRoute.JoinedGroups.route)` 块，结构参照 [MainActivity.kt:528-548](../../app/src/main/java/com/buyansong/im/MainActivity.kt#L528-L548) 的 `GroupCreate`：
 
 ```kotlin
 composable(SelfHostedImRoute.JoinedGroups.route) {
@@ -394,7 +394,7 @@ composable(SelfHostedImRoute.JoinedGroups.route) {
 ### 单元 / 静态
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.group.JoinedGroupsViewModelTest --tests com.codex.im.storage.GroupDaoContractTest --tests com.codex.im.group.GroupRepositoryTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.group.JoinedGroupsViewModelTest --tests com.buyansong.im.storage.GroupDaoContractTest --tests com.buyansong.im.group.GroupRepositoryTest --console=plain
 ```
 
 期望：全部 pass。`GroupRepositoryTest` 现有用例须保持绿（`GroupInfo.memberCount` 默认 0 + `joinedGroups` 是新接口方法，签名兼容；`InMemoryGroupDao.groupsForUser` 实现纯过滤无副作用）。
@@ -419,16 +419,16 @@ composable(SelfHostedImRoute.JoinedGroups.route) {
 
 ### 回归
 
-- 切换账号后列表正确隔离：[MainActivity.kt:311](../../app/src/main/java/com/codex/im/MainActivity.kt#L311) 的 `AccountScopedDatabaseName.forUser(userId)` 已经按 userId 分库，`JoinedGroupsViewModel` 的 `remember(session.userId)` 保证 VM 重建。
+- 切换账号后列表正确隔离：[MainActivity.kt:311](../../app/src/main/java/com/buyansong/im/MainActivity.kt#L311) 的 `AccountScopedDatabaseName.forUser(userId)` 已经按 userId 分库，`JoinedGroupsViewModel` 的 `remember(session.userId)` 保证 VM 重建。
 - 离线进入页面：因为 `refresh()` 先 emit 本地、再调网络，无网时仍能显示本地缓存。
 - 进入 _已加入群聊_ → 立即返回 → 再次进入：不应有空白闪烁（首次 emit 来自本地缓存）。
-- 现有 `发起群聊` 流程不变：[GroupCreateNavigationPolicy.kt](../../app/src/main/java/com/codex/im/group/GroupCreateNavigationPolicy.kt) 创建成功后仍直接跳 `chat/group:<groupId>`，不经过 _已加入群聊_。
+- 现有 `发起群聊` 流程不变：[GroupCreateNavigationPolicy.kt](../../app/src/main/java/com/buyansong/im/group/GroupCreateNavigationPolicy.kt) 创建成功后仍直接跳 `chat/group:<groupId>`，不经过 _已加入群聊_。
 - `ConversationListViewModel.refresh()` 仍按原路径调 `syncGroups`，与新页面无耦合。
 
 ## 风险与缓解
 
 - **`GroupInfo.memberCount` 新增字段触发 `DATABASE_VERSION` 升级。** 项目 `onUpgrade` 是 drop + recreate（仅 demo 数据），无生产迁移负担。复测一次清装即可。受影响的所有 `GroupInfo` 构造点（`GroupJsonParser.toGroupInfo` / `GroupRepositoryTest.kt` 内的 fixture / 任何手写的 `GroupInfo(...)`）由于新字段有默认值 `= 0`，旧调用无需修改。
-- **用户加入了某群但本地从未收到消息，`conversations` 表无对应行。** 本方案不依赖 `conversations`，只读 `groups` + `group_members`，因此与该缺口解耦。进入聊天后首条消息会按现有 [message/MessageRepository.kt](../../app/src/main/java/com/codex/im/message/MessageRepository.kt) 路径补建 `Conversation` 行。
+- **用户加入了某群但本地从未收到消息，`conversations` 表无对应行。** 本方案不依赖 `conversations`，只读 `groups` + `group_members`，因此与该缺口解耦。进入聊天后首条消息会按现有 [message/MessageRepository.kt](../../app/src/main/java/com/buyansong/im/message/MessageRepository.kt) 路径补建 `Conversation` 行。
 - **`GET /groups` 失败时 `syncGroups` 返回 `emptyList()` 并不会清空本地表。** ViewModel `refresh()` 第 (3) 步重读本地缓存，因此远端失败下 UI 仍显示上次已知列表，不会变空。
 - **多账号切换缓存串扰。** 数据库本就按 userId 分库；`JoinedGroupsViewModel` 用 `remember(session.userId)` 包一层即可。
 - **`groupsForUser` 不会复用 `groups` 表的索引。** JOIN 通过 `idx_group_members_user`（对 `user_id` 过滤）+ `groups.group_id` 主键查找；`ORDER BY g.updated_at DESC` 走文件排序。在典型成员所属群数 < 100 的量级下无可观感知延迟；如未来量级上去，可加一条 `CREATE INDEX idx_groups_updated_at ON groups(updated_at DESC)`，本次不做。

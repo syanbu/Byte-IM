@@ -13,9 +13,9 @@
 ### Task 1: Android Conversation Type And Route Foundation
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/storage/StorageModels.kt`
-- Modify: `app/src/main/java/com/codex/im/SelfHostedImRoute.kt`
-- Test: `app/src/test/java/com/codex/im/SelfHostedImRouteTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
+- Modify: `app/src/main/java/com/buyansong/im/SelfHostedImRoute.kt`
+- Test: `app/src/test/java/com/buyansong/im/SelfHostedImRouteTest.kt`
 
 - [ ] **Step 1: Write failing route tests**
 
@@ -26,7 +26,7 @@ Add tests asserting `Chat.createRoute("single:u1:u2") == "chat/single%3Au1%3Au2"
 Run:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.SelfHostedImRouteTest --console=plain
 ```
 
 Expected: failure because `Chat` still uses `peerUserId` naming and does not expose conversation-id helpers.
@@ -42,10 +42,10 @@ Run the same command. Expected: pass.
 ### Task 2: Conversation DAO Mention Count
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/storage/ConversationDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt`
-- Test: `app/src/test/java/com/codex/im/storage/ConversationDaoContractTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/ConversationDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt`
+- Test: `app/src/test/java/com/buyansong/im/storage/ConversationDaoContractTest.kt`
 
 - [ ] **Step 1: Write failing DAO tests**
 
@@ -56,7 +56,7 @@ Add tests for inserting a `GROUP` conversation, incrementing unread plus mention
 Run:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.ConversationDaoContractTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.ConversationDaoContractTest --console=plain
 ```
 
 Expected: compile/test failure because `mentionUnreadCount` and clear behavior do not exist yet.
@@ -72,11 +72,11 @@ Run the same command. Expected: pass.
 ### Task 3: Message Repository Group Text Send/Receive
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/MessageDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/AndroidMessageDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/ImDatabaseHelper.kt`
-- Test: `app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/MessageDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/AndroidMessageDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt`
+- Test: `app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt`
 
 - [ ] **Step 1: Write failing repository tests**
 
@@ -87,7 +87,7 @@ Add tests that `sendGroupText` stores a pending outgoing `GROUP` message with `m
 Run:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest --console=plain
 ```
 
 Expected: compile/test failure because group message APIs and metadata are not implemented.
@@ -103,10 +103,10 @@ Run the same command. Expected: pass.
 ### Task 4: Conversation List Opens Group Rows
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
-- Test: `app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
+- Test: `app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt`
 
 - [ ] **Step 1: Write failing ViewModel tests**
 
@@ -117,7 +117,7 @@ Add a test that a `group:` row exposes a conversation navigation target and does
 Run:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListViewModelTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --console=plain
 ```
 
 Expected: failure because current navigation target is peer-only.
@@ -133,10 +133,10 @@ Run the same command. Expected: pass.
 ### Task 5: Mock Server Group HTTP And Fanout
 
 **Files:**
-- Create: `mock-server/src/main/java/com/codex/imserver/group/GroupService.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/session/MessageRouter.java`
-- Test: `mock-server/src/test/java/com/codex/imserver/session/MessageRouterTest.java`
+- Create: `mock-server/src/main/java/com/buyansong/imserver/group/GroupService.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/session/MessageRouterTest.java`
 
 - [ ] **Step 1: Write failing mock-server tests**
 
@@ -178,7 +178,7 @@ Mark B10 first slice as in progress or partially implemented and document group 
 Run:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.SelfHostedImRouteTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.message.MessageRepositoryTest --tests com.codex.im.conversation.ConversationListViewModelTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.SelfHostedImRouteTest --tests com.buyansong.im.storage.ConversationDaoContractTest --tests com.buyansong.im.message.MessageRepositoryTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --console=plain
 ```
 
 Expected: pass.

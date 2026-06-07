@@ -16,7 +16,7 @@
 |---|---|---|
 | `app/src/main/res/drawable/ic_contact_new_friend.xml` | Create | 28×28dp vector icon for 新的朋友 (person + plus). |
 | `app/src/main/res/drawable/ic_contact_group_chat.xml` | Create | 28×28dp vector icon for 群聊 (three people). |
-| `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt` | Modify | Add `ContactEntryItem` and `ContactEntryBlock` Composables; render the block as the first `LazyColumn` item; add left padding to the contact-row `HorizontalDivider` so it stops at the avatar's right edge. |
+| `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt` | Modify | Add `ContactEntryItem` and `ContactEntryBlock` Composables; render the block as the first `LazyColumn` item; add left padding to the contact-row `HorizontalDivider` so it stops at the avatar's right edge. |
 
 The two new Composables live in the same file as `ContactListScreen.kt` because they are small, private, and only used by this screen. Splitting them into a new file would add indirection without paying off in clarity or testability.
 
@@ -105,13 +105,13 @@ git commit -m "feat(contacts): add entry placeholder vector icons"
 ## Task 2: Add the `ContactEntryItem` and `ContactEntryBlock` Composables
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
 
 Both Composables are private to the file. They sit at the bottom of `ContactListScreen.kt`, after the existing `ContactRow` Composable.
 
 - [ ] **Step 1: Add the new imports**
 
-Open `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt` and add the following import. It is needed for the `SurfaceLow` background tile color used in `ContactEntryItem`.
+Open `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt` and add the following import. It is needed for the `SurfaceLow` background tile color used in `ContactEntryItem`.
 
 Current imports in the file (lines 3–40) already include `Box`, `Row`, `Column`, `Modifier.size`, `MaterialTheme`, `Text`, `painterResource`, `FontWeight`, `TextOverflow`, `ByteImColors`, `ByteImDimensions`, `ByteImShapes`, `R.drawable` (via `R` reference later). The new code also needs `Spacer` and `height` for the gap between the block and the contact list.
 
@@ -121,7 +121,7 @@ Add this import alongside the existing `androidx.compose.foundation.layout.*` im
 import androidx.compose.foundation.layout.Spacer
 ```
 
-(If the existing block already imports `Spacer` from the same package, this is a duplicate and the import line should be skipped. Check with `grep -n "import androidx.compose.foundation.layout.Spacer" app/src/main/java/com/codex/im/contacts/ContactListScreen.kt` first. If it returns a match, skip this step.)
+(If the existing block already imports `Spacer` from the same package, this is a duplicate and the import line should be skipped. Check with `grep -n "import androidx.compose.foundation.layout.Spacer" app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt` first. If it returns a match, skip this step.)
 
 - [ ] **Step 2: Append the two Composables at the end of the file**
 
@@ -199,12 +199,12 @@ The project has no standalone Kotlin lint step for the IDE; the earliest authori
 ./gradlew :app:compileDebugKotlin
 ```
 
-Expected: `BUILD SUCCESSFUL` with no compilation errors. If it fails with "Unresolved reference: R", check that the file already has `package com.codex.im.contacts` at the top and that `R` is implicitly resolved via the `com.codex.im.R` namespace (no explicit import is needed because the file lives in that package).
+Expected: `BUILD SUCCESSFUL` with no compilation errors. If it fails with "Unresolved reference: R", check that the file already has `package com.buyansong.im.contacts` at the top and that `R` is implicitly resolved via the `com.buyansong.im.R` namespace (no explicit import is needed because the file lives in that package).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/contacts/ContactListScreen.kt
+git add app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt
 git commit -m "feat(contacts): add ContactEntryItem and ContactEntryBlock composables"
 ```
 
@@ -213,11 +213,11 @@ git commit -m "feat(contacts): add ContactEntryItem and ContactEntryBlock compos
 ## Task 3: Wire the new block into the LazyColumn and fix the divider indent
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt:71-79`
+- Modify: `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt:71-79`
 
 - [ ] **Step 1: Replace the LazyColumn body**
 
-In `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`, the `LazyColumn` currently looks like (lines 71–79):
+In `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`, the `LazyColumn` currently looks like (lines 71–79):
 
 ```kotlin
             LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -286,7 +286,7 @@ Expected: `BUILD SUCCESSFUL` and all existing tests pass. The change here is pur
 - [ ] **Step 4: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/contacts/ContactListScreen.kt
+git add app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt
 git commit -m "feat(contacts): render placeholder block and indent row dividers"
 ```
 

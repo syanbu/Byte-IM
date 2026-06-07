@@ -4,7 +4,7 @@
 
 **Goal:** Redesign the Android Compose client UI toward the `docs/PRD/pages/` prototypes and rename user-visible branding to `ByteIM` without changing app behavior.
 
-**Architecture:** Add a small ByteIM UI token/component layer under `com.codex.im.ui`, then apply it to the existing screens. Keep current routes, ViewModels, repositories, protocol code, persistence, and Back semantics unchanged.
+**Architecture:** Add a small ByteIM UI token/component layer under `com.buyansong.im.ui`, then apply it to the existing screens. Keep current routes, ViewModels, repositories, protocol code, persistence, and Back semantics unchanged.
 
 **Tech Stack:** Android Kotlin, Jetpack Compose Material3, Gradle, existing JVM unit tests.
 
@@ -12,23 +12,23 @@
 
 ## File Structure
 
-- Create `app/src/main/java/com/codex/im/ui/ByteImUi.kt`: shared colors, dimensions, top bars, badges, list surface helpers, chat bubble styling helpers.
-- Create `app/src/test/java/com/codex/im/ui/ByteImUiTokensTest.kt`: pure token tests for stable color and dimension constants.
-- Modify `app/src/main/java/com/codex/im/app/AppInfo.kt`: user-visible app name.
-- Modify `app/src/test/java/com/codex/im/app/AppInfoTest.kt`: brand assertion.
+- Create `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt`: shared colors, dimensions, top bars, badges, list surface helpers, chat bubble styling helpers.
+- Create `app/src/test/java/com/buyansong/im/ui/ByteImUiTokensTest.kt`: pure token tests for stable color and dimension constants.
+- Modify `app/src/main/java/com/buyansong/im/app/AppInfo.kt`: user-visible app name.
+- Modify `app/src/test/java/com/buyansong/im/app/AppInfoTest.kt`: brand assertion.
 - Modify `app/src/main/res/values/strings.xml`: Android app label.
 - Modify `docs/PRD/IM_PRODUCT_REQUIREMENTS_CN_EN.md`: user-facing product name references.
-- Modify `app/src/main/java/com/codex/im/MainActivity.kt`: app background, ByteIM Material colors, bottom navigation appearance, fallback skeleton text.
-- Modify `app/src/main/java/com/codex/im/auth/LoginScreen.kt`: login/register visual redesign.
-- Modify `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`: Messages top bar, conversation rows, empty/connection styling.
-- Modify `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`: Contacts top bar and list rows.
-- Modify `app/src/main/java/com/codex/im/group/GroupCreateScreen.kt`: group contact selection page styling.
-- Modify `app/src/main/java/com/codex/im/profile/MeScreen.kt`: Me home, profile detail, name editor styling.
-- Modify `app/src/main/java/com/codex/im/chat/ChatScreen.kt`: chat top bar, message area, composer, action menu, text bubbles, status indicators.
-- Modify `app/src/main/java/com/codex/im/chat/ChatImageBubble.kt`: image bubble loading/failure overlay styling.
-- Modify `app/src/main/java/com/codex/im/chat/ChatImagePreviewScreen.kt`: black full-screen preview background with ByteIM-colored loading and white error text.
+- Modify `app/src/main/java/com/buyansong/im/MainActivity.kt`: app background, ByteIM Material colors, bottom navigation appearance, fallback skeleton text.
+- Modify `app/src/main/java/com/buyansong/im/auth/LoginScreen.kt`: login/register visual redesign.
+- Modify `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`: Messages top bar, conversation rows, empty/connection styling.
+- Modify `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`: Contacts top bar and list rows.
+- Modify `app/src/main/java/com/buyansong/im/group/GroupCreateScreen.kt`: group contact selection page styling.
+- Modify `app/src/main/java/com/buyansong/im/profile/MeScreen.kt`: Me home, profile detail, name editor styling.
+- Modify `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`: chat top bar, message area, composer, action menu, text bubbles, status indicators.
+- Modify `app/src/main/java/com/buyansong/im/chat/ChatImageBubble.kt`: image bubble loading/failure overlay styling.
+- Modify `app/src/main/java/com/buyansong/im/chat/ChatImagePreviewScreen.kt`: black full-screen preview background with ByteIM-colored loading and white error text.
 - Modify focused existing tests where user-visible labels change:
-  - `app/src/test/java/com/codex/im/app/AppInfoTest.kt`
+  - `app/src/test/java/com/buyansong/im/app/AppInfoTest.kt`
   - Keep `BottomNavigationSpecTest` labels unless product confirms Chinese labels later; prototypes use English top-level labels.
 
 ---
@@ -36,15 +36,15 @@
 ### Task 1: ByteIM UI Tokens and Shared Components
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/ui/ByteImUi.kt`
-- Create: `app/src/test/java/com/codex/im/ui/ByteImUiTokensTest.kt`
+- Create: `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt`
+- Create: `app/src/test/java/com/buyansong/im/ui/ByteImUiTokensTest.kt`
 
 - [ ] **Step 1: Write token tests**
 
-Create `app/src/test/java/com/codex/im/ui/ByteImUiTokensTest.kt`:
+Create `app/src/test/java/com/buyansong/im/ui/ByteImUiTokensTest.kt`:
 
 ```kotlin
-package com.codex.im.ui
+package com.buyansong.im.ui
 
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
@@ -76,17 +76,17 @@ class ByteImUiTokensTest {
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.ui.ByteImUiTokensTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.ui.ByteImUiTokensTest
 ```
 
 Expected: FAIL because `ByteImColors` and `ByteImDimensions` do not exist.
 
 - [ ] **Step 3: Add ByteIM UI layer**
 
-Create `app/src/main/java/com/codex/im/ui/ByteImUi.kt`:
+Create `app/src/main/java/com/buyansong/im/ui/ByteImUi.kt`:
 
 ```kotlin
-package com.codex.im.ui
+package com.buyansong.im.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -113,7 +113,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.codex.im.R
+import com.buyansong.im.R
 
 object ByteImColors {
     val AppBackground = Color(0xFFEDEDED)
@@ -260,7 +260,7 @@ fun byteImBubbleColor(outgoing: Boolean): Color {
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.ui.ByteImUiTokensTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.ui.ByteImUiTokensTest
 bash ./gradlew :app:testDebugUnitTest
 ```
 
@@ -269,7 +269,7 @@ Expected: token tests PASS; full app unit tests PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/ui/ByteImUi.kt app/src/test/java/com/codex/im/ui/ByteImUiTokensTest.kt
+git add app/src/main/java/com/buyansong/im/ui/ByteImUi.kt app/src/test/java/com/buyansong/im/ui/ByteImUiTokensTest.kt
 git commit -m "Add ByteIM UI tokens"
 ```
 
@@ -278,15 +278,15 @@ git commit -m "Add ByteIM UI tokens"
 ### Task 2: Brand Rename and App Theme Shell
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/app/AppInfo.kt`
-- Modify: `app/src/test/java/com/codex/im/app/AppInfoTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/app/AppInfo.kt`
+- Modify: `app/src/test/java/com/buyansong/im/app/AppInfoTest.kt`
 - Modify: `app/src/main/res/values/strings.xml`
 - Modify: `docs/PRD/IM_PRODUCT_REQUIREMENTS_CN_EN.md`
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 
 - [ ] **Step 1: Update the failing brand test**
 
-Modify `app/src/test/java/com/codex/im/app/AppInfoTest.kt`:
+Modify `app/src/test/java/com/buyansong/im/app/AppInfoTest.kt`:
 
 ```kotlin
 @Test
@@ -302,17 +302,17 @@ fun exposesAppInfo() {
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.app.AppInfoTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.app.AppInfoTest
 ```
 
 Expected: FAIL with expected `ByteIM` but actual `SelfHostedIM`.
 
 - [ ] **Step 3: Rename user-visible app brand**
 
-Modify `app/src/main/java/com/codex/im/app/AppInfo.kt`:
+Modify `app/src/main/java/com/buyansong/im/app/AppInfo.kt`:
 
 ```kotlin
-package com.codex.im.app
+package com.buyansong.im.app
 
 object AppInfo {
     const val name: String = "ByteIM"
@@ -340,12 +340,12 @@ Keep internal Kotlin names such as `SelfHostedImRoute` unchanged.
 
 - [ ] **Step 4: Add ByteIM color scheme to the app shell**
 
-Modify `app/src/main/java/com/codex/im/MainActivity.kt` imports:
+Modify `app/src/main/java/com/buyansong/im/MainActivity.kt` imports:
 
 ```kotlin
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
-import com.codex.im.ui.ByteImColors
+import com.buyansong.im.ui.ByteImColors
 ```
 
 Add near `SelfHostedImApp`:
@@ -387,7 +387,7 @@ Keep the existing `SelfHostedImApp` function name.
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.app.AppInfoTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.app.AppInfoTest
 rg -n "SelfHostedIM" app/src/main docs/PRD/IM_PRODUCT_REQUIREMENTS_CN_EN.md
 ```
 
@@ -396,7 +396,7 @@ Expected: test PASS; `rg` returns no user-visible `SelfHostedIM` references in t
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/app/AppInfo.kt app/src/test/java/com/codex/im/app/AppInfoTest.kt app/src/main/res/values/strings.xml docs/PRD/IM_PRODUCT_REQUIREMENTS_CN_EN.md app/src/main/java/com/codex/im/MainActivity.kt
+git add app/src/main/java/com/buyansong/im/app/AppInfo.kt app/src/test/java/com/buyansong/im/app/AppInfoTest.kt app/src/main/res/values/strings.xml docs/PRD/IM_PRODUCT_REQUIREMENTS_CN_EN.md app/src/main/java/com/buyansong/im/MainActivity.kt
 git commit -m "Rename app brand to ByteIM"
 ```
 
@@ -405,14 +405,14 @@ git commit -m "Rename app brand to ByteIM"
 ### Task 3: Main Scaffold and Bottom Navigation Styling
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 
 - [ ] **Step 1: Keep navigation behavior unchanged**
 
 Before editing, run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.TopLevelBackPolicyTest --tests com.codex.im.BottomNavigationSpecTest --tests com.codex.im.MessagesTabUnreadBadgePolicyTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.TopLevelBackPolicyTest --tests com.buyansong.im.BottomNavigationSpecTest --tests com.buyansong.im.MessagesTabUnreadBadgePolicyTest
 ```
 
 Expected: PASS before visual edits.
@@ -423,7 +423,7 @@ Modify imports in `MainActivity.kt`:
 
 ```kotlin
 import androidx.compose.material3.NavigationBarDefaults
-import com.codex.im.ui.ByteImDimensions
+import com.buyansong.im.ui.ByteImDimensions
 ```
 
 Change `Scaffold` container and bottom bar:
@@ -514,7 +514,7 @@ BadgedBox(
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.TopLevelBackPolicyTest --tests com.codex.im.BottomNavigationSpecTest --tests com.codex.im.MessagesTabUnreadBadgePolicyTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.TopLevelBackPolicyTest --tests com.buyansong.im.BottomNavigationSpecTest --tests com.buyansong.im.MessagesTabUnreadBadgePolicyTest
 ```
 
 Expected: PASS. These tests confirm the visual edit did not change routes, labels, or unread badge text policy.
@@ -522,7 +522,7 @@ Expected: PASS. These tests confirm the visual edit did not change routes, label
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/MainActivity.kt
+git add app/src/main/java/com/buyansong/im/MainActivity.kt
 git commit -m "Style ByteIM app scaffold"
 ```
 
@@ -531,14 +531,14 @@ git commit -m "Style ByteIM app scaffold"
 ### Task 4: Login and Register Visual Redesign
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/auth/LoginScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/auth/LoginScreen.kt`
 
 - [ ] **Step 1: Run auth UI-adjacent tests before editing**
 
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.auth.RegistrationInputValidatorTest --tests com.codex.im.auth.LoginViewModelTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.auth.RegistrationInputValidatorTest --tests com.buyansong.im.auth.LoginViewModelTest
 ```
 
 Expected: PASS.
@@ -557,9 +557,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import com.codex.im.app.AppInfo
-import com.codex.im.ui.ByteImColors
-import com.codex.im.ui.ByteImDimensions
+import com.buyansong.im.app.AppInfo
+import com.buyansong.im.ui.ByteImColors
+import com.buyansong.im.ui.ByteImDimensions
 ```
 
 Remove unused imports after the edit.
@@ -637,7 +637,7 @@ For secondary `OutlinedButton`, keep the existing behavior and let the Material 
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.auth.RegistrationInputValidatorTest --tests com.codex.im.auth.LoginViewModelTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.auth.RegistrationInputValidatorTest --tests com.buyansong.im.auth.LoginViewModelTest
 bash ./gradlew :app:compileDebugKotlin
 ```
 
@@ -646,7 +646,7 @@ Expected: tests PASS; compile PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/auth/LoginScreen.kt
+git add app/src/main/java/com/buyansong/im/auth/LoginScreen.kt
 git commit -m "Redesign ByteIM login screen"
 ```
 
@@ -655,16 +655,16 @@ git commit -m "Redesign ByteIM login screen"
 ### Task 5: Messages, Contacts, and Group Create Lists
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- Modify: `app/src/main/java/com/codex/im/contacts/ContactListScreen.kt`
-- Modify: `app/src/main/java/com/codex/im/group/GroupCreateScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/group/GroupCreateScreen.kt`
 
 - [ ] **Step 1: Run list-related tests before editing**
 
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.conversation.MessageTopBarTitlePolicyTest --tests com.codex.im.conversation.ConversationListPreviewPolicyTest --tests com.codex.im.group.GroupCreateNavigationPolicyTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.conversation.MessageTopBarTitlePolicyTest --tests com.buyansong.im.conversation.ConversationListPreviewPolicyTest --tests com.buyansong.im.group.GroupCreateNavigationPolicyTest
 ```
 
 Expected: PASS.
@@ -678,12 +678,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.text.font.FontWeight
-import com.codex.im.ui.ByteImColors
-import com.codex.im.ui.ByteImDimensions
-import com.codex.im.ui.ByteImListSurface
-import com.codex.im.ui.ByteImSystemNotice
-import com.codex.im.ui.ByteImTopBar
-import com.codex.im.ui.ByteImUnreadBadge
+import com.buyansong.im.ui.ByteImColors
+import com.buyansong.im.ui.ByteImDimensions
+import com.buyansong.im.ui.ByteImListSurface
+import com.buyansong.im.ui.ByteImSystemNotice
+import com.buyansong.im.ui.ByteImTopBar
+import com.buyansong.im.ui.ByteImUnreadBadge
 ```
 
 Change the outer `Column`:
@@ -920,7 +920,7 @@ Set `GroupCreateContactRow` row height to `ByteImDimensions.ListItemHeight`, ava
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.conversation.MessageTopBarTitlePolicyTest --tests com.codex.im.conversation.ConversationListPreviewPolicyTest --tests com.codex.im.group.GroupCreateNavigationPolicyTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.conversation.MessageTopBarTitlePolicyTest --tests com.buyansong.im.conversation.ConversationListPreviewPolicyTest --tests com.buyansong.im.group.GroupCreateNavigationPolicyTest
 bash ./gradlew :app:compileDebugKotlin
 ```
 
@@ -929,7 +929,7 @@ Expected: tests PASS; compile PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt app/src/main/java/com/codex/im/contacts/ContactListScreen.kt app/src/main/java/com/codex/im/group/GroupCreateScreen.kt
+git add app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt app/src/main/java/com/buyansong/im/contacts/ContactListScreen.kt app/src/main/java/com/buyansong/im/group/GroupCreateScreen.kt
 git commit -m "Redesign ByteIM list screens"
 ```
 
@@ -938,14 +938,14 @@ git commit -m "Redesign ByteIM list screens"
 ### Task 6: Me, Profile Detail, and Name Editor Styling
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/profile/MeScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/profile/MeScreen.kt`
 
 - [ ] **Step 1: Run profile behavior tests before editing**
 
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.profile.MeBackPolicyTest --tests com.codex.im.profile.MeDisplayPolicyTest --tests com.codex.im.profile.MeViewModelTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.profile.MeBackPolicyTest --tests com.buyansong.im.profile.MeDisplayPolicyTest --tests com.buyansong.im.profile.MeViewModelTest
 ```
 
 Expected: PASS.
@@ -960,10 +960,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import com.codex.im.ui.ByteImColors
-import com.codex.im.ui.ByteImDimensions
-import com.codex.im.ui.ByteImListSurface
-import com.codex.im.ui.ByteImTopBar
+import com.buyansong.im.ui.ByteImColors
+import com.buyansong.im.ui.ByteImDimensions
+import com.buyansong.im.ui.ByteImListSurface
+import com.buyansong.im.ui.ByteImTopBar
 ```
 
 - [ ] **Step 3: Redesign Me home**
@@ -1131,7 +1131,7 @@ For `ProfileAvatarRow`, `ProfileNameRow`, and `ProfileReadOnlyRow`, use `height(
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.profile.MeBackPolicyTest --tests com.codex.im.profile.MeDisplayPolicyTest --tests com.codex.im.profile.MeViewModelTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.profile.MeBackPolicyTest --tests com.buyansong.im.profile.MeDisplayPolicyTest --tests com.buyansong.im.profile.MeViewModelTest
 bash ./gradlew :app:compileDebugKotlin
 ```
 
@@ -1140,7 +1140,7 @@ Expected: tests PASS; compile PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/profile/MeScreen.kt
+git add app/src/main/java/com/buyansong/im/profile/MeScreen.kt
 git commit -m "Redesign ByteIM profile screens"
 ```
 
@@ -1149,14 +1149,14 @@ git commit -m "Redesign ByteIM profile screens"
 ### Task 7: Chat Screen Text, Actions, Composer, and Status
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
 
 - [ ] **Step 1: Run chat policy tests before editing**
 
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.chat.ChatDisplayPolicyTest --tests com.codex.im.chat.ChatMentionPolicyTest --tests com.codex.im.chat.ChatMessageActionLayoutPolicyTest --tests com.codex.im.chat.ChatKeyboardInsetsPolicyTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --tests com.buyansong.im.chat.ChatMentionPolicyTest --tests com.buyansong.im.chat.ChatMessageActionLayoutPolicyTest --tests com.buyansong.im.chat.ChatKeyboardInsetsPolicyTest
 ```
 
 Expected: PASS.
@@ -1168,12 +1168,12 @@ In `ChatScreen.kt`, add:
 ```kotlin
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.font.FontWeight
-import com.codex.im.ui.ByteImColors
-import com.codex.im.ui.ByteImDimensions
-import com.codex.im.ui.ByteImSystemNotice
-import com.codex.im.ui.ByteImTopBar
-import com.codex.im.ui.byteImBubbleColor
-import com.codex.im.ui.byteImBubbleShape
+import com.buyansong.im.ui.ByteImColors
+import com.buyansong.im.ui.ByteImDimensions
+import com.buyansong.im.ui.ByteImSystemNotice
+import com.buyansong.im.ui.ByteImTopBar
+import com.buyansong.im.ui.byteImBubbleColor
+import com.buyansong.im.ui.byteImBubbleShape
 ```
 
 - [ ] **Step 3: Redesign chat shell and top bar**
@@ -1412,7 +1412,7 @@ Keep the current mention picker block above the composer row. The image button s
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.chat.ChatDisplayPolicyTest --tests com.codex.im.chat.ChatMentionPolicyTest --tests com.codex.im.chat.ChatMessageActionLayoutPolicyTest --tests com.codex.im.chat.ChatKeyboardInsetsPolicyTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --tests com.buyansong.im.chat.ChatMentionPolicyTest --tests com.buyansong.im.chat.ChatMessageActionLayoutPolicyTest --tests com.buyansong.im.chat.ChatKeyboardInsetsPolicyTest
 bash ./gradlew :app:compileDebugKotlin
 ```
 
@@ -1421,7 +1421,7 @@ Expected: tests PASS; compile PASS.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/chat/ChatScreen.kt
+git add app/src/main/java/com/buyansong/im/chat/ChatScreen.kt
 git commit -m "Redesign ByteIM chat screen"
 ```
 
@@ -1430,15 +1430,15 @@ git commit -m "Redesign ByteIM chat screen"
 ### Task 8: Chat Image Bubble and Preview Styling
 
 **Files:**
-- Modify: `app/src/main/java/com/codex/im/chat/ChatImageBubble.kt`
-- Modify: `app/src/main/java/com/codex/im/chat/ChatImagePreviewScreen.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatImageBubble.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatImagePreviewScreen.kt`
 
 - [ ] **Step 1: Run image-related tests before editing**
 
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.chat.ChatImageBubbleLayoutPolicyTest --tests com.codex.im.chat.ChatImageBubbleLoadingPolicyTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatImageBubbleLayoutPolicyTest --tests com.buyansong.im.chat.ChatImageBubbleLoadingPolicyTest
 ```
 
 Expected: PASS.
@@ -1450,8 +1450,8 @@ In `ChatImageBubble.kt`, import:
 ```kotlin
 import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.ui.graphics.Color
-import com.codex.im.ui.ByteImColors
-import com.codex.im.ui.ByteImShapes
+import com.buyansong.im.ui.ByteImColors
+import com.buyansong.im.ui.ByteImShapes
 ```
 
 Set shape and background:
@@ -1536,7 +1536,7 @@ Box(
 Run:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.chat.ChatImageBubbleLayoutPolicyTest --tests com.codex.im.chat.ChatImageBubbleLoadingPolicyTest
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatImageBubbleLayoutPolicyTest --tests com.buyansong.im.chat.ChatImageBubbleLoadingPolicyTest
 bash ./gradlew :app:compileDebugKotlin
 ```
 
@@ -1545,7 +1545,7 @@ Expected: tests PASS; compile PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/codex/im/chat/ChatImageBubble.kt app/src/main/java/com/codex/im/chat/ChatImagePreviewScreen.kt
+git add app/src/main/java/com/buyansong/im/chat/ChatImageBubble.kt app/src/main/java/com/buyansong/im/chat/ChatImagePreviewScreen.kt
 git commit -m "Redesign ByteIM image message UI"
 ```
 
@@ -1592,7 +1592,7 @@ Run:
 
 ```bash
 git diff --stat
-git diff -- app/src/main/java/com/codex/im/connection app/src/main/java/com/codex/im/message app/src/main/java/com/codex/im/storage mock-server
+git diff -- app/src/main/java/com/buyansong/im/connection app/src/main/java/com/buyansong/im/message app/src/main/java/com/buyansong/im/storage mock-server
 ```
 
 Expected: `git diff --stat` lists UI, tests, and docs only; the second command prints no diff for protocol, message repository, storage, connection, or mock server paths.

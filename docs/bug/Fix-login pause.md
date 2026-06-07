@@ -89,7 +89,7 @@ repository.sessionState 保留刷新后的 session
 验证命令：
 
 ```text
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.auth.AuthRepositoryTest --tests com.codex.im.auth.LoginViewModelTest --tests com.codex.im.auth.OkHttpAuthApiTest --console=plain
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.auth.AuthRepositoryTest --tests com.buyansong.im.auth.LoginViewModelTest --tests com.buyansong.im.auth.OkHttpAuthApiTest --console=plain
 ```
 
 验证结果：

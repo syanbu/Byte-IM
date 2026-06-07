@@ -13,4 +13,4 @@ fi
 
 cd "$SCRIPT_DIR"
 
-mvn -q -Dexec.mainClass=com.codex.imserver.tools.MockFriendSeeder compile exec:java
+mvn -q -Dexec.mainClass=com.buyansong.imserver.tools.MockFriendSeeder compile exec:java

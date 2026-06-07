@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace "com.codex.im"
+    namespace "com.buyansong.im"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.codex.im"
+        applicationId "com.buyansong.im"
         minSdk 23
         targetSdk 35
         versionCode 1

@@ -13,8 +13,8 @@
 ### Task 1: Server Friend Store
 
 **Files:**
-- Create: `mock-server/src/main/java/com/codex/imserver/friend/FriendStore.java`
-- Test: `mock-server/src/test/java/com/codex/imserver/friend/FriendStoreTest.java`
+- Create: `mock-server/src/main/java/com/buyansong/imserver/friend/FriendStore.java`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/friend/FriendStoreTest.java`
 
 - [x] Write a failing test proving mutual friendship inserts `A -> B` and `B -> A`, excludes self-links, and deduplicates repeated inserts.
 - [x] Implement `FriendStore` with `CREATE TABLE IF NOT EXISTS friendships`, `addMutualFriendship`, and `friendsOf`.
@@ -23,10 +23,10 @@
 ### Task 2: Friend HTTP API
 
 **Files:**
-- Create: `mock-server/src/main/java/com/codex/imserver/friend/FriendService.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/netty/HttpAuthHandler.java`
-- Modify: `mock-server/src/main/java/com/codex/imserver/MockImServer.java`
-- Test: `mock-server/src/test/java/com/codex/imserver/friend/FriendServiceTest.java`
+- Create: `mock-server/src/main/java/com/buyansong/imserver/friend/FriendService.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/netty/HttpAuthHandler.java`
+- Modify: `mock-server/src/main/java/com/buyansong/imserver/MockImServer.java`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/friend/FriendServiceTest.java`
 
 - [x] Write a failing service test for `GET /friends/me` JSON shape.
 - [x] Add authenticated `GET /friends/me` handling that returns `{ "friendUserIds": [...] }`.
@@ -36,23 +36,23 @@
 ### Task 3: Seed Tool
 
 **Files:**
-- Create: `mock-server/src/main/java/com/codex/imserver/tools/MockFriendSeeder.java`
-- Test: `mock-server/src/test/java/com/codex/imserver/tools/MockFriendSeederTest.java`
+- Create: `mock-server/src/main/java/com/buyansong/imserver/tools/MockFriendSeeder.java`
+- Test: `mock-server/src/test/java/com/buyansong/imserver/tools/MockFriendSeederTest.java`
 
 - [x] Write a failing test proving 500 users are registered through `AuthService.register()` and the first 3 accounts each have 497 friends.
 - [x] Implement idempotent seeding for `15000000000` through `15000000499`, password `123456`, and mutual friendships.
-- [x] Support running with `mvn -q exec:java -Dexec.mainClass=com.codex.imserver.tools.MockFriendSeeder`.
+- [x] Support running with `mvn -q exec:java -Dexec.mainClass=com.buyansong.imserver.tools.MockFriendSeeder`.
 
 ### Task 4: Android Remote Contacts
 
 **Files:**
-- Create: `app/src/main/java/com/codex/im/contacts/ContactApi.kt`
-- Create: `app/src/main/java/com/codex/im/contacts/OkHttpContactApi.kt`
-- Create: `app/src/main/java/com/codex/im/contacts/ContactJsonParser.kt`
-- Create: `app/src/main/java/com/codex/im/contacts/ContactRepository.kt`
-- Modify: `app/src/main/java/com/codex/im/contacts/ContactListViewModel.kt`
-- Modify: `app/src/main/java/com/codex/im/group/GroupCreateViewModel.kt`
-- Modify: `app/src/main/java/com/codex/im/MainActivity.kt`
+- Create: `app/src/main/java/com/buyansong/im/contacts/ContactApi.kt`
+- Create: `app/src/main/java/com/buyansong/im/contacts/OkHttpContactApi.kt`
+- Create: `app/src/main/java/com/buyansong/im/contacts/ContactJsonParser.kt`
+- Create: `app/src/main/java/com/buyansong/im/contacts/ContactRepository.kt`
+- Modify: `app/src/main/java/com/buyansong/im/contacts/ContactListViewModel.kt`
+- Modify: `app/src/main/java/com/buyansong/im/group/GroupCreateViewModel.kt`
+- Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 - Test: contact and group create ViewModel tests.
 
 - [x] Write failing Android tests for server-provided friend IDs.

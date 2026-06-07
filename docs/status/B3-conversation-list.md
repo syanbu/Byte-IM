@@ -59,10 +59,10 @@ Done for the current local single-chat scope.
 | 2026-05-23 | B3 Android build | `gradle-9.0.0\bin\gradle.bat :app:assembleDebug --console=plain` | Passed: debug APK assembles with the conversation list route and chat navigation flow. |
 | 2026-05-23 | B3 refresh fix | `gradle-9.0.0\bin\gradle.bat :app:testDebugUnitTest --console=plain`; `gradle-9.0.0\bin\gradle.bat :app:assembleDebug --console=plain` | Passed: conversation list refreshes from Repository conversation update events, including messages processed outside the list VM. |
 | 2026-05-23 | B3 manual acceptance | User two-client manual test | Passed: conversation list preview refreshes correctly, chat detail hides connection status, and logout is only available from the conversation list. |
-| 2026-06-04 | B3 local conversation deletion | `./gradlew :app:testDebugUnitTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.storage.MessageDaoContractTest --tests com.codex.im.conversation.ConversationListViewModelTest --console=plain` | Passed: local-only conversation deletion removes the list row and target chat history while preserving other conversations. |
-| 2026-06-06 | B3 conversation pagination | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.message.MessageRepositoryTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.conversation.ConversationRowLayoutTest` | Passed: cursor page ordering, repository page access, first-page load, load-more append, refresh-without-dropping-loaded-pages, and UI scroll trigger are covered. |
-| 2026-06-06 | B3 derivedStateOf + prefetch | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListLoadMorePolicyTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.conversation.ConversationRowLayoutTest` | Passed: `ConversationListLoadMorePolicy` covers all trigger branches (threshold met, not yet met, loading, end-of-list, empty, short list); ViewModel covers cache-hit on second `loadMoreConversations` (delta=1 vs. real-query delta=2) and `refresh` clearing pending pre-fetch; row-layout sniff test now asserts `derivedStateOf` instead of `snapshotFlow`. |
-| 2026-06-06 | B3 prefetch warm-start + background cached-page apply | `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListViewModelTest --tests com.codex.im.conversation.ConversationListLoadMorePolicyTest --tests com.codex.im.conversation.ConversationRowLayoutTest --console=plain` | Passed: startup now prefetches page 2 before the first 50-row boundary, cached-page `loadMoreConversations()` no longer updates synchronously on the caller thread, and refresh rebuilds a fresh cached page for the next scroll. |
+| 2026-06-04 | B3 local conversation deletion | `./gradlew :app:testDebugUnitTest --tests com.buyansong.im.storage.ConversationDaoContractTest --tests com.buyansong.im.storage.MessageDaoContractTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --console=plain` | Passed: local-only conversation deletion removes the list row and target chat history while preserving other conversations. |
+| 2026-06-06 | B3 conversation pagination | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.ConversationDaoContractTest --tests com.buyansong.im.message.MessageRepositoryTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest` | Passed: cursor page ordering, repository page access, first-page load, load-more append, refresh-without-dropping-loaded-pages, and UI scroll trigger are covered. |
+| 2026-06-06 | B3 derivedStateOf + prefetch | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListLoadMorePolicyTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest` | Passed: `ConversationListLoadMorePolicy` covers all trigger branches (threshold met, not yet met, loading, end-of-list, empty, short list); ViewModel covers cache-hit on second `loadMoreConversations` (delta=1 vs. real-query delta=2) and `refresh` clearing pending pre-fetch; row-layout sniff test now asserts `derivedStateOf` instead of `snapshotFlow`. |
+| 2026-06-06 | B3 prefetch warm-start + background cached-page apply | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationListLoadMorePolicyTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest --console=plain` | Passed: startup now prefetches page 2 before the first 50-row boundary, cached-page `loadMoreConversations()` no longer updates synchronously on the caller thread, and refresh rebuilds a fresh cached page for the next scroll. |
 
 ## Next Implementation Slice
 
@@ -118,9 +118,9 @@ The cursor for the next page is the last row currently loaded: `(lastMessageTime
 
 **Files:**
 
-- Modify: `app/src/main/java/com/codex/im/storage/ConversationDao.kt`
-- Modify: `app/src/main/java/com/codex/im/storage/AndroidConversationDao.kt`
-- Test: `app/src/test/java/com/codex/im/storage/ConversationDaoContractTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/ConversationDao.kt`
+- Modify: `app/src/main/java/com/buyansong/im/storage/AndroidConversationDao.kt`
+- Test: `app/src/test/java/com/buyansong/im/storage/ConversationDaoContractTest.kt`
 
 Steps:
 
@@ -138,8 +138,8 @@ Steps:
 
 **Files:**
 
-- Modify: `app/src/main/java/com/codex/im/message/MessageRepository.kt`
-- Test: `app/src/test/java/com/codex/im/message/MessageRepositoryTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/message/MessageRepository.kt`
+- Test: `app/src/test/java/com/buyansong/im/message/MessageRepositoryTest.kt`
 
 Steps:
 
@@ -151,8 +151,8 @@ Steps:
 
 **Files:**
 
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
-- Test: `app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
+- Test: `app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt`
 
 Steps:
 
@@ -175,9 +175,9 @@ Steps:
 
 **Files:**
 
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt`
-- Test: `app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt`
-- Optional layout test: `app/src/test/java/com/codex/im/conversation/ConversationRowLayoutTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt`
+- Test: `app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt`
+- Optional layout test: `app/src/test/java/com/buyansong/im/conversation/ConversationRowLayoutTest.kt`
 
 Steps:
 
@@ -192,8 +192,8 @@ Steps:
 
 **Files:**
 
-- Modify: `app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt`
-- Test: `app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt`
+- Modify: `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt`
+- Test: `app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt`
 
 Steps:
 
@@ -206,9 +206,9 @@ Steps:
 Run these commands after implementation:
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.ConversationDaoContractTest
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.conversation.ConversationListViewModelTest
-.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.message.MessageRepositoryTest
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.ConversationDaoContractTest
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListViewModelTest
+.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest
 ```
 
 Manual acceptance:
@@ -227,20 +227,20 @@ After the initial cursor-pagination slice, two follow-up changes were made to ad
 
 ### UI Trigger Refactor: `snapshotFlow` → `derivedStateOf`
 
-**Why**: the original `LaunchedEffect` in [ConversationListScreen.kt](app/src/main/java/com/codex/im/conversation/ConversationListScreen.kt) was keyed on `state.items.size`, `state.hasMoreConversations`, and `state.isLoadingMore`. Every successful page load changed `state.items.size` and cancelled the running `snapshotFlow` collect, then rebuilt it from scratch. The first emission of the rebuilt flow came in late, leaving a gap where fast scrolls could overshoot the trigger.
+**Why**: the original `LaunchedEffect` in [ConversationListScreen.kt](app/src/main/java/com/buyansong/im/conversation/ConversationListScreen.kt) was keyed on `state.items.size`, `state.hasMoreConversations`, and `state.isLoadingMore`. Every successful page load changed `state.items.size` and cancelled the running `snapshotFlow` collect, then rebuilt it from scratch. The first emission of the rebuilt flow came in late, leaving a gap where fast scrolls could overshoot the trigger.
 
 **What changed**:
 
-- Replaced the `LaunchedEffect` + `snapshotFlow` + `collect` block with `remember(...) { derivedStateOf { ... } }` plus a `LaunchedEffect(shouldLoadMore) { ... }` (mirroring [ChatScreen.kt:135-179](app/src/main/java/com/codex/im/chat/ChatScreen.kt#L135-L179)).
+- Replaced the `LaunchedEffect` + `snapshotFlow` + `collect` block with `remember(...) { derivedStateOf { ... } }` plus a `LaunchedEffect(shouldLoadMore) { ... }` (mirroring [ChatScreen.kt:135-179](app/src/main/java/com/buyansong/im/chat/ChatScreen.kt#L135-L179)).
 - The scroll-listening subscription is now driven by snapshot reads inside `derivedStateOf`, so the underlying coroutine is never torn down on state changes.
-- Extracted the trigger predicate into [ConversationListLoadMorePolicy.kt](app/src/main/java/com/codex/im/conversation/ConversationListLoadMorePolicy.kt) as a pure object so the screen and the unit tests share one source of truth.
+- Extracted the trigger predicate into [ConversationListLoadMorePolicy.kt](app/src/main/java/com/buyansong/im/conversation/ConversationListLoadMorePolicy.kt) as a pure object so the screen and the unit tests share one source of truth.
 - Updated the row-layout sniff test to assert `derivedStateOf` instead of `snapshotFlow`.
 
 ### Pre-fetch the Next Page in the Background
 
 **Why**: even with a smooth trigger, each page boundary still cost one DB round-trip plus Compose recomposition (≈ 100–300 ms per page). For 499 seeded conversations that meant a noticeable stutter every 50 rows on fast scrolls.
 
-**What changed in [ConversationListViewModel.kt](app/src/main/java/com/codex/im/conversation/ConversationListViewModel.kt)**:
+**What changed in [ConversationListViewModel.kt](app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt)**:
 
 - Added two private fields: `prefetchedPage: List<Conversation>?` and `prefetchJob: Job?`.
 - `loadMoreConversations()` now checks the cache first. If `prefetchedPage` is non-null, the cached page is still consumed on the paging dispatcher, so the merge/sort/item-building work stays off the UI thread. If the cache is empty, the existing real query path runs.
@@ -250,8 +250,8 @@ After the initial cursor-pagination slice, two follow-up changes were made to ad
 
 **Test coverage**:
 
-- New [ConversationListLoadMorePolicyTest.kt](app/src/test/java/com/codex/im/conversation/ConversationListLoadMorePolicyTest.kt) covers the trigger predicate's branches (threshold met, not yet met, loading, end-of-list, empty list, list shorter than threshold).
-- New tests in [ConversationListViewModelTest.kt](app/src/test/java/com/codex/im/conversation/ConversationListViewModelTest.kt) use a `CountingConversationDao` wrapper to assert DAO-call deltas: startup now performs an extra page-2 prefetch, the first and second cached `loadMoreConversations()` calls each add only one DAO query (the next prefetch), and cached-page load more does not synchronously mutate the visible item count before the background dispatcher runs.
+- New [ConversationListLoadMorePolicyTest.kt](app/src/test/java/com/buyansong/im/conversation/ConversationListLoadMorePolicyTest.kt) covers the trigger predicate's branches (threshold met, not yet met, loading, end-of-list, empty list, list shorter than threshold).
+- New tests in [ConversationListViewModelTest.kt](app/src/test/java/com/buyansong/im/conversation/ConversationListViewModelTest.kt) use a `CountingConversationDao` wrapper to assert DAO-call deltas: startup now performs an extra page-2 prefetch, the first and second cached `loadMoreConversations()` calls each add only one DAO query (the next prefetch), and cached-page load more does not synchronously mutate the visible item count before the background dispatcher runs.
 
 **Out of scope (kept for later)**:
 

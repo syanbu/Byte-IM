@@ -310,16 +310,16 @@ Manual/emulator checks:
 
 2026-05-30:
 
-- `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatDisplayPolicyTest --tests com.codex.im.storage.MessageDaoContractTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.message.MessageRepositoryTest` passed.
-- `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatViewModelTest --tests com.codex.im.chat.ChatDisplayPolicyTest --tests com.codex.im.message.MessageRepositoryTest` passed.
-- `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.chat.ChatDisplayPolicyTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.message.MessageRepositoryTest --tests com.codex.im.chat.ChatViewModelTest` passed.
-- `.\gradlew.bat :app:testDebugUnitTest --tests com.codex.im.storage.ConversationDaoContractTest --tests com.codex.im.message.MessageRepositoryTest --tests com.codex.im.chat.ChatViewModelTest --tests com.codex.im.chat.ChatDisplayPolicyTest` passed.
+- `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --tests com.buyansong.im.storage.MessageDaoContractTest --tests com.buyansong.im.storage.ConversationDaoContractTest --tests com.buyansong.im.message.MessageRepositoryTest` passed.
+- `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatViewModelTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --tests com.buyansong.im.message.MessageRepositoryTest` passed.
+- `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --tests com.buyansong.im.storage.ConversationDaoContractTest --tests com.buyansong.im.message.MessageRepositoryTest --tests com.buyansong.im.chat.ChatViewModelTest` passed.
+- `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.ConversationDaoContractTest --tests com.buyansong.im.message.MessageRepositoryTest --tests com.buyansong.im.chat.ChatViewModelTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest` passed.
 - `mvn -q -f mock-server/pom.xml test -Dtest=MessageRouterTest` passed.
 - `mvn -q -f mock-server/pom.xml test` passed.
 
 2026-06-04:
 
-- `bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.chat.ChatAutoScrollPolicyTest --tests com.codex.im.chat.ChatMessageRowLayoutTest --tests com.codex.im.chat.ChatMessageActionLayoutPolicyTest --tests com.codex.im.chat.ChatDisplayPolicyTest --console=plain` passed.
+- `bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatAutoScrollPolicyTest --tests com.buyansong.im.chat.ChatMessageRowLayoutTest --tests com.buyansong.im.chat.ChatMessageActionLayoutPolicyTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --console=plain` passed.
 - Manual verification passed: at the oldest loaded chat history, long-pressing a bubble shows the floating operation menu without covering or pushing the bubble. The check was confirmed for the shared chat UI path used by both single chat and group chat.
 
 ## Current Risks

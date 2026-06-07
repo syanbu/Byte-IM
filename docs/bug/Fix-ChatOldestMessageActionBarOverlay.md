@@ -31,7 +31,7 @@ Expected behavior:
 
 Single chat and group chat share the same chat message list implementation:
 
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
 - `ChatScreen` renders messages with `LazyColumn(reverseLayout = true)`.
 - Group chat uses the same `LazyColumn` and message row path, with group-specific
   state such as `state.isGroup`, sender profiles, and mention members.
@@ -73,16 +73,16 @@ Implemented changes:
 
 ## Changed Files
 
-- `app/src/main/java/com/codex/im/chat/ChatScreen.kt`
-- `app/src/main/java/com/codex/im/chat/ChatDisplayPolicy.kt`
-- `app/src/test/java/com/codex/im/chat/ChatMessageRowLayoutTest.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- `app/src/main/java/com/buyansong/im/chat/ChatDisplayPolicy.kt`
+- `app/src/test/java/com/buyansong/im/chat/ChatMessageRowLayoutTest.kt`
 
 ## Verification Result
 
 Verified with targeted automated tests on 2026-06-04:
 
 ```bash
-bash ./gradlew :app:testDebugUnitTest --tests com.codex.im.chat.ChatAutoScrollPolicyTest --tests com.codex.im.chat.ChatMessageRowLayoutTest --tests com.codex.im.chat.ChatMessageActionLayoutPolicyTest --tests com.codex.im.chat.ChatDisplayPolicyTest --console=plain
+bash ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatAutoScrollPolicyTest --tests com.buyansong.im.chat.ChatMessageRowLayoutTest --tests com.buyansong.im.chat.ChatMessageActionLayoutPolicyTest --tests com.buyansong.im.chat.ChatDisplayPolicyTest --console=plain
 ```
 
 Result:
