@@ -22,6 +22,7 @@ data class ContactListItem(
 
 data class ContactListUiState(
     val items: List<ContactListItem> = emptyList(),
+    val selfEntry: ContactListItem? = null,
     val navigationTargetPeerId: String? = null,
     val firstVisibleItemIndex: Int = 0,
     val firstVisibleItemScrollOffset: Int = 0
@@ -84,7 +85,9 @@ class ContactListViewModel(
     private fun refresh() {
         refreshJob?.cancel()
         refreshJob = scope.launch(dispatcher) {
-            profileRepository.bootstrapSession(session)
+            val selfProfile = profileRepository.localProfile(session.userId)
+                ?: profileRepository.bootstrapSession(session)
+            mutableState.value = mutableState.value.copy(selfEntry = selfProfile.toSelfEntry(session.userId))
             val cachedContacts = contactRepository.cachedFriends(session.userId)
             if (cachedContacts.isNotEmpty()) {
                 mutableState.value = mutableState.value.copy(items = buildItems(cachedContacts.map { it.userId }))
@@ -153,4 +156,13 @@ class ContactListViewModel(
         const val INITIAL_PROFILE_REFRESH_LIMIT = 20
         const val NEXT_PROFILE_REFRESH_LIMIT = 10
     }
+}
+
+private fun com.codex.im.storage.UserProfile.toSelfEntry(userId: String): ContactListItem {
+    val resolvedName = nickname.takeIf { it.isNotBlank() } ?: userId
+    return ContactListItem(
+        userId = userId,
+        displayName = resolvedName,
+        avatarUrl = avatarUrl
+    )
 }

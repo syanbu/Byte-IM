@@ -83,6 +83,8 @@ import com.codex.im.group.GroupCreateScreen
 import com.codex.im.group.GroupCreateNavigationPolicy
 import com.codex.im.group.GroupCreateViewModel
 import com.codex.im.group.DefaultGroupRepository
+import com.codex.im.group.GroupInfoScreen
+import com.codex.im.group.GroupInfoViewModel
 import com.codex.im.group.OkHttpGroupApi
 import com.codex.im.message.AndroidChatThumbnailCache
 import com.codex.im.message.CoilChatThumbnailPreloader
@@ -601,6 +603,11 @@ private fun AuthenticatedImNavHost(
                     onSendMessage = { peerUserId ->
                         SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)
                             ?.let { navController.navigateToChat(it) }
+                    },
+                    onEditProfile = {
+                        navController.navigate(SelfHostedImRoute.Me.route) {
+                            launchSingleTop = true
+                        }
                     }
                 )
             }
@@ -630,14 +637,42 @@ private fun AuthenticatedImNavHost(
                         ChatBackPolicy.run(navigateBack = { navController.popBackStack() })
                     },
                     onOpenUserProfile = { userId ->
-                        if (userId == session.userId) {
-                            navController.navigate(SelfHostedImRoute.Me.route) {
-                                launchSingleTop = true
-                            }
-                        } else {
-                            SelfHostedImRoute.ContactProfile.createRoute(userId)
-                                ?.let(navController::navigate)
-                        }
+                        SelfHostedImRoute.ContactProfile.createRoute(userId)
+                            ?.let(navController::navigate)
+                    },
+                    onOpenGroupInfo = {
+                        SelfHostedImRoute.GroupInfo.createRoute(
+                            conversationId.removePrefix("group:")
+                        )?.let(navController::navigate)
+                    }
+                )
+            }
+
+            composable(route = SelfHostedImRoute.GroupInfo.pattern) { entry ->
+                val groupId = entry.arguments
+                    ?.getString(SelfHostedImRoute.GroupInfo.GROUP_ID_ARG)
+                    .orEmpty()
+                if (groupId.isBlank()) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                    return@composable
+                }
+                val groupInfoViewModel = remember(session.userId, groupId) {
+                    GroupInfoViewModel(
+                        groupId = groupId,
+                        session = session,
+                        groupRepository = groupRepository,
+                        profileRepository = profileRepository,
+                        validSessionProvider = validSessionProvider
+                    )
+                }
+                val groupInfoState by groupInfoViewModel.state.collectAsState()
+                GroupInfoScreen(
+                    viewModel = groupInfoViewModel,
+                    state = groupInfoState,
+                    onBack = { navController.popBackStack() },
+                    onOpenUserProfile = { userId ->
+                        SelfHostedImRoute.ContactProfile.createRoute(userId)
+                            ?.let(navController::navigate)
                     }
                 )
             }

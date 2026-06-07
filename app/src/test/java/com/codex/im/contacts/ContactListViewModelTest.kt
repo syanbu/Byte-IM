@@ -226,6 +226,42 @@ class ContactListViewModelTest {
         assertEquals(34, fixture.viewModel.state.value.firstVisibleItemScrollOffset)
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startExposesSelfEntryFromBootstrappedSession() = runTest {
+        val fixture = Fixture(this, userId = "15000000000")
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val self = fixture.viewModel.state.value.selfEntry
+        assertEquals("15000000000", self?.userId)
+        assertEquals("15000000000", self?.displayName)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startSelfEntryPrefersCachedProfileNickname() = runTest {
+        val fixture = Fixture(this, userId = "15000000000")
+        fixture.profileDao.upsert(
+            UserProfile(
+                userId = "15000000000",
+                phone = "15000000000",
+                nickname = "Syan",
+                avatarUrl = "https://example.com/me.jpg",
+                avatarUpdatedAt = 2_000L,
+                updatedAt = 2_000L
+            )
+        )
+
+        fixture.viewModel.start()
+        runCurrent()
+
+        val self = fixture.viewModel.state.value.selfEntry
+        assertEquals("Syan", self?.displayName)
+        assertEquals("https://example.com/me.jpg", self?.avatarUrl)
+    }
+
     private class Fixture(
         scope: TestScope,
         userId: String,

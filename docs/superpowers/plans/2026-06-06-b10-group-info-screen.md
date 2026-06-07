@@ -11,7 +11,7 @@
 
 ## 目标
 
-- 进入群聊后，右上角不再是"..."文字按钮，改为**群聊信息入口图标**（`Icons.Filled.Info` 或 `Icons.Filled.Group`，白底深色 `ByteImColors.TextPrimary`）。
+- 进入群聊后，右上角还是"..."按钮，但目前是文字，请画一个矢量图，...三个点。
 - 群聊信息页（`GroupInfoScreen`）为一个新的全屏路由，承载两段内容：
   1. **成员网格**：`LazyVerticalGrid` 每行 5 列，每格 = 圆形头像（48dp）+ 昵称（1 行省略号）。点击任一成员跳转 `ContactProfileScreen`（与 `Contacts` 标签的交互一致）。
   2. **群聊名称卡片**（在网格下方）：复用 `ByteImListSurface` 的卡片样式，仿照 `MeScreen.kt:557-586` 的 `ProfileNameRow` 形态 —— 左侧"群聊名称"标签（weight 0.35f），右侧群名（weight 0.65f，`TextAlign.End`，`TextSecondary`），右侧加 `ChevronRightIcon`。点击 → 弹起 `AlertDialog`（复用 [ChatScreen.kt:387-417](../../app/src/main/java/com/codex/im/chat/ChatScreen.kt#L387-L417) 的形态），保存后调 `groupRepository.renameGroup(...)`。

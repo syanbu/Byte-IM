@@ -10,6 +10,7 @@ object ContactProfileDisplayPolicy {
     const val genderUnsetLabel = "未设置"
     const val signatureUnsetLabel = "未填写"
     const val sendMessageLabel = "发送消息"
+    const val editProfileLabel = "编辑资料"
     const val retryLabel = "重试"
     const val loadFailedMessage = "加载失败"
     const val sessionExpiredMessage = "登录已过期，请重新登录"

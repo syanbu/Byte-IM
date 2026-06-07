@@ -95,17 +95,16 @@ fun ChatScreen(
     state: ChatUiState,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
-    onOpenUserProfile: (String) -> Unit = {}
+    onOpenUserProfile: (String) -> Unit = {},
+    onOpenGroupInfo: () -> Unit = {}
 ) {
     var draft by remember { mutableStateOf(TextFieldValue("")) }
     var previewMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var activeActionMessageId by remember { mutableStateOf<String?>(null) }
-    var showGroupRename by remember { mutableStateOf(false) }
     var showMoreActions by remember { mutableStateOf(false) }
     var showAlbumPicker by remember { mutableStateOf(false) }
     var albumPermissionDenied by remember { mutableStateOf(false) }
     var albumSessionId by remember { mutableStateOf(0) }
-    var groupNameDraft by remember { mutableStateOf(state.peerName) }
     var selectedMentions by remember { mutableStateOf(emptyList<ChatMention>()) }
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -169,12 +168,6 @@ fun ChatScreen(
         previousLatestMessageId = latestMessageId
     }
 
-    LaunchedEffect(state.peerName) {
-        if (!showGroupRename) {
-            groupNameDraft = state.peerName
-        }
-    }
-
     LaunchedEffect(shouldLoadEarlierHistory) {
         if (shouldLoadEarlierHistory) {
             viewModel.loadMoreHistory()
@@ -204,11 +197,11 @@ fun ChatScreen(
                 centerTitle = true,
                 actions = if (state.peerId.startsWith("group:")) {
                     listOf {
-                        IconButton(onClick = { showGroupRename = true }) {
-                            Text(
-                                text = "...",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = ByteImColors.TextPrimary
+                        IconButton(onClick = onOpenGroupInfo) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_more_horiz),
+                                contentDescription = "群聊信息",
+                                tint = ByteImColors.TextPrimary
                             )
                         }
                     }
@@ -382,37 +375,6 @@ fun ChatScreen(
                 }
             },
             modifier = Modifier.fillMaxSize()
-        )
-    }
-    if (showGroupRename) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showGroupRename = false },
-            title = { Text("修改群名称") },
-            text = {
-                TextField(
-                    value = groupNameDraft,
-                    onValueChange = { groupNameDraft = it },
-                    singleLine = true
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val nextName = groupNameDraft
-                        showGroupRename = false
-                        scope.launch {
-                            viewModel.renameGroup(nextName)
-                        }
-                    }
-                ) {
-                    Text("保存")
-                }
-            },
-            dismissButton = {
-                Button(onClick = { showGroupRename = false }) {
-                    Text("取消")
-                }
-            }
         )
     }
 }

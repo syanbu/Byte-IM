@@ -135,6 +135,28 @@ class ContactProfileViewModelTest {
         assertNull(fixture.viewModel.state.value.profile)
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startMarksIsSelfTrueWhenUserIdMatchesSession() = runTest {
+        val session = session()
+        val fixture = SelfFixture(this, session)
+        fixture.profileDao.upsert(cachedProfile(session.userId, nickname = "MeNick"))
+
+        fixture.viewModel.start()
+
+        assertEquals(true, fixture.viewModel.state.value.isSelf)
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun startMarksIsSelfFalseWhenUserIdDiffersFromSession() = runTest {
+        val fixture = Fixture(this)
+
+        fixture.viewModel.start()
+
+        assertEquals(false, fixture.viewModel.state.value.isSelf)
+    }
+
     private fun cachedProfile(userId: String, nickname: String): UserProfile = UserProfile(
         userId = userId,
         phone = userId,
@@ -169,6 +191,22 @@ class ContactProfileViewModelTest {
             session = session(),
             profileRepository = profileRepository,
             validSessionProvider = validSession,
+            scope = scope.backgroundScope,
+            dispatcher = StandardTestDispatcher(scope.testScheduler)
+        )
+    }
+
+    private class SelfFixture(
+        scope: TestScope,
+        selfSession: AuthSession
+    ) {
+        val profileDao = InMemoryUserProfileDao()
+        private val profileRepository = ProfileRepository(profileDao, RecordingProfileApi())
+        val viewModel = ContactProfileViewModel(
+            userId = selfSession.userId,
+            session = selfSession,
+            profileRepository = profileRepository,
+            validSessionProvider = { selfSession },
             scope = scope.backgroundScope,
             dispatcher = StandardTestDispatcher(scope.testScheduler)
         )

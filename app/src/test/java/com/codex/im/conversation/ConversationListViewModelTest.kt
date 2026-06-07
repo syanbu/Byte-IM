@@ -920,6 +920,10 @@ class ConversationListViewModelTest {
         override fun localMembers(groupId: String): List<com.codex.im.storage.GroupMember> {
             return emptyList()
         }
+
+        override fun localGroup(groupId: String): GroupInfo? {
+            return groups.firstOrNull { it.groupId == groupId }
+        }
     }
 
     private class CountingConversationDao(

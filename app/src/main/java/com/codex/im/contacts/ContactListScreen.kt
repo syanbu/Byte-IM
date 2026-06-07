@@ -95,6 +95,18 @@ fun ContactListScreen(
                 state = listState,
                 modifier = Modifier.fillMaxSize()
             ) {
+                state.selfEntry?.let { self ->
+                    item(key = "self-entry") {
+                        SelfRow(
+                            item = self,
+                            onClick = { onOpenContact(self.userId) }
+                        )
+                        HorizontalDivider(
+                            color = ByteImColors.Divider,
+                            modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
+                        )
+                    }
+                }
                 item {
                     HorizontalDivider(
                         color = ByteImColors.Divider,
@@ -263,4 +275,44 @@ private fun ContactEntryBlock() {
         title = "群聊",
         onClick = {}
     )
+}
+
+@Composable
+private fun SelfRow(
+    item: ContactListItem,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(ByteImDimensions.ListItemHeight)
+            .background(ByteImColors.Surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = ByteImDimensions.EdgePadding),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AvatarImage(
+            avatarUrl = item.avatarUrl,
+            displayName = item.displayName,
+            modifier = Modifier.size(ByteImDimensions.ListAvatarSize)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.displayName,
+                style = MaterialTheme.typography.titleMedium,
+                color = ByteImColors.TextPrimary,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "ID：${item.userId}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = ByteImColors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }

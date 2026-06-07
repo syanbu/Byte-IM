@@ -1144,6 +1144,8 @@ class ChatViewModelTest {
         override suspend fun syncMembers(accessToken: String, groupId: String): List<GroupMember> = groupDao.members(groupId)
 
         override fun localMembers(groupId: String): List<GroupMember> = groupDao.members(groupId)
+
+        override fun localGroup(groupId: String): GroupInfo? = groupDao.findGroup(groupId)
     }
 
     private class FakeConnection : ImConnection {

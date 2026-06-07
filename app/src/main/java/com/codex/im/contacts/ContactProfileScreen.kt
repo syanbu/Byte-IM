@@ -43,7 +43,8 @@ fun ContactProfileScreen(
     state: ContactProfileUiState,
     modifier: Modifier = Modifier,
     onBack: () -> Unit,
-    onSendMessage: (peerUserId: String) -> Unit
+    onSendMessage: (peerUserId: String) -> Unit,
+    onEditProfile: () -> Unit = {}
 ) {
     LaunchedEffect(viewModel) {
         viewModel.start()
@@ -56,9 +57,16 @@ fun ContactProfileScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = ByteImColors.AppBackground,
         bottomBar = {
-            ContactProfileSendMessageBar(
+            ContactProfileBottomBar(
                 enabled = state.profile != null,
-                onClick = { onSendMessage(viewModel.userId) }
+                isSelf = state.isSelf,
+                onClick = {
+                    if (state.isSelf) {
+                        onEditProfile()
+                    } else {
+                        onSendMessage(viewModel.userId)
+                    }
+                }
             )
         }
     ) { innerPadding ->
@@ -218,8 +226,9 @@ private fun ContactProfileFailureBlock(
 }
 
 @Composable
-private fun ContactProfileSendMessageBar(
+private fun ContactProfileBottomBar(
     enabled: Boolean,
+    isSelf: Boolean,
     onClick: () -> Unit
 ) {
     Column(
@@ -253,7 +262,11 @@ private fun ContactProfileSendMessageBar(
                     .height(48.dp)
             ) {
                 Text(
-                    text = ContactProfileDisplayPolicy.sendMessageLabel,
+                    text = if (isSelf) {
+                        ContactProfileDisplayPolicy.editProfileLabel
+                    } else {
+                        ContactProfileDisplayPolicy.sendMessageLabel
+                    },
                     color = Color.White,
                     fontWeight = FontWeight.Medium
                 )

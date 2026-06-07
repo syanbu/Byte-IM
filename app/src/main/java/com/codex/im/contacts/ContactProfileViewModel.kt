@@ -17,7 +17,8 @@ import kotlinx.coroutines.launch
 data class ContactProfileUiState(
     val profile: UserProfile? = null,
     val isRefreshing: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isSelf: Boolean = false
 )
 
 class ContactProfileViewModel(
@@ -34,7 +35,10 @@ class ContactProfileViewModel(
 
     fun start() {
         val cached = profileRepository.localProfile(userId)
-        mutableState.value = mutableState.value.copy(profile = cached)
+        mutableState.value = mutableState.value.copy(
+            profile = cached,
+            isSelf = userId == session.userId
+        )
         if (refreshJob?.isActive == true) {
             return
         }

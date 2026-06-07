@@ -174,6 +174,10 @@ class GroupCreateViewModelTest {
         override fun localMembers(groupId: String): List<GroupMember> {
             return emptyList()
         }
+
+        override fun localGroup(groupId: String): GroupInfo? {
+            return null
+        }
     }
 
     private class FakeConnection : ImConnection {

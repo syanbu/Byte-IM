@@ -22,6 +22,19 @@ sealed class SelfHostedImRoute(val route: String) {
         }
     }
 
+    data object GroupInfo : SelfHostedImRoute("group-info/{groupId}") {
+        const val GROUP_ID_ARG = "groupId"
+        val pattern: String = route
+
+        fun createRoute(groupId: String): String? {
+            val trimmedGroupId = groupId.trim()
+            if (trimmedGroupId.isEmpty()) {
+                return null
+            }
+            return "group-info/$trimmedGroupId"
+        }
+    }
+
     data object Chat : SelfHostedImRoute("chat/{conversationId}") {
         const val CONVERSATION_ID_ARG = "conversationId"
         const val PEER_USER_ID_ARG = CONVERSATION_ID_ARG
