@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.function.LongSupplier;
 
 public final class MockFriendSeeder {
-    public static final int ACCOUNT_COUNT = 500;
+    public static final int ACCOUNT_COUNT = 10000;
     public static final int HUB_ACCOUNT_COUNT = 3;
     public static final String PASSWORD = "123456";
     private static final long FIRST_PHONE = 15_000_000_000L;

@@ -75,3 +75,10 @@ mock-server/.env.local.sh
 app/build/
 
 .claude
+.agents
+.codex
+.gradle
+.idea
+.kotlin
+.superpowers
+.vscode
