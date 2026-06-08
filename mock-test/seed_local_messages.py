@@ -35,7 +35,7 @@ DB_LOCAL = "./_im_seed.db"
 
 DEFAULT_USER_A = "15000000000"
 DEFAULT_START = 15000000000
-DEFAULT_END   = 15000000499      # 含 4999；与 A 一起共 500 个号，A 自动从好友里剔除 → 499 好友
+DEFAULT_END   = 15000000499      # 含 499；与 A 一起共 500 个号，A 自动从好友里剔除 → 499 好友
 DEFAULT_PER_PEER = 100
 DEFAULT_MOCK_USER_DB = (
     Path(__file__).resolve().parent.parent / "mock-server" / "data" / "mock-im-users.sqlite"
