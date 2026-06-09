@@ -16,6 +16,7 @@ class ImDatabaseHelper(
         createFriendContactsTable(db)
         createGroupsTable(db)
         createGroupMembersTable(db)
+        createGroupReadCursorsTable(db)
     }
 
     private fun createMessagesTable(db: SQLiteDatabase) {
@@ -167,7 +168,25 @@ class ImDatabaseHelper(
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id)")
     }
 
+    private fun createGroupReadCursorsTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS group_read_cursors (
+              group_id              TEXT    NOT NULL,
+              reader_id             TEXT    NOT NULL,
+              read_up_to_server_seq INTEGER NOT NULL,
+              read_at               INTEGER NOT NULL,
+              PRIMARY KEY(group_id, reader_id)
+            )
+            """.trimIndent()
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_group_read_cursors_group ON group_read_cursors(group_id)")
+    }
+
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < DATABASE_VERSION) {
+            createGroupReadCursorsTable(db)
+        }
         if (oldVersion < 2) {
             createUserProfilesTable(db)
         }
@@ -183,6 +202,6 @@ class ImDatabaseHelper(
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 9
+        const val DATABASE_VERSION = 10
     }
 }

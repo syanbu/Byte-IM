@@ -2,10 +2,11 @@
 
 ## Requirement
 
-B12 covers two single-chat message state synchronization features:
+B12 covers message state synchronization features:
 
 - Message recall: a sender can recall their own message within 2 minutes. Both local clients should keep the message row but render it as a centered recall notice, not as a normal message bubble.
 - Read receipts: when the receiver opens a single-chat page, the receiver reports the latest read incoming `serverSeq`; the sender UI changes outgoing unread markers into read markers.
+- Group read receipts (B12-G): group members report read cursors through `READ_ACK(conversationType=GROUP)`, and the sender sees an `X 人已读 >` indicator below their latest eligible sent group message.
 
 This feature must stay on the existing self-built WebSocket binary protocol, local SQLite persistence, and Jetpack Compose chat UI path. It must not introduce a third-party IM SDK or bypass the existing protocol/state architecture.
 
@@ -13,9 +14,11 @@ Design source: [`../feature-notes/B12-message-recall-and-read-receipts-design.md
 
 ## Status
 
-Implemented for first-pass single-chat read receipts, with message recall and long-press copy/recall interactions handled on the shared single-chat and group-chat UI path. Group-chat recall copy now resolves recalled group member display names.
+Implemented for single-chat read receipts and group read receipt counts, with message recall and long-press copy/recall interactions handled on the shared single-chat and group-chat UI path. Group-chat recall copy now resolves recalled group member display names.
 
 The Android client now persists recall state and a conversation-level peer read cursor, sends `READ_ACK` when an open chat has incoming persisted `serverSeq` messages, processes inbound `READ_ACK`, sends recall requests, marks local messages recalled from `RECALL_ACK` / `RECALL_NOTIFY`, and sends `RECALL_NOTIFY_ACK` after receiver-side recall state is persisted.
+
+For group chats, the Android client persists `group_read_cursors`, sends `READ_ACK` with `conversationType=GROUP` when a group conversation is opened or receives fresh conversation updates, routes inbound group read acks into the cursor repository, and derives sender-only indicator state from messages, group members, and cursors. The UI shows `X 人已读 >` only under the current user's latest SENT, non-recalled group message with a `serverSeq`; tapping it opens a bottom sheet listing readers by most recent read time.
 
 Conversation preview updates now preserve the existing peer read cursor, so later unread incoming messages do not make older already-read outgoing messages lose their read marker.
 
@@ -27,7 +30,7 @@ Recalled messages now render as centered system notices in chronological positio
 
 Group conversation-list previews now also resolve recalled sender display names when the last message is a recalled group message, so the Messages tab shows `{成员昵称}撤回了一条消息` instead of the single-chat fallback `对方撤回了一条消息`.
 
-The mock server now routes `READ_ACK`, validates recall requests, enforces the 2-minute server-time recall window, returns `RECALL_ACK`, sends `RECALL_NOTIFY`, accepts `RECALL_NOTIFY_ACK`, and replays pending recall notifications after receiver auth/reconnect until the receiver acknowledges local recall persistence. The durable accepted-message store includes recall columns, a per-receiver `recall_notified` column, and migrations for older SQLite files that do not have those columns.
+The mock server now routes single-chat and group `READ_ACK`, validates recall requests, enforces the 2-minute server-time recall window, returns `RECALL_ACK`, sends `RECALL_NOTIFY`, accepts `RECALL_NOTIFY_ACK`, and replays pending recall notifications after receiver auth/reconnect until the receiver acknowledges local recall persistence. Group read cursors are stored in the durable message SQLite database and replayed to group members on auth. The durable accepted-message store includes recall columns, a per-receiver `recall_notified` column, and migrations for older SQLite files that do not have those columns.
 
 ## Project Context
 
@@ -56,7 +59,7 @@ Protocol commands currently documented in `docs/feature-notes/WEBSOCKET_PROTOCOL
 - `SEND_MESSAGE`: sender sends a normal chat message.
 - `MESSAGE_ACK`: server accepted the message and assigned `serverSeq`.
 - `RECEIVE_MESSAGE`: server forwards the message to the receiver.
-- `READ_ACK`: implemented for B12 read receipts. Receiver clients send a read cursor and the mock server forwards it to the single-chat peer.
+- `READ_ACK`: implemented for B12 read receipts. Receiver clients send a read cursor; the mock server forwards single-chat cursors to the peer and persists/broadcasts group cursors when `conversationType=GROUP`.
 - `DELIVERY_ACK`: receiver confirms local persistence only. This is not a read receipt.
 
 Important existing rules:
@@ -70,7 +73,7 @@ Important existing rules:
 
 ## Agreed First Scope
 
-Read receipts are first-pass single-chat only.
+Single-chat read receipts show the existing outgoing read marker. Group read receipts show a sender-only count and reader list for the current user's latest eligible SENT message.
 
 Message recall is implemented on the shared chat UI and storage/protocol path
 used by both single chat and group chat. The current group-chat support covers

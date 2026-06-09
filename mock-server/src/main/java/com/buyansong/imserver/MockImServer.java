@@ -9,6 +9,8 @@ import com.buyansong.imserver.friend.FriendService;
 import com.buyansong.imserver.friend.FriendStore;
 import com.buyansong.imserver.group.GroupService;
 import com.buyansong.imserver.group.SQLiteGroupStore;
+import com.buyansong.imserver.groupread.GroupReadCursorStore;
+import com.buyansong.imserver.groupread.SQLiteGroupReadCursorStore;
 import com.buyansong.imserver.netty.HttpAuthHandler;
 import com.buyansong.imserver.netty.WebSocketFrameHandler;
 import com.buyansong.imserver.session.ClientSessionRegistry;
@@ -44,12 +46,14 @@ public final class MockImServer {
                 System::currentTimeMillis
         );
         java.nio.file.Path messageDatabase = java.nio.file.Path.of("data", "mock-im-messages.sqlite");
+        GroupReadCursorStore groupReadCursorStore = new SQLiteGroupReadCursorStore(messageDatabase);
         MessageRouter messageRouter = new MessageRouter(
                 registry,
                 tokenService,
                 new MessageRouter.SQLiteServerSeqStore(java.nio.file.Path.of("data", "mock-im-sequences.sqlite")),
                 new MessageRouter.SQLiteAcceptedMessageStore(messageDatabase),
                 groupService,
+                groupReadCursorStore,
                 System::currentTimeMillis
         );
         AuthService authService = new AuthService(

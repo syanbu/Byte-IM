@@ -46,7 +46,10 @@ data class ChatUiState(
     val errorMessage: String? = null,
     val peerReadUpToServerSeq: Long? = null,
     val senderProfiles: Map<String, UserProfile> = emptyMap(),
-    val mentionMembers: List<GroupMember> = emptyList()
+    val mentionMembers: List<GroupMember> = emptyList(),
+    val latestOwnSentMessageId: String? = null,
+    val groupReadCountForLatest: Int = 0,
+    val groupReadersForLatest: List<GroupMember> = emptyList()
 )
 
 class ChatViewModel(
@@ -67,6 +70,8 @@ class ChatViewModel(
     val currentUserId: String = session.userId
     private var started = false
     private val jobs = mutableListOf<Job>()
+    private var groupReadObservationJob: Job? = null
+    private var latestGroupReadCursors: List<com.buyansong.im.storage.GroupReadCursor> = emptyList()
     private val thumbnailRetryCounts = mutableMapOf<String, Int>()
     private val thumbnailRetryJobs = mutableMapOf<String, Job>()
 
@@ -78,10 +83,13 @@ class ChatViewModel(
         if (mutableState.value.peerId.isNotBlank()) {
             openCurrentConversation()
         }
+        startGroupReadObservation()
         connectIfNeeded()
         jobs += scope.launch(dispatcher) {
             repository.conversationUpdates.collect {
                 refreshKeepingHistory()
+                sendGroupReadAckIfNeeded()
+                recomputeGroupReadIndicator()
                 refreshProfiles()
                 scheduleMissingThumbnailRetries(immediate = false)
             }
@@ -94,6 +102,7 @@ class ChatViewModel(
         jobs += scope.launch(dispatcher) {
             refreshInitialPage()
             refreshProfiles()
+            recomputeGroupReadIndicator()
             scheduleMissingThumbnailRetries(immediate = true)
         }
     }
@@ -104,6 +113,7 @@ class ChatViewModel(
         }
         jobs.forEach { it.cancel() }
         jobs.clear()
+        groupReadObservationJob = null
         thumbnailRetryJobs.values.forEach { it.cancel() }
         thumbnailRetryJobs.clear()
         thumbnailRetryCounts.clear()
@@ -122,14 +132,19 @@ class ChatViewModel(
             hasMoreLocal = true,
             isHistoryMemoryLimitReached = false,
             errorMessage = null,
-            peerReadUpToServerSeq = null
+            peerReadUpToServerSeq = null,
+            latestOwnSentMessageId = null,
+            groupReadCountForLatest = 0,
+            groupReadersForLatest = emptyList()
         )
         scope.launch(dispatcher) {
             if (trimmedPeerId.isNotEmpty()) {
                 openCurrentConversation()
             }
+            startGroupReadObservation()
             refreshProfiles()
             refreshInitialPage()
+            recomputeGroupReadIndicator()
             scheduleMissingThumbnailRetries(immediate = true)
         }
     }
@@ -449,7 +464,13 @@ class ChatViewModel(
     private fun refreshInitialPage() {
         val peerId = mutableState.value.peerId
         if (peerId.isEmpty()) {
-            mutableState.value = mutableState.value.copy(messages = emptyList(), hasMoreLocal = false)
+            mutableState.value = mutableState.value.copy(
+                messages = emptyList(),
+                hasMoreLocal = false,
+                latestOwnSentMessageId = null,
+                groupReadCountForLatest = 0,
+                groupReadersForLatest = emptyList()
+            )
             return
         }
         val messages = historyPage(peerId, beforeTime = null, limit = HISTORY_PAGE_SIZE)
@@ -460,6 +481,7 @@ class ChatViewModel(
             errorMessage = null,
             peerReadUpToServerSeq = peerReadCursor(peerId)
         )
+        recomputeGroupReadIndicator()
     }
 
     private suspend fun refreshProfiles() {
@@ -505,6 +527,7 @@ class ChatViewModel(
                 senderProfiles = senderProfiles,
                 mentionMembers = mentionMembers
             )
+            recomputeGroupReadIndicator()
             return
         }
         if (peerId.isNotBlank()) {
@@ -533,6 +556,7 @@ class ChatViewModel(
             errorMessage = null,
             peerReadUpToServerSeq = peerReadCursor(peerId)
         )
+        recomputeGroupReadIndicator()
     }
 
     private fun refreshKeepingHistoryPreservingError() {
@@ -546,6 +570,65 @@ class ChatViewModel(
         mutableState.value = current.copy(
             messages = mergeMessages(current.messages, latestMessages),
             peerReadUpToServerSeq = peerReadCursor(peerId)
+        )
+        recomputeGroupReadIndicator()
+    }
+
+    private fun startGroupReadObservation() {
+        groupReadObservationJob?.cancel()
+        groupReadObservationJob = null
+        val targetId = mutableState.value.peerId
+        if (!targetId.isGroupConversationId()) {
+            latestGroupReadCursors = emptyList()
+            recomputeGroupReadIndicator(emptyList())
+            return
+        }
+        val groupId = targetId.removePrefix("group:")
+        latestGroupReadCursors = emptyList()
+        groupReadObservationJob = scope.launch(dispatcher) {
+            repository.observeGroupReadCursors(groupId).collect { cursors ->
+                if (mutableState.value.peerId == targetId) {
+                    latestGroupReadCursors = cursors
+                    recomputeGroupReadIndicator(cursors)
+                }
+            }
+        }
+        jobs += groupReadObservationJob!!
+    }
+
+    private fun sendGroupReadAckIfNeeded() {
+        val peerId = mutableState.value.peerId
+        if (!peerId.isGroupConversationId()) return
+        repository.sendGroupReadAck(
+            groupId = peerId.removePrefix("group:"),
+            readerId = session.userId
+        )
+    }
+
+    private fun recomputeGroupReadIndicator(cursors: List<com.buyansong.im.storage.GroupReadCursor>? = null) {
+        val current = mutableState.value
+        if (!current.peerId.isGroupConversationId()) {
+            mutableState.value = current.copy(
+                latestOwnSentMessageId = null,
+                groupReadCountForLatest = 0,
+                groupReadersForLatest = emptyList()
+            )
+            return
+        }
+        val latestOwnId = GroupReadReceiptPolicy.latestEligibleOwnSentMessageId(current.messages, session.userId)
+        val latestOwn = current.messages.firstOrNull { it.messageId == latestOwnId }
+        val readers = latestOwn?.let {
+            GroupReadReceiptPolicy.readersOf(
+                messageSenderId = it.senderId,
+                messageServerSeq = it.serverSeq,
+                cursors = cursors ?: latestGroupReadCursors,
+                members = current.mentionMembers
+            )
+        }.orEmpty()
+        mutableState.value = current.copy(
+            latestOwnSentMessageId = latestOwnId,
+            groupReadCountForLatest = readers.size,
+            groupReadersForLatest = readers
         )
     }
 

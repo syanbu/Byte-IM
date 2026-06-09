@@ -88,6 +88,7 @@ import com.buyansong.im.group.GroupInfoViewModel
 import com.buyansong.im.group.JoinedGroupsScreen
 import com.buyansong.im.group.JoinedGroupsViewModel
 import com.buyansong.im.group.OkHttpGroupApi
+import com.buyansong.im.group.DefaultGroupReadCursorRepository
 import com.buyansong.im.message.AndroidChatThumbnailCache
 import com.buyansong.im.message.CoroutineThumbnailDownloadScheduler
 import com.buyansong.im.message.MessageIdGenerator
@@ -110,6 +111,7 @@ import com.buyansong.im.profile.ProfileRepository
 import com.buyansong.im.storage.AndroidConversationDao
 import com.buyansong.im.storage.AndroidFriendContactDao
 import com.buyansong.im.storage.AndroidGroupDao
+import com.buyansong.im.storage.AndroidGroupReadCursorDao
 import com.buyansong.im.storage.AndroidMessageDao
 import com.buyansong.im.storage.AndroidPendingMessageDao
 import com.buyansong.im.storage.AndroidTransactionRunner
@@ -325,6 +327,9 @@ private class AccountScopedRepositories private constructor(
                 contactApi = OkHttpContactApi(baseUrl = httpBaseUrl),
                 friendContactDao = AndroidFriendContactDao(database)
             )
+            val groupReadCursorRepository = DefaultGroupReadCursorRepository(
+                dao = AndroidGroupReadCursorDao(database)
+            )
             val messageRepository = MessageRepository(
                 messageDao = AndroidMessageDao(database),
                 conversationDao = conversationDao,
@@ -338,7 +343,8 @@ private class AccountScopedRepositories private constructor(
                 thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
                     thumbnailCache = thumbnailCache,
                     scope = thumbnailDownloadScope
-                )
+                ),
+                groupReadCursorRepository = groupReadCursorRepository
             )
             val groupRepository = DefaultGroupRepository(
                 groupApi = OkHttpGroupApi(baseUrl = httpBaseUrl),
@@ -410,6 +416,16 @@ private fun AuthenticatedImNavHost(
             validSessionProvider = validSessionProvider
         )
     }
+    val conversationListViewModel = remember(session.userId) {
+        ConversationListViewModel(
+            session = session,
+            repository = messageRepository,
+            connection = connection,
+            profileRepository = profileRepository,
+            groupRepository = groupRepository,
+            validSessionProvider = validSessionProvider
+        )
+    }
 
     DisposableEffect(messagePacketProcessor, messageOutboxWorker, unreadBadgeController) {
         unreadBadgeController.start()
@@ -455,16 +471,6 @@ private fun AuthenticatedImNavHost(
                     .padding(innerPadding)
             ) {
             composable(SelfHostedImRoute.Conversations.route) {
-                val conversationListViewModel = remember(session.userId) {
-                    ConversationListViewModel(
-                        session = session,
-                        repository = messageRepository,
-                        connection = connection,
-                        profileRepository = profileRepository,
-                        groupRepository = groupRepository,
-                        validSessionProvider = validSessionProvider
-                    )
-                }
                 val conversationState by conversationListViewModel.state.collectAsState()
                 Column(modifier = Modifier.fillMaxSize()) {
                     ConversationListScreen(

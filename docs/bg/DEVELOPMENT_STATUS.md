@@ -31,7 +31,7 @@
 | Mock server | 本地 Netty 服务，支持鉴权、WebSocket、持久化重放和当前 demo 联调能力 | 当前 B1-B9.5 路径已完成，并被后续功能继续扩展 | [mock-server.md](../status/mock-server.md) |
 | B10 | 群聊、群创建和 @ 提醒基础能力 | 部分完成 | [B10-group-chat-and-mention.md](../status/B10-group-chat-and-mention.md) |
 | B11 | 图片消息：图库选择、多选拆分、上传/重试分层、缩略图渐进展示 | 图片消息首版已实现 | [B11-image-message-design-status.md](../status/B11-image-message-design-status.md) |
-| B12 | 消息撤回和已读回执 | 单聊已读回执已实现；撤回使用单聊/群聊共享聊天 UI 路径 | [B12-message-recall-and-read-receipts.md](../status/B12-message-recall-and-read-receipts.md) |
+| B12 | 消息撤回和已读回执 | 单聊已读回执、群聊已读人数/读者列表已实现；撤回使用单聊/群聊共享聊天 UI 路径 | [B12-message-recall-and-read-receipts.md](../status/B12-message-recall-and-read-receipts.md) |
 | B13 | 推送 | 暂缓 | 后续可选范围 |
 
 ## 近期自设计工作

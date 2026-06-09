@@ -5,6 +5,7 @@ import com.buyansong.im.alert.IncomingMessageAlert
 import com.buyansong.im.alert.MessageAlertPolicy
 import com.buyansong.im.connection.ImConnection
 import com.buyansong.im.group.GroupCreateResult
+import com.buyansong.im.group.GroupReadCursorRepository
 import com.buyansong.im.profile.ProfileRepository
 import com.buyansong.im.protocol.ImCommand
 import com.buyansong.im.protocol.ImPacket
@@ -24,6 +25,9 @@ import com.google.gson.JsonParser
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
 
 class MessageRepository(
     private val messageDao: MessageDao,
@@ -36,7 +40,8 @@ class MessageRepository(
     private val transactionRunner: TransactionRunner = TransactionRunner.immediate(),
     private val profileRepository: ProfileRepository? = null,
     thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache,
-    private val thumbnailDownloadScheduler: ThumbnailDownloadScheduler = ImmediateThumbnailDownloadScheduler(thumbnailCache)
+    private val thumbnailDownloadScheduler: ThumbnailDownloadScheduler = ImmediateThumbnailDownloadScheduler(thumbnailCache),
+    private val groupReadCursorRepository: GroupReadCursorRepository? = null
 ) : MessagesTabUnreadBadgeSource {
     @Volatile
     private var activeConversationId: String? = null
@@ -45,6 +50,7 @@ class MessageRepository(
     @Volatile
     private var activePeerId: String? = null
     private val lastSentReadCursorByConversation = mutableMapOf<String, Long>()
+    private val lastSentGroupReadCursorByGroup = mutableMapOf<String, Long>()
     private val mutableConversationUpdates = MutableSharedFlow<Unit>(extraBufferCapacity = 64)
     override val conversationUpdates: SharedFlow<Unit> = mutableConversationUpdates.asSharedFlow()
     private val mutableMessageAlerts = MutableSharedFlow<IncomingMessageAlert>(extraBufferCapacity = 64)
@@ -601,6 +607,13 @@ class MessageRepository(
                 readAt = now
             )
         }
+        if (conversationId.startsWith("group:")) {
+            sendGroupReadAck(
+                groupId = conversationId.removePrefix("group:"),
+                readerId = currentUserId,
+                now = now
+            )
+        }
         notifyConversationChanged()
         return conversationId
     }
@@ -792,6 +805,18 @@ class MessageRepository(
 
     private fun handleReadAck(json: String) {
         val body = JsonParser.parseString(json).asJsonObject
+        val conversationType = body.optionalString("conversationType")?.takeIf { it.isNotBlank() }
+        if (conversationType == "GROUP") {
+            val conversationId = body.requiredString("conversationId")
+            val groupId = conversationId.removePrefix("group:")
+            val readerId = body.requiredString("readerId")
+            val readUpToServerSeq = body.requiredLong("readUpToServerSeq")
+            val readAt = body.optionalLong("readAt") ?: System.currentTimeMillis()
+            runBlocking {
+                applyIncomingGroupReadAck(groupId, readerId, readUpToServerSeq, readAt)
+            }
+            return
+        }
         val conversationId = body.requiredString("conversationId")
         val readUpToServerSeq = body.requiredLong("readUpToServerSeq")
         val readAt = body.optionalLong("readAt") ?: System.currentTimeMillis()
@@ -799,6 +824,45 @@ class MessageRepository(
         if (changed) {
             notifyConversationChanged()
         }
+    }
+
+    fun sendGroupReadAck(groupId: String, readerId: String, now: Long = System.currentTimeMillis()) {
+        if (groupReadCursorRepository == null) return
+        val conversationId = "group:$groupId"
+        val readUpToServerSeq = messageDao.maxIncomingServerSeq(conversationId) ?: return
+        val previous = lastSentGroupReadCursorByGroup[groupId]
+        if (previous != null && readUpToServerSeq <= previous) {
+            return
+        }
+        lastSentGroupReadCursorByGroup[groupId] = readUpToServerSeq
+        connection.send(
+            ImPacket(
+                cmd = ImCommand.READ_ACK.value,
+                body = """
+                    {
+                      "conversationId":"${conversationId.escapeJson()}",
+                      "conversationType":"GROUP",
+                      "readerId":"${readerId.escapeJson()}",
+                      "readUpToServerSeq":$readUpToServerSeq,
+                      "readAt":$now
+                    }
+                """.trimIndent().replace(Regex("\\s+"), "")
+                    .toByteArray()
+            )
+        )
+    }
+
+    suspend fun applyIncomingGroupReadAck(
+        groupId: String,
+        readerId: String,
+        readUpToServerSeq: Long,
+        readAt: Long
+    ) {
+        groupReadCursorRepository?.upsertIfGreater(groupId, readerId, readUpToServerSeq, readAt)
+    }
+
+    fun observeGroupReadCursors(groupId: String): Flow<List<com.buyansong.im.storage.GroupReadCursor>> {
+        return groupReadCursorRepository?.observeByGroup(groupId) ?: flowOf(emptyList())
     }
 
     private fun handleRecallAck(json: String) {

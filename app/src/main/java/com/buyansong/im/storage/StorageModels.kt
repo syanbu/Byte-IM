@@ -87,6 +87,13 @@ data class GroupMember(
     val updatedAt: Long
 )
 
+data class GroupReadCursor(
+    val groupId: String,
+    val readerId: String,
+    val readUpToServerSeq: Long,
+    val readAt: Long
+)
+
 enum class MessageStatus {
     UPLOADING,
     UPLOAD_FAILED,

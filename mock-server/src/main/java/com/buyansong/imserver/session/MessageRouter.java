@@ -5,6 +5,9 @@ import com.buyansong.imserver.auth.TokenService;
 import com.buyansong.imserver.auth.TokenService.AuthFailureReason;
 import com.buyansong.imserver.auth.TokenService.VerificationResult;
 import com.buyansong.imserver.group.GroupService;
+import com.buyansong.imserver.groupread.GroupReadCursor;
+import com.buyansong.imserver.groupread.GroupReadCursorStore;
+import com.buyansong.imserver.groupread.InMemoryGroupReadCursorStore;
 import com.buyansong.imserver.protocol.ImCommand;
 import com.buyansong.imserver.protocol.ImPacket;
 import com.google.gson.JsonObject;
@@ -35,6 +38,7 @@ public final class MessageRouter {
     private final ServerSeqStore serverSeqStore;
     private final AcceptedMessageStore acceptedMessageStore;
     private final GroupService groupService;
+    private final GroupReadCursorStore groupReadCursorStore;
     private final LongSupplier clock;
     private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ConcurrentMap<String, AcceptedMessage>> undeliveredMessagesByReceiver = new ConcurrentHashMap<>();
@@ -79,11 +83,25 @@ public final class MessageRouter {
             GroupService groupService,
             LongSupplier clock
     ) {
+        this(registry, tokenService, serverSeqStore, acceptedMessageStore, groupService,
+                new InMemoryGroupReadCursorStore(), clock);
+    }
+
+    public MessageRouter(
+            ClientSessionRegistry registry,
+            TokenService tokenService,
+            ServerSeqStore serverSeqStore,
+            AcceptedMessageStore acceptedMessageStore,
+            GroupService groupService,
+            GroupReadCursorStore groupReadCursorStore,
+            LongSupplier clock
+    ) {
         this.registry = registry;
         this.tokenService = tokenService;
         this.serverSeqStore = serverSeqStore;
         this.acceptedMessageStore = acceptedMessageStore;
         this.groupService = groupService;
+        this.groupReadCursorStore = groupReadCursorStore;
         this.clock = clock;
         restoreAcceptedMessages();
     }
@@ -299,6 +317,11 @@ public final class MessageRouter {
             ImServerLogger.log("[IM] READ_ACK rejected socketUserId=%s readerId=%s", socketUserId, readerId);
             return;
         }
+        String conversationType = optionalString(ack, "conversationType", "SINGLE");
+        if ("GROUP".equals(conversationType)) {
+            handleGroupReadAck(ack);
+            return;
+        }
         String peerId = ack.get("peerId").getAsString();
         registry.find(peerId).ifPresentOrElse(
                 client -> {
@@ -312,6 +335,27 @@ public final class MessageRouter {
                 },
                 () -> ImServerLogger.log("[IM] READ_ACK skipped peer offline reader=%s peer=%s", readerId, peerId)
         );
+    }
+
+    private void handleGroupReadAck(JsonObject ack) {
+        String conversationId = ack.get("conversationId").getAsString();
+        String groupId = conversationId.startsWith("group:") ? conversationId.substring("group:".length()) : conversationId;
+        String readerId = ack.get("readerId").getAsString();
+        long readUpToServerSeq = ack.get("readUpToServerSeq").getAsLong();
+        long readAt = ack.get("readAt").getAsLong();
+        if (!groupService.isMember(groupId, readerId)) {
+            ImServerLogger.log("[IM] GROUP_READ_ACK rejected non-member reader=%s groupId=%s", readerId, groupId);
+            return;
+        }
+        boolean advanced = groupReadCursorStore.upsertIfGreater(groupId, readerId, readUpToServerSeq, readAt);
+        if (!advanced) {
+            ImServerLogger.log("[IM] GROUP_READ_ACK stale reader=%s groupId=%s seq=%d", readerId, groupId, readUpToServerSeq);
+            return;
+        }
+        for (String memberId : groupService.membersForReadAck(groupId)) {
+            registry.find(memberId).ifPresent(client -> client.send(packet(ImCommand.READ_ACK, ack)));
+        }
+        ImServerLogger.log("[IM] GROUP_READ_ACK broadcast reader=%s groupId=%s seq=%d", readerId, groupId, readUpToServerSeq);
     }
 
     public synchronized void handleRecallMessage(String socketUserId, ImPacket packet) {
@@ -429,6 +473,7 @@ public final class MessageRouter {
         client.recordStatus("AUTHENTICATED userId=" + userId + " authAck=sent");
         deliverQueuedMessages(userId, client);
         deliverPendingRecallNotifies(userId, client);
+        replayGroupReadCursorsFor(userId, client);
         return null;
     }
 
@@ -460,6 +505,26 @@ public final class MessageRouter {
                     userId,
                     event.messageId()
             );
+        }
+    }
+
+    void replayGroupReadCursorsFor(String userId, OutboundClient client) {
+        List<GroupService.GroupRecord> joinedGroups = groupService.findGroupsByMember(userId);
+        if (joinedGroups.isEmpty()) {
+            return;
+        }
+        List<String> groupIds = new ArrayList<>();
+        for (GroupService.GroupRecord group : joinedGroups) {
+            groupIds.add(group.groupId());
+        }
+        for (GroupReadCursor cursor : groupReadCursorStore.findByMemberOf(groupIds)) {
+            JsonObject body = new JsonObject();
+            body.addProperty("conversationId", "group:" + cursor.groupId());
+            body.addProperty("conversationType", "GROUP");
+            body.addProperty("readerId", cursor.readerId());
+            body.addProperty("readUpToServerSeq", cursor.readUpToServerSeq());
+            body.addProperty("readAt", cursor.readAt());
+            client.send(packet(ImCommand.READ_ACK, body));
         }
     }
 

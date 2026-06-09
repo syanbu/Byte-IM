@@ -158,6 +158,18 @@ public final class GroupService {
         return recipients;
     }
 
+    public List<String> membersForReadAck(String groupId) {
+        GroupRecord group = groupStore.findById(groupId).orElse(null);
+        if (group == null) {
+            return List.of();
+        }
+        return List.copyOf(group.memberUserIds());
+    }
+
+    public List<GroupRecord> findGroupsByMember(String userId) {
+        return groupStore.findByMember(userId);
+    }
+
     private JsonObject success(GroupRecord group) {
         JsonObject root = new JsonObject();
         root.addProperty("code", 0);

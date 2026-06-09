@@ -40,6 +40,7 @@ Done for the current local single-chat scope.
 - New `ConversationListLoadMorePolicy` extracts the page-trigger predicate (item count, `hasMore`, `isLoadingMore`, threshold) as a pure, testable object. The screen and the unit tests share the same source of truth.
 - Conversation list page trigger threshold is 10 items from the bottom, matching one full screen on a typical device.
 - Conversation list refreshes merge already-loaded pages with refreshed recent rows, so incoming updates do not shrink the visible list back to the first page.
+- Conversation list now preserves its `LazyColumn` scroll position when the user opens a chat from `Messages` and then returns with Back, matching the existing `Contacts` behavior for long lists.
 - Connection/auth status and logout are only displayed on the conversation list; chat detail keeps only back navigation.
 - Empty conversation lists no longer show a fixed mock peer; demo contacts live in the separate `Contacts` tab and do not create conversation rows until a real message exists.
 - The demo Contacts tab now uses four mutual demo accounts:
@@ -63,6 +64,7 @@ Done for the current local single-chat scope.
 | 2026-06-06 | B3 conversation pagination | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.storage.ConversationDaoContractTest --tests com.buyansong.im.message.MessageRepositoryTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest` | Passed: cursor page ordering, repository page access, first-page load, load-more append, refresh-without-dropping-loaded-pages, and UI scroll trigger are covered. |
 | 2026-06-06 | B3 derivedStateOf + prefetch | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListLoadMorePolicyTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest` | Passed: `ConversationListLoadMorePolicy` covers all trigger branches (threshold met, not yet met, loading, end-of-list, empty, short list); ViewModel covers cache-hit on second `loadMoreConversations` (delta=1 vs. real-query delta=2) and `refresh` clearing pending pre-fetch; row-layout sniff test now asserts `derivedStateOf` instead of `snapshotFlow`. |
 | 2026-06-06 | B3 prefetch warm-start + background cached-page apply | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationListLoadMorePolicyTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest --console=plain` | Passed: startup now prefetches page 2 before the first 50-row boundary, cached-page `loadMoreConversations()` no longer updates synchronously on the caller thread, and refresh rebuilds a fresh cached page for the next scroll. |
+| 2026-06-09 | B3 chat-back scroll restore | `./gradlew :app:testDebugUnitTest --console=plain` | Passed: `ConversationList` now persists `firstVisibleItemIndex` / `firstVisibleItemScrollOffset` in `ConversationListViewModel`, so returning from `Chat` restores the previous browse position instead of jumping back to the top. |
 
 ## Next Implementation Slice
 
@@ -257,3 +259,7 @@ After the initial cursor-pagination slice, two follow-up changes were made to ad
 
 - Bottom-of-list loading indicator (the `isLoadingMore` flag is already exposed in the UI state and ready to render).
 - Tuning `CONVERSATION_PAGE_SIZE = 50` based on real-device measurements.
+
+## Bug Fix Log
+
+- 2026-06-09: fixed the long-list `Messages -> Chat -> Back` regression where `ConversationListScreen` returned to the top instead of the previous scroll position. Root cause: unlike `ContactListScreen`, the conversation list had not lifted `LazyListState` position into `ConversationListViewModel`. The fix added `firstVisibleItemIndex` / `firstVisibleItemScrollOffset` to `ConversationListUiState`, restored `rememberLazyListState(...)` from state, and wrote position changes back through `snapshotFlow`. See [`../bug/Fix-ConversationListScrollPositionResetsAfterChatBack.md`](../bug/Fix-ConversationListScrollPositionResetsAfterChatBack.md).

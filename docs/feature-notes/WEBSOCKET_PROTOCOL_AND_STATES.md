@@ -184,19 +184,41 @@ RECEIVE_MESSAGE
 
 B12 使用 `READ_ACK` 表示已读回执，并且明确和 `DELIVERY_ACK` 分离。
 
-Receiver -> server body：
+`READ_ACK` (cmd = 13) - sender tells the server it has read up to a given serverSeq.
+
+**Body (single chat, legacy - preserved for compatibility):**
 
 ```json
 {
-  "conversationId": "single:u1:u2",
-  "readerId": "u2",
-  "peerId": "u1",
-  "readUpToServerSeq": 12,
+  "conversationId": "single:u_1001:u_1002",
+  "readerId": "13900113900",
+  "peerId": "u_1002",
+  "readUpToServerSeq": 1010,
   "readAt": 1717000000000
 }
 ```
 
-Server -> sender 保持同样 cursor 字段。Android 在 conversation 上保存 peer read cursor，并且只允许它向前移动。
+Server forwards this packet verbatim to the peer identified by `peerId` (if online). B12 behavior.
+
+**Body (group chat - new in B12-G):**
+
+```json
+{
+  "conversationId": "group:g_1001",
+  "conversationType": "GROUP",
+  "readerId": "13900113900",
+  "readUpToServerSeq": 1010,
+  "readAt": 1717000000000
+}
+```
+
+`conversationType` MUST be `GROUP` for the new group path. The server:
+1. Upserts `(groupId, readerId) -> (readUpToServerSeq, readAt)` monotonically (`>` only).
+2. If the upsert actually advanced, broadcasts the same JSON to every online group member.
+
+When `conversationType` is absent, the server treats it as `SINGLE` (legacy fallback).
+
+Android 在 conversation 上保存 peer read cursor，并且只允许它向前移动。
 
 聊天 UI 用下面条件推导 outgoing 消息的已读标记：
 

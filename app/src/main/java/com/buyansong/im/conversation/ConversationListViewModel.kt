@@ -40,8 +40,25 @@ data class ConversationListUiState(
     val navigationTargetPeerId: String? = null,
     val navigationTargetConversationId: String? = null,
     val isLoadingMore: Boolean = false,
-    val hasMoreConversations: Boolean = true
+    val hasMoreConversations: Boolean = true,
+    val firstVisibleItemIndex: Int = 0,
+    val firstVisibleItemScrollOffset: Int = 0
 )
+
+internal data class ConversationListScrollPosition(
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemScrollOffset: Int
+)
+
+internal fun normalizeConversationListScrollPosition(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffset: Int
+): ConversationListScrollPosition {
+    return ConversationListScrollPosition(
+        firstVisibleItemIndex = firstVisibleItemIndex.coerceAtLeast(0),
+        firstVisibleItemScrollOffset = firstVisibleItemScrollOffset.coerceAtLeast(0)
+    )
+}
 
 class ConversationListViewModel(
     private val session: AuthSession,
@@ -129,6 +146,24 @@ class ConversationListViewModel(
             repository.deleteLocalConversation(trimmedConversationId)
             refresh()
         }
+    }
+
+    fun updateScrollPosition(firstVisibleItemIndex: Int, firstVisibleItemScrollOffset: Int) {
+        val normalized = normalizeConversationListScrollPosition(
+            firstVisibleItemIndex = firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = firstVisibleItemScrollOffset
+        )
+        val current = mutableState.value
+        if (
+            current.firstVisibleItemIndex == normalized.firstVisibleItemIndex &&
+            current.firstVisibleItemScrollOffset == normalized.firstVisibleItemScrollOffset
+        ) {
+            return
+        }
+        mutableState.value = current.copy(
+            firstVisibleItemIndex = normalized.firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = normalized.firstVisibleItemScrollOffset
+        )
     }
 
     fun loadMoreConversations() {

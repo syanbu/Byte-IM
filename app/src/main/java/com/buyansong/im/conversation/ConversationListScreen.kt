@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -54,6 +55,7 @@ import com.buyansong.im.ui.ByteImUnreadBadge
 import com.buyansong.im.ui.ConversationCreateMenu
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 object MessageTopBarTitlePolicy {
     fun titleForUnreadCount(unreadCount: Int): String {
@@ -89,7 +91,19 @@ fun ConversationListScreen(
             viewModel.consumeNavigationTarget()
         }
     }
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = state.firstVisibleItemIndex,
+        initialFirstVisibleItemScrollOffset = state.firstVisibleItemScrollOffset
+    )
+    LaunchedEffect(viewModel, listState) {
+        snapshotFlow {
+            listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+        }
+            .distinctUntilChanged()
+            .collect { (index, offset) ->
+                viewModel.updateScrollPosition(index, offset)
+            }
+    }
     val shouldLoadMore by remember(
         listState,
         state.items.size,

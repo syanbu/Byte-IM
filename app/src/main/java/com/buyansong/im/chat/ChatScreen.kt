@@ -75,6 +75,7 @@ import androidx.core.content.ContextCompat
 import com.buyansong.im.R
 import com.buyansong.im.message.ChatImageCompressor
 import com.buyansong.im.storage.ChatMessage
+import com.buyansong.im.storage.ConversationType
 import com.buyansong.im.storage.GroupMember
 import com.buyansong.im.storage.MessageDirection
 import com.buyansong.im.storage.MessageStatus
@@ -104,6 +105,7 @@ fun ChatScreen(
     var activeActionMessageId by remember { mutableStateOf<String?>(null) }
     var showMoreActions by remember { mutableStateOf(false) }
     var showAlbumPicker by remember { mutableStateOf(false) }
+    var showGroupReadSheet by remember { mutableStateOf(false) }
     var albumPermissionDenied by remember { mutableStateOf(false) }
     var albumSessionId by remember { mutableStateOf(0) }
     var selectedMentions by remember { mutableStateOf(emptyList<ChatMention>()) }
@@ -228,34 +230,46 @@ fun ChatScreen(
                                 senderDisplayName = recalledSenderDisplayName(message, state)
                             )
                         )
-                        ChatMessageRowKind.BUBBLE -> ChatMessageRow(
-                            message = message,
-                            peerName = state.peerName,
-                            peerAvatarUrl = state.peerAvatarUrl,
-                            currentUserAvatarUrl = state.currentUserAvatarUrl,
-                            currentUserId = viewModel.currentUserId,
-                            senderProfile = state.senderProfiles[message.senderId],
-                            peerReadUpToServerSeq = state.peerReadUpToServerSeq,
-                            mentionMembers = state.mentionMembers,
-                            showActions = activeActionMessageId == message.messageId,
-                            onOpenImagePreview = { previewMessage = it },
-                            onOpenActions = { activeActionMessageId = message.messageId },
-                            onDismissActions = { activeActionMessageId = null },
-                            onRetryImage = { message ->
-                                scope.launch {
-                                    viewModel.retryImageMessage(message.messageId)
-                                }
-                            },
-                            onCopyText = { text ->
-                                clipboard.setText(AnnotatedString(text))
-                            },
-                            onRecall = { message ->
-                                scope.launch {
-                                    viewModel.recallMessage(message.messageId)
-                                }
-                            },
-                            onOpenUserProfile = onOpenUserProfile
-                        )
+                        ChatMessageRowKind.BUBBLE -> Column(modifier = Modifier.fillMaxWidth()) {
+                            ChatMessageRow(
+                                message = message,
+                                peerName = state.peerName,
+                                peerAvatarUrl = state.peerAvatarUrl,
+                                currentUserAvatarUrl = state.currentUserAvatarUrl,
+                                currentUserId = viewModel.currentUserId,
+                                senderProfile = state.senderProfiles[message.senderId],
+                                peerReadUpToServerSeq = state.peerReadUpToServerSeq,
+                                mentionMembers = state.mentionMembers,
+                                showActions = activeActionMessageId == message.messageId,
+                                onOpenImagePreview = { previewMessage = it },
+                                onOpenActions = { activeActionMessageId = message.messageId },
+                                onDismissActions = { activeActionMessageId = null },
+                                onRetryImage = { message ->
+                                    scope.launch {
+                                        viewModel.retryImageMessage(message.messageId)
+                                    }
+                                },
+                                onCopyText = { text ->
+                                    clipboard.setText(AnnotatedString(text))
+                                },
+                                onRecall = { message ->
+                                    scope.launch {
+                                        viewModel.recallMessage(message.messageId)
+                                    }
+                                },
+                                onOpenUserProfile = onOpenUserProfile
+                            )
+                            if (
+                                state.peerId.startsWith("group:") &&
+                                message.messageId == state.latestOwnSentMessageId &&
+                                state.groupReadCountForLatest > 0
+                            ) {
+                                GroupReadIndicator(
+                                    count = state.groupReadCountForLatest,
+                                    onClick = { showGroupReadSheet = true }
+                                )
+                            }
+                        }
                     }
                 }
                 if (state.messages.isNotEmpty()) {
@@ -357,6 +371,9 @@ fun ChatScreen(
     BackHandler(enabled = showAlbumPicker) {
         showAlbumPicker = false
     }
+    BackHandler(enabled = showGroupReadSheet) {
+        showGroupReadSheet = false
+    }
     BackHandler(enabled = previewMessage != null) {
         previewMessage = null
     }
@@ -389,6 +406,12 @@ fun ChatScreen(
                 }
             },
             modifier = Modifier.fillMaxSize()
+        )
+    }
+    if (showGroupReadSheet) {
+        GroupReadDetailSheet(
+            readers = state.groupReadersForLatest,
+            onDismiss = { showGroupReadSheet = false }
         )
     }
 }
@@ -727,6 +750,7 @@ private fun ChatBubbleLine(
             OutgoingMessageStatus(
                 message = message,
                 peerReadUpToServerSeq = peerReadUpToServerSeq,
+                showReadMarker = message.conversationType == ConversationType.SINGLE,
                 status = message.status,
                 onRetry = {
                     if (message.type == MessageType.IMAGE) {
@@ -882,6 +906,7 @@ private const val CHAT_ERROR_TOAST_DURATION_MS = 2_000L
 private fun OutgoingMessageStatus(
     message: ChatMessage,
     peerReadUpToServerSeq: Long?,
+    showReadMarker: Boolean,
     status: MessageStatus,
     onRetry: () -> Unit = {}
 ) {
@@ -904,6 +929,7 @@ private fun OutgoingMessageStatus(
             )
             MessageStatus.SENT,
             MessageStatus.RECEIVED -> {
+                if (!showReadMarker) return@Box
                 val isRead = message.serverSeq != null &&
                     peerReadUpToServerSeq != null &&
                     message.serverSeq <= peerReadUpToServerSeq
