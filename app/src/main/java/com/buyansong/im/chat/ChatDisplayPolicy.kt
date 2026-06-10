@@ -8,6 +8,7 @@ import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.storage.MessageType
 import com.buyansong.im.storage.UserProfile
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -119,11 +120,48 @@ object ChatDisplayPolicy {
         }
     }
 
-    fun topTimelineTimeText(createdAt: Long): String {
-        return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(createdAt))
+    fun shouldShowTimeSeparator(prevMessage: ChatMessage?, currentMessage: ChatMessage): Boolean {
+        if (prevMessage == null) {
+            return false
+        }
+        return currentMessage.createdAt - prevMessage.createdAt > TIME_SEPARATOR_THRESHOLD_MS
+    }
+
+    fun topTimelineTimeText(createdAt: Long, now: Long = System.currentTimeMillis()): String {
+        return timeSeparatorText(createdAt = createdAt, now = now)
+    }
+
+    fun timeSeparatorText(createdAt: Long, now: Long = System.currentTimeMillis()): String {
+        val messageDate = Date(createdAt)
+        val messageCalendar = Calendar.getInstance().apply { time = messageDate }
+        val nowCalendar = Calendar.getInstance().apply { timeInMillis = now }
+
+        return when {
+            isSameDay(messageCalendar, nowCalendar) -> hourMinuteFormat().format(messageDate)
+            isYesterday(messageCalendar, nowCalendar) -> "昨天 ${hourMinuteFormat().format(messageDate)}"
+            messageCalendar.get(Calendar.YEAR) == nowCalendar.get(Calendar.YEAR) ->
+                SimpleDateFormat("M月d日 HH:mm", Locale.getDefault()).format(messageDate)
+            else -> SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.getDefault()).format(messageDate)
+        }
+    }
+
+    private fun hourMinuteFormat(): SimpleDateFormat {
+        return SimpleDateFormat("HH:mm", Locale.getDefault())
+    }
+
+    private fun isSameDay(a: Calendar, b: Calendar): Boolean {
+        return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
+            a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+    }
+
+    private fun isYesterday(messageCalendar: Calendar, nowCalendar: Calendar): Boolean {
+        val yesterday = nowCalendar.clone() as Calendar
+        yesterday.add(Calendar.DAY_OF_YEAR, -1)
+        return isSameDay(messageCalendar, yesterday)
     }
 
     private const val RECALL_WINDOW_MS = 2 * 60 * 1000L
+    private const val TIME_SEPARATOR_THRESHOLD_MS = 5 * 60 * 1000L
 }
 
 data class BubbleAvatar(

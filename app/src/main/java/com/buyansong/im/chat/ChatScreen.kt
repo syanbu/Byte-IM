@@ -338,6 +338,12 @@ fun ChatScreen(
                             )
                         )
                         ChatMessageRowKind.BUBBLE -> Column(modifier = Modifier.fillMaxWidth()) {
+                            val prevMessage = state.messages.getOrNull(index - 1)
+                            if (ChatDisplayPolicy.shouldShowTimeSeparator(prevMessage, message)) {
+                                ChatMessageTimeSeparator(
+                                    text = ChatDisplayPolicy.timeSeparatorText(message.createdAt)
+                                )
+                            }
                             ChatMessageRow(
                                 message = message,
                                 peerName = state.peerName,
@@ -787,6 +793,24 @@ private fun ChatHistoryTopTime(
     text: String
 ) {
     ByteImSystemNotice(text = text)
+}
+
+@Composable
+private fun ChatMessageTimeSeparator(
+    text: String
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = ByteImColors.TextSecondary
+        )
+    }
 }
 
 @Composable
