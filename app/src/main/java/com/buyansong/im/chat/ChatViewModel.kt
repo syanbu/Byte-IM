@@ -616,8 +616,18 @@ class ChatViewModel(
                 .filter { it.isNotBlank() }
                 .distinct()
             val memberIds = rawMentionMembers.map { it.userId }
+            val messageVersions = mutableState.value.messages
+                .mapNotNull { message -> message.senderProfileVersion?.let { message.senderId to it } }
+                .toMap()
+            val memberVersions = rawMentionMembers
+                .filter { it.profileVersion > 0L }
+                .associate { it.userId to it.profileVersion }
             val remoteProfiles = if (currentSession.accessToken.isNotBlank()) {
-                profileRepository.refreshProfiles(currentSession.accessToken, senderIds + memberIds + currentSession.userId)
+                profileRepository.ensureProfiles(
+                    accessToken = currentSession.accessToken,
+                    userIds = senderIds + memberIds + currentSession.userId,
+                    remoteVersions = messageVersions + memberVersions
+                )
             } else {
                 emptyList()
             }

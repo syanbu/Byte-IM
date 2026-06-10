@@ -163,7 +163,7 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
                     JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
                     String response = authService.updateProfile(
                             authenticatedPhone.get(),
-                            readString(json, "nickname", ""),
+                            readNullableString(json, "nickname"),
                             readNullableString(json, "avatarUrl"),
                             readNullableString(json, "avatarObjectKey"),
                             readNullableString(json, "gender"),

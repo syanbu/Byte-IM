@@ -92,39 +92,54 @@ fun ContactListScreen(
             modifier = Modifier.weight(1f),
             containerColor = ByteImColors.AppBackground
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                state.selfEntry?.let { self ->
-                    item(key = "self-entry") {
-                        SelfRow(
-                            item = self,
-                            onClick = { onOpenContact(self.userId) }
+            if (state.isInitialLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(ByteImColors.AppBackground),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "正在加载...",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = ByteImColors.TextSecondary
+                    )
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    state.selfEntry?.let { self ->
+                        item(key = "self-entry") {
+                            SelfRow(
+                                item = self,
+                                onClick = { onOpenContact(self.userId) }
+                            )
+                            HorizontalDivider(
+                                color = ByteImColors.Divider,
+                                modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
+                            )
+                        }
+                    }
+                    item {
+                        HorizontalDivider(
+                            color = ByteImColors.Divider,
+                            modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
+                        )
+                        ContactEntryBlock(onOpenJoinedGroups = onOpenJoinedGroups)
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    items(state.items, key = { it.userId }) { item ->
+                        ContactRow(
+                            item = item,
+                            onClick = { viewModel.openContact(item.userId) }
                         )
                         HorizontalDivider(
                             color = ByteImColors.Divider,
                             modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
                         )
                     }
-                }
-                item {
-                    HorizontalDivider(
-                        color = ByteImColors.Divider,
-                        modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
-                    )
-                    ContactEntryBlock(onOpenJoinedGroups = onOpenJoinedGroups)
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-                items(state.items, key = { it.userId }) { item ->
-                    ContactRow(
-                        item = item,
-                        onClick = { viewModel.openContact(item.userId) }
-                    )
-                    HorizontalDivider(
-                        color = ByteImColors.Divider,
-                        modifier = Modifier.padding(start = ByteImListRowPolicy.dividerStartPadding())
-                    )
                 }
             }
         }

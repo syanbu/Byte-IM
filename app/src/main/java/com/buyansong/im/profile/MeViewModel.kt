@@ -131,9 +131,6 @@ class MeViewModel(
             }
             val updated = profileRepository.updateMe(
                 session = validSession,
-                nickname = profile.nickname,
-                avatarUrl = profile.avatarUrl,
-                avatarObjectKey = null,
                 gender = gender
             )
             handleUpdateResult(updated)
@@ -175,9 +172,6 @@ class MeViewModel(
             }
             val updated = profileRepository.updateMe(
                 session = validSession,
-                nickname = profile.nickname,
-                avatarUrl = profile.avatarUrl,
-                avatarObjectKey = null,
                 signature = signature.ifBlank { "" }
             )
             handleUpdateResult(updated)

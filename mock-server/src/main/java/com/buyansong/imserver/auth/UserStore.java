@@ -35,8 +35,8 @@ public final class UserStore {
                      """
                      INSERT OR IGNORE INTO users(
                        phone, salt, password_hash, nickname, avatar_url, avatar_object_key,
-                       avatar_updated_at, updated_at, created_at, gender, signature
-                     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       avatar_updated_at, updated_at, created_at, gender, signature, profile_version
+                     ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      """
              )) {
             statement.setString(1, record.phone());
@@ -50,6 +50,7 @@ public final class UserStore {
             statement.setLong(9, record.createdAt());
             statement.setString(10, record.gender());
             statement.setString(11, record.signature());
+            statement.setLong(12, record.profileVersion());
             return statement.executeUpdate() == 1;
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to insert user", error);
@@ -61,7 +62,7 @@ public final class UserStore {
              PreparedStatement statement = connection.prepareStatement(
                      """
                      SELECT phone, salt, password_hash, nickname, avatar_url, avatar_object_key,
-                            avatar_updated_at, updated_at, created_at, gender, signature
+                            avatar_updated_at, updated_at, created_at, gender, signature, profile_version
                      FROM users
                      WHERE phone = ?
                      """
@@ -79,11 +80,33 @@ public final class UserStore {
     }
 
     public synchronized List<UserRecord> findByPhones(List<String> phones) {
-        List<UserRecord> records = new ArrayList<>();
-        for (String phone : phones) {
-            findByPhone(phone).ifPresent(records::add);
+        List<String> normalizedPhones = phones.stream()
+                .filter(phone -> phone != null && !phone.isBlank())
+                .distinct()
+                .toList();
+        if (normalizedPhones.isEmpty()) {
+            return List.of();
         }
-        return records;
+        String placeholders = String.join(",", normalizedPhones.stream().map(ignored -> "?").toList());
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT phone, salt, password_hash, nickname, avatar_url, avatar_object_key, " +
+                             "avatar_updated_at, updated_at, created_at, gender, signature, profile_version " +
+                             "FROM users WHERE phone IN (" + placeholders + ")"
+             )) {
+            for (int index = 0; index < normalizedPhones.size(); index++) {
+                statement.setString(index + 1, normalizedPhones.get(index));
+            }
+            try (ResultSet resultSet = statement.executeQuery()) {
+                List<UserRecord> records = new ArrayList<>();
+                while (resultSet.next()) {
+                    records.add(readUser(resultSet));
+                }
+                return records;
+            }
+        } catch (SQLException error) {
+            throw new IllegalStateException("Unable to find users by phones", error);
+        }
     }
 
     public synchronized long profileUpdatedAtByPhone(String phone) {
@@ -100,26 +123,32 @@ public final class UserStore {
         String nextNickname = nickname == null || nickname.isBlank() ? current.get().nickname() : nickname.trim();
         String nextGender = gender == null ? current.get().gender() : gender;
         String nextSignature = signature == null ? current.get().signature() : signature;
-        long avatarUpdatedAt = avatarUrl == null || avatarUrl.equals(current.get().avatarUrl())
+        String nextAvatarUrl = avatarUrl == null ? current.get().avatarUrl() : avatarUrl;
+        String nextAvatarObjectKey = avatarObjectKey == null && nextAvatarUrl != null && nextAvatarUrl.equals(current.get().avatarUrl())
+                ? current.get().avatarObjectKey()
+                : avatarObjectKey;
+        long avatarUpdatedAt = nextAvatarUrl == null || nextAvatarUrl.equals(current.get().avatarUrl())
                 ? current.get().avatarUpdatedAt()
                 : nowMillis;
+        long nextProfileVersion = current.get().profileVersion() + 1;
         try (Connection connection = connect();
              PreparedStatement statement = connection.prepareStatement(
                      """
                      UPDATE users
                      SET nickname = ?, avatar_url = ?, avatar_object_key = ?, avatar_updated_at = ?, updated_at = ?,
-                         gender = ?, signature = ?
+                         gender = ?, signature = ?, profile_version = ?
                      WHERE phone = ?
                      """
              )) {
             statement.setString(1, nextNickname);
-            statement.setString(2, avatarUrl);
-            statement.setString(3, avatarObjectKey);
+            statement.setString(2, nextAvatarUrl);
+            statement.setString(3, nextAvatarObjectKey);
             statement.setLong(4, avatarUpdatedAt);
             statement.setLong(5, nowMillis);
             statement.setString(6, nextGender);
             statement.setString(7, nextSignature);
-            statement.setString(8, phone);
+            statement.setLong(8, nextProfileVersion);
+            statement.setString(9, phone);
             statement.executeUpdate();
             return findByPhone(phone);
         } catch (SQLException error) {
@@ -234,7 +263,8 @@ public final class UserStore {
                        updated_at BIGINT NOT NULL DEFAULT 0,
                        created_at BIGINT NOT NULL,
                        gender TEXT,
-                       signature TEXT
+                       signature TEXT,
+                       profile_version BIGINT NOT NULL DEFAULT 0
                      )
                      """
              )) {
@@ -281,7 +311,8 @@ public final class UserStore {
                 updatedAt == 0L ? createdAt : updatedAt,
                 createdAt,
                 resultSet.getString("gender"),
-                resultSet.getString("signature")
+                resultSet.getString("signature"),
+                resultSet.getLong("profile_version")
         );
     }
 
@@ -300,6 +331,7 @@ public final class UserStore {
         addColumnIfMissing(connection, columns, "updated_at", "ALTER TABLE users ADD COLUMN updated_at BIGINT NOT NULL DEFAULT 0");
         addColumnIfMissing(connection, columns, "gender", "ALTER TABLE users ADD COLUMN gender TEXT");
         addColumnIfMissing(connection, columns, "signature", "ALTER TABLE users ADD COLUMN signature TEXT");
+        addColumnIfMissing(connection, columns, "profile_version", "ALTER TABLE users ADD COLUMN profile_version BIGINT NOT NULL DEFAULT 0");
         try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE users SET nickname = phone WHERE nickname IS NULL OR nickname = ''"
         )) {

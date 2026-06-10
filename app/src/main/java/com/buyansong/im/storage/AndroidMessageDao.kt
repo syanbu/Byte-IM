@@ -199,6 +199,7 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             put("is_recalled", if (isRecalled) 1 else 0)
             if (recalledAt == null) putNull("recalled_at") else put("recalled_at", recalledAt)
             if (recalledBy == null) putNull("recalled_by") else put("recalled_by", recalledBy)
+            if (senderProfileVersion == null) putNull("sender_profile_version") else put("sender_profile_version", senderProfileVersion)
             put("status", status.name)
             put("direction", direction.name)
             put("created_at", createdAt)
@@ -219,6 +220,7 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
         val localThumbnailPathIndex = getColumnIndexOrThrow("local_thumbnail_path")
         val recalledAtIndex = getColumnIndexOrThrow("recalled_at")
         val recalledByIndex = getColumnIndexOrThrow("recalled_by")
+        val senderProfileVersionIndex = getColumnIndexOrThrow("sender_profile_version")
         return ChatMessage(
             messageId = getString(getColumnIndexOrThrow("message_id")),
             conversationId = getString(getColumnIndexOrThrow("conversation_id")),
@@ -245,7 +247,8 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             recalledBy = if (isNull(recalledByIndex)) null else getString(recalledByIndex),
             conversationType = ConversationType.valueOf(getString(getColumnIndexOrThrow("conversation_type"))),
             groupId = if (isNull(groupIdIndex)) null else getString(groupIdIndex),
-            mentionedUserIds = getString(getColumnIndexOrThrow("mentions_json")).fromJsonArrayString()
+            mentionedUserIds = getString(getColumnIndexOrThrow("mentions_json")).fromJsonArrayString(),
+            senderProfileVersion = if (isNull(senderProfileVersionIndex)) null else getLong(senderProfileVersionIndex)
         )
     }
 

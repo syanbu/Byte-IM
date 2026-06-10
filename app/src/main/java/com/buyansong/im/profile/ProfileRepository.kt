@@ -11,7 +11,7 @@ class ProfileRepository(
 ) {
     fun bootstrapSession(session: AuthSession): UserProfile {
         val profile = session.toUserProfile()
-        userProfileDao.upsert(profile)
+        upsertIfNewer(profile)
         return profile
     }
 
@@ -23,7 +23,7 @@ class ProfileRepository(
         val local = bootstrapSession(session)
         return when (val result = profileApi.me(session.accessToken)) {
             is ProfileResult.Success -> {
-                userProfileDao.upsert(result.profile)
+                upsertIfNewer(result.profile)
                 result.profile
             }
             is ProfileResult.Failure -> local
@@ -34,7 +34,7 @@ class ProfileRepository(
         userProfileDao.findByUserId(userId)?.let { return it }
         return when (val result = profileApi.user(accessToken, userId)) {
             is ProfileResult.Success -> {
-                userProfileDao.upsert(result.profile)
+                upsertIfNewer(result.profile)
                 result.profile
             }
             is ProfileResult.Failure -> null
@@ -48,8 +48,8 @@ class ProfileRepository(
         }
         return when (val result = profileApi.user(accessToken, trimmedUserId)) {
             is ProfileResult.Success -> {
-                userProfileDao.upsert(result.profile)
-                result.profile
+                upsertIfNewer(result.profile)
+                userProfileDao.findByUserId(trimmedUserId)
             }
             is ProfileResult.Failure -> null
         }
@@ -64,21 +64,64 @@ class ProfileRepository(
             is ProfileBatchResult.Success -> result.profiles
             is ProfileBatchResult.Failure -> emptyList()
         }
-        userProfileDao.upsertAll(remoteProfiles)
+        val profilesToUpsert = remoteProfiles.filter { remote ->
+            val local = userProfileDao.findByUserId(remote.userId)
+            local == null || remote.profileVersion > local.profileVersion
+        }
+        if (profilesToUpsert.isNotEmpty()) {
+            userProfileDao.upsertAll(profilesToUpsert)
+        }
+        return userProfileDao.findByUserIds(distinctUserIds)
+    }
+
+    suspend fun ensureProfiles(
+        accessToken: String,
+        userIds: List<String>,
+        remoteVersions: Map<String, Long> = emptyMap()
+    ): List<UserProfile> {
+        val distinctUserIds = userIds.distinct().filter { it.isNotBlank() }
+        if (distinctUserIds.isEmpty()) {
+            return emptyList()
+        }
+        val localProfiles = userProfileDao.findByUserIds(distinctUserIds)
+        val localById = localProfiles.associateBy { it.userId }
+        val idsToFetch = if (remoteVersions.isNotEmpty()) {
+            distinctUserIds.filter { id ->
+                val local = localById[id]
+                val remoteVersion = remoteVersions[id] ?: 0L
+                local == null || remoteVersion > local.profileVersion
+            }
+        } else {
+            distinctUserIds.filter { it !in localById }
+        }
+        if (idsToFetch.isEmpty()) {
+            return localProfiles
+        }
+        val remoteProfiles = when (val result = profileApi.batch(accessToken, idsToFetch)) {
+            is ProfileBatchResult.Success -> result.profiles
+            is ProfileBatchResult.Failure -> emptyList()
+        }
+        val profilesToUpsert = remoteProfiles.filter { remote ->
+            val local = localById[remote.userId]
+            local == null || remote.profileVersion > local.profileVersion
+        }
+        if (profilesToUpsert.isNotEmpty()) {
+            userProfileDao.upsertAll(profilesToUpsert)
+        }
         return userProfileDao.findByUserIds(distinctUserIds)
     }
 
     suspend fun updateMe(
         session: AuthSession,
-        nickname: String,
-        avatarUrl: String?,
-        avatarObjectKey: String?,
+        nickname: String? = null,
+        avatarUrl: String? = null,
+        avatarObjectKey: String? = null,
         gender: Gender? = null,
         signature: String? = null
     ): UserProfile? {
         return when (val result = profileApi.updateMe(session.accessToken, nickname, avatarUrl, avatarObjectKey, gender, signature)) {
             is ProfileResult.Success -> {
-                userProfileDao.upsert(result.profile)
+                upsertIfNewer(result.profile)
                 result.profile
             }
             is ProfileResult.Failure -> null
@@ -94,7 +137,15 @@ class ProfileRepository(
             avatarUpdatedAt = avatarUpdatedAt,
             updatedAt = profileUpdatedAt,
             gender = null,
-            signature = null
+            signature = null,
+            profileVersion = profileVersion
         )
+    }
+
+    private fun upsertIfNewer(profile: UserProfile) {
+        val local = userProfileDao.findByUserId(profile.userId)
+        if (local == null || profile.profileVersion > local.profileVersion) {
+            userProfileDao.upsert(profile)
+        }
     }
 }

@@ -12,7 +12,7 @@ interface ProfileApi {
 
     suspend fun updateMe(
         accessToken: String,
-        nickname: String,
+        nickname: String?,
         avatarUrl: String?,
         avatarObjectKey: String?,
         gender: Gender?,

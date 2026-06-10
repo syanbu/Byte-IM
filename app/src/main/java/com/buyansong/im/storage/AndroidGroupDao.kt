@@ -106,6 +106,7 @@ class AndroidGroupDao(private val database: SQLiteDatabase) : GroupDao {
             put("role", role.name)
             put("joined_at", joinedAt)
             put("updated_at", updatedAt)
+            put("profile_version", profileVersion)
         }
     }
 
@@ -131,7 +132,8 @@ class AndroidGroupDao(private val database: SQLiteDatabase) : GroupDao {
             avatarUrl = if (isNull(avatarUrlIndex)) null else getString(avatarUrlIndex),
             role = GroupMemberRole.valueOf(getString(getColumnIndexOrThrow("role"))),
             joinedAt = getLong(getColumnIndexOrThrow("joined_at")),
-            updatedAt = getLong(getColumnIndexOrThrow("updated_at"))
+            updatedAt = getLong(getColumnIndexOrThrow("updated_at")),
+            profileVersion = getLong(getColumnIndexOrThrow("profile_version"))
         )
     }
 }

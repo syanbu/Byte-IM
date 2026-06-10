@@ -269,7 +269,8 @@ object GroupJsonParser {
                     avatarUrl = null,
                     role = if (userId == group.ownerId) GroupMemberRole.OWNER else GroupMemberRole.MEMBER,
                     joinedAt = group.createdAt,
-                    updatedAt = group.updatedAt
+                    updatedAt = group.updatedAt,
+                    profileVersion = 0L
                 )
             }
             .orEmpty()
@@ -285,7 +286,8 @@ object GroupJsonParser {
             role = optionalString("role")?.let { GroupMemberRole.valueOf(it) }
                 ?: if (userId == group.ownerId) GroupMemberRole.OWNER else GroupMemberRole.MEMBER,
             joinedAt = optionalLong("joinedAt") ?: group.createdAt,
-            updatedAt = optionalLong("updatedAt") ?: group.updatedAt
+            updatedAt = optionalLong("updatedAt") ?: group.updatedAt,
+            profileVersion = optionalLong("profileVersion") ?: optionalLong("profile_version") ?: 0L
         )
     }
 

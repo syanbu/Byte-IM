@@ -47,24 +47,24 @@ class OkHttpProfileApi(
 
     override suspend fun updateMe(
         accessToken: String,
-        nickname: String,
+        nickname: String?,
         avatarUrl: String?,
         avatarObjectKey: String?,
         gender: Gender?,
         signature: String?
     ): ProfileResult {
         return withContext(Dispatchers.IO) {
-            val avatarUrlJson = avatarUrl?.let { "\"${it.escapeJson()}\"" } ?: "null"
-            val avatarObjectKeyJson = avatarObjectKey?.let { "\"${it.escapeJson()}\"" } ?: "null"
-            val genderJson = gender?.let { "\"${it.name.escapeJson()}\"" } ?: "null"
-            val signatureJson = signature?.let { "\"${it.escapeJson()}\"" } ?: "null"
             val request = Request.Builder()
                 .url(baseUrl.trimEnd('/') + "/users/me")
                 .header("Authorization", "Bearer $accessToken")
                 .put(
-                    """
-                    {"nickname":"${nickname.escapeJson()}","avatarUrl":$avatarUrlJson,"avatarObjectKey":$avatarObjectKeyJson,"gender":$genderJson,"signature":$signatureJson}
-                    """.trimIndent().toRequestBody(JSON)
+                    ProfileUpdateJson.build(
+                        nickname = nickname,
+                        avatarUrl = avatarUrl,
+                        avatarObjectKey = avatarObjectKey,
+                        gender = gender,
+                        signature = signature
+                    ).toRequestBody(JSON)
                 )
                 .build()
             try {

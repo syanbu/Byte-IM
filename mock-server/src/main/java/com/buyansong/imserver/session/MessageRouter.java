@@ -4,6 +4,7 @@ import com.buyansong.imserver.ImServerLogger;
 import com.buyansong.imserver.auth.TokenService;
 import com.buyansong.imserver.auth.TokenService.AuthFailureReason;
 import com.buyansong.imserver.auth.TokenService.VerificationResult;
+import com.buyansong.imserver.auth.UserStore;
 import com.buyansong.imserver.group.GroupService;
 import com.buyansong.imserver.groupread.GroupReadCursor;
 import com.buyansong.imserver.groupread.GroupReadCursorStore;
@@ -39,6 +40,7 @@ public final class MessageRouter {
     private final AcceptedMessageStore acceptedMessageStore;
     private final GroupService groupService;
     private final GroupReadCursorStore groupReadCursorStore;
+    private final UserStore userStore;
     private final LongSupplier clock;
     private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ConcurrentMap<String, AcceptedMessage>> undeliveredMessagesByReceiver = new ConcurrentHashMap<>();
@@ -96,12 +98,27 @@ public final class MessageRouter {
             GroupReadCursorStore groupReadCursorStore,
             LongSupplier clock
     ) {
+        this(registry, tokenService, serverSeqStore, acceptedMessageStore, groupService,
+                groupReadCursorStore, null, clock);
+    }
+
+    public MessageRouter(
+            ClientSessionRegistry registry,
+            TokenService tokenService,
+            ServerSeqStore serverSeqStore,
+            AcceptedMessageStore acceptedMessageStore,
+            GroupService groupService,
+            GroupReadCursorStore groupReadCursorStore,
+            UserStore userStore,
+            LongSupplier clock
+    ) {
         this.registry = registry;
         this.tokenService = tokenService;
         this.serverSeqStore = serverSeqStore;
         this.acceptedMessageStore = acceptedMessageStore;
         this.groupService = groupService;
         this.groupReadCursorStore = groupReadCursorStore;
+        this.userStore = userStore;
         this.clock = clock;
         restoreAcceptedMessages();
     }
@@ -154,6 +171,7 @@ public final class MessageRouter {
 
         message.addProperty("serverSeq", nextServerSeq);
         message.addProperty("serverTime", serverTime);
+        addSenderProfileVersion(message, senderUserId);
         AcceptedMessage newlyAccepted = new AcceptedMessage(
                 ack.deepCopy(),
                 message.deepCopy(),
@@ -221,6 +239,7 @@ public final class MessageRouter {
         message.addProperty("serverSeq", nextServerSeq);
         message.addProperty("serverTime", serverTime);
         message.addProperty("groupName", groupService.groupName(groupId));
+        addSenderProfileVersion(message, senderUserId);
 
         JsonObject firstRecipientMessage = message.deepCopy();
         if (!recipients.isEmpty()) {
@@ -583,6 +602,14 @@ public final class MessageRouter {
 
     private long nextServerSeq(String conversationId) {
         return serverSeqStore.next(conversationId);
+    }
+
+    private void addSenderProfileVersion(JsonObject message, String senderUserId) {
+        if (userStore == null) {
+            return;
+        }
+        userStore.findByPhone(senderUserId)
+                .ifPresent(sender -> message.addProperty("senderProfileVersion", sender.profileVersion()));
     }
 
     private void removeUndelivered(String receiverUserId, String messageId) {

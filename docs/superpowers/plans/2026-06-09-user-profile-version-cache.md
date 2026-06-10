@@ -1,8 +1,8 @@
-# 用户资料缓存：profileVersion + 统一刷新接口 + 消除 N+1
+# 用户资料缓存：profileVersion + 统一刷新接口 + 消除 N+1 + 通讯录冷启动态
 
 > 状态：方案已确认
 > 日期：2026-06-10
-> 核心诉求：抽象一个统一刷新接口，让单聊/群聊/消息列表/联系人/联系人详情等场景走同一套逻辑，只拉 version 变了的数据，避免 N+1
+> 核心诉求：抽象一个统一刷新接口，让单聊/群聊/消息列表/联系人/联系人详情等场景走同一套逻辑，只拉 version 变了的数据，避免 N+1；通讯录冷启动时用页面态表达"正在加载"，不把 UI loading 逻辑塞进资料刷新层
 
 ---
 
@@ -27,6 +27,23 @@ suspend fun ensureProfiles(
 - **有 version hints**（消息体带了 `senderProfileVersion`、群成员带了 `memberProfileVersion`）：只拉 `remote > local` 的用户
 - **无 version hints**（会话列表、联系人等）：拉本地缺失的用户，batch 返回后按 version 判断是否 upsert
 - **永远不覆盖** `remote.profileVersion <= local.profileVersion` 的记录
+- **边界修正**：有 version hints 时，本地缺失必须拉取，即判断条件是 `local == null || remote > local.profileVersion`。否则 legacy/初始数据里 `remoteVersion = 0` 且本地缺失时会漏拉。
+
+### 0.2.1 不新增大型 ProfileRefreshService
+
+本次不额外引入跨页面的重量级 `ProfileRefreshService`。`ProfileRepository.ensureProfiles()` 就是资料刷新服务边界：
+
+- repository 负责本地缓存、远端 batch、version 比较和 upsert
+- ViewModel 负责根据页面语义决定何时调用、如何展示 loading/refreshing
+- 后续如遇到多屏并发重复请求，再单独加 in-flight coalescing，不提前扩大抽象
+
+### 0.2.2 `ensure` 与 `refresh` 语义必须区分
+
+`ensureProfiles()` 只保证"本地可用且在有 version hint 时不落后"，它不是强制刷新接口。
+
+- 列表页、会话列表、群成员这类高频场景：优先走 `ensureProfiles()`，避免重复网络请求。
+- 用户主动进入单聊或资料页：必须走强制刷新语义（`refreshProfile` / `refreshProfiles`），即使本地已有缓存也要请求远端，再按 `profileVersion` 决定是否 upsert。
+- 旧的 `refreshProfile(s)` 不能简单转发到 `ensureProfiles()`；否则本地有缓存时会跳过远端请求，导致 A 看不到 B 修改后的昵称/头像。
 
 ### 0.3 消除 N+1
 
@@ -38,6 +55,37 @@ suspend fun ensureProfiles(
 ### 0.4 DATABASE_VERSION
 
 demo 阶段，`onUpgrade` 不做增量迁移。只需将 `DATABASE_VERSION` 从 10 → 11，触发 `onCreate` 重建所有表即可。
+
+### 0.5 通讯录冷启动 loading 体验
+
+参考微信重启后进入通讯录时的"正在加载..."体验，但将它限定为通讯录列表的页面态：
+
+- 本地没有 `friend_contacts` 缓存且正在请求 `/friends/me`：显示灰色背景 + "正在加载..."
+- 本地已有好友列表缓存：立即展示缓存列表，后台刷新好友列表和缺失/过期资料，不整页灰掉
+- 本地有好友 ID 但部分 profile 缺失：先用 userId/默认头像占位，后台 `ensureProfiles`
+- 资料刷新失败不清空已有列表；只保留缓存快照，后续重新进入或触发刷新再重试
+
+### 0.6 `/friends/me` 的资料变更 hint 必须有效
+
+通讯录不是每次强制刷新所有好友资料，而是先请求 `/friends/me`，再根据好友列表里的轻量变更提示判断哪些好友资料可能过期。当前过渡实现里，这个提示是 `profileUpdatedAt`：
+
+```text
+contact.profileUpdatedAt > local.updatedAt
+```
+
+因此 mock-server 返回的 `profileUpdatedAt` 不能恒为 `0`。如果 `MockImServer` 使用 `FriendService(FriendStore, LongSupplier)` 两参数构造函数，内部会委托到 `userId -> 0L`，导致 `/friends/me` 里每个好友的 `profileUpdatedAt` 都是 `0`。客户端本地已有缓存时会判断 `0 > local.updatedAt` 为 false，于是不会触发 batch 刷新，表现为通讯录仍显示旧昵称/旧头像；但单聊和资料页因为走强制刷新，可能已经显示最新资料。
+
+mock-server 主路径必须使用三参数构造函数，把好友资料更新时间接到 `users.updated_at`：
+
+```java
+FriendService friendService = new FriendService(
+    new FriendStore(Path.of("data", "mock-im-friends.sqlite")),
+    System::currentTimeMillis,
+    userStore::profileUpdatedAtByPhone
+);
+```
+
+两参数构造函数只适合不关心资料变更 hint 的测试或兜底场景。长期方案是让 `/friends/me` 直接返回好友的 `profileVersion`，通讯录用 `friend.profileVersion > local.profileVersion` 判断是否需要刷新。
 
 ---
 
@@ -278,16 +326,15 @@ suspend fun ensureProfiles(
 }
 ```
 
-**保留的兼容方法**（内部转发到 `ensureProfiles`）：
+**保留的刷新方法**（保持强制远端刷新语义，不转发到 `ensureProfiles`）：
 
 ```kotlin
-suspend fun refreshProfiles(accessToken: String, userIds: List<String>): List<UserProfile> =
-    ensureProfiles(accessToken, userIds)
+suspend fun refreshProfiles(accessToken: String, userIds: List<String>): List<UserProfile> {
+    // 总是 batch 请求远端；只 upsert remote.profileVersion > local.profileVersion 的记录
+}
 
 suspend fun refreshProfile(accessToken: String, userId: String): UserProfile? {
-    val trimmed = userId.trim()
-    if (trimmed.isEmpty()) return null
-    return ensureProfiles(accessToken, listOf(trimmed)).firstOrNull()
+    // 总是 GET /users/{userId}；只在远端版本更新时写入本地
 }
 ```
 
@@ -346,7 +393,7 @@ private suspend fun refreshProfiles() {
 
         // ... 后续组装 senderProfiles / mentionMembers 逻辑不变 ...
     } else {
-        // 单聊逻辑不变（只需 peer 的 profile）
+        // 单聊没有稳定 version hint；进入单聊属于用户主动查看，强制刷新当前用户和 peer 的 profile
         ...
     }
 }
@@ -370,7 +417,7 @@ private suspend fun refreshProfiles() {
 
 #### 4f. ContactProfileViewModel
 
-改为调用 `ensureProfiles(accessToken, listOf(userId))`，替代原来的 `refreshProfile`。
+继续调用 `refreshProfile(accessToken, userId)`，保持用户主动点开资料页时强制远端刷新。不能改成 `ensureProfiles(accessToken, listOf(userId))`，否则本地已有缓存时不会请求远端。
 
 **验收**：各页面打开时网络请求量减少——重复进入同一会话不再发 batch 请求。
 

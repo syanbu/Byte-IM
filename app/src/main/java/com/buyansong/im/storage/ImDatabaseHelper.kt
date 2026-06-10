@@ -46,6 +46,7 @@ class ImDatabaseHelper(
               is_recalled INTEGER NOT NULL DEFAULT 0,
               recalled_at INTEGER,
               recalled_by TEXT,
+              sender_profile_version INTEGER,
               status TEXT NOT NULL,
               direction TEXT NOT NULL,
               created_at INTEGER NOT NULL,
@@ -108,7 +109,8 @@ class ImDatabaseHelper(
               avatar_updated_at INTEGER NOT NULL,
               updated_at INTEGER NOT NULL,
               gender TEXT,
-              signature TEXT
+              signature TEXT,
+              profile_version INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -161,6 +163,7 @@ class ImDatabaseHelper(
               role TEXT NOT NULL DEFAULT 'MEMBER',
               joined_at INTEGER NOT NULL,
               updated_at INTEGER NOT NULL,
+              profile_version INTEGER NOT NULL DEFAULT 0,
               PRIMARY KEY(group_id, user_id)
             )
             """.trimIndent()
@@ -202,6 +205,6 @@ class ImDatabaseHelper(
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 10
+        const val DATABASE_VERSION = 11
     }
 }

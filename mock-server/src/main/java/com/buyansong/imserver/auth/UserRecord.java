@@ -11,9 +11,10 @@ public record UserRecord(
         long updatedAt,
         long createdAt,
         String gender,
-        String signature
+        String signature,
+        long profileVersion
 ) {
     public UserRecord(String phone, String salt, String passwordHash, long createdAt) {
-        this(phone, salt, passwordHash, phone, null, null, 0L, createdAt, createdAt, null, null);
+        this(phone, salt, passwordHash, phone, null, null, 0L, createdAt, createdAt, null, null, 0L);
     }
 }

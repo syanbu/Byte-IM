@@ -718,7 +718,8 @@ class MessageRepository(
             conversationType = conversationType,
             groupId = groupId,
             groupName = groupName,
-            mentionedUserIds = mentionedUserIds
+            mentionedUserIds = mentionedUserIds,
+            senderProfileVersion = body.optionalLong("senderProfileVersion")
         )
         val inserted = messageDao.insertOrIgnore(message)
         if (inserted) {

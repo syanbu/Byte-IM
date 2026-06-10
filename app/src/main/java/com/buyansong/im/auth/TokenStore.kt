@@ -38,6 +38,7 @@ class SharedPreferencesTokenStore(context: Context) : TokenStore {
             .putString(KEY_AVATAR_URL, session.avatarUrl)
             .putLong(KEY_AVATAR_UPDATED_AT, session.avatarUpdatedAt)
             .putLong(KEY_PROFILE_UPDATED_AT, session.profileUpdatedAt)
+            .putLong(KEY_PROFILE_VERSION, session.profileVersion)
             .putLong(KEY_ACCESS_EXPIRES_AT, session.accessExpiresAtMillis)
             .putLong(KEY_REFRESH_EXPIRES_AT, session.refreshExpiresAtMillis)
             .apply()
@@ -56,6 +57,7 @@ class SharedPreferencesTokenStore(context: Context) : TokenStore {
         val avatarUrl = preferences.getString(KEY_AVATAR_URL, null)
         val avatarUpdatedAt = preferences.getLong(KEY_AVATAR_UPDATED_AT, 0L)
         val profileUpdatedAt = preferences.getLong(KEY_PROFILE_UPDATED_AT, 0L)
+        val profileVersion = preferences.getLong(KEY_PROFILE_VERSION, 0L)
         if (!preferences.contains(KEY_ACCESS_EXPIRES_AT) || !preferences.contains(KEY_REFRESH_EXPIRES_AT)) {
             clear()
             return null
@@ -72,6 +74,7 @@ class SharedPreferencesTokenStore(context: Context) : TokenStore {
             avatarUrl = avatarUrl,
             avatarUpdatedAt = avatarUpdatedAt,
             profileUpdatedAt = profileUpdatedAt,
+            profileVersion = profileVersion,
             accessExpiresAtMillis = accessExpiresAtMillis,
             refreshExpiresAtMillis = refreshExpiresAtMillis
         )
@@ -91,6 +94,7 @@ class SharedPreferencesTokenStore(context: Context) : TokenStore {
         const val KEY_AVATAR_URL = "avatar_url"
         const val KEY_AVATAR_UPDATED_AT = "avatar_updated_at"
         const val KEY_PROFILE_UPDATED_AT = "profile_updated_at"
+        const val KEY_PROFILE_VERSION = "profile_version"
         const val KEY_ACCESS_EXPIRES_AT = "access_expires_at"
         const val KEY_REFRESH_EXPIRES_AT = "refresh_expires_at"
         const val KEY_LEGACY_TOKEN = "token"

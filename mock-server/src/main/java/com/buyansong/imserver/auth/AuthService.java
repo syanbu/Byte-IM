@@ -65,7 +65,8 @@ public final class AuthService {
                 now,
                 now,
                 null,
-                null
+                null,
+                0L
         ));
         if (!inserted) {
             return failure(409, "User already registered");
@@ -201,7 +202,8 @@ public final class AuthService {
                 tokenService.currentTimeMillis(),
                 tokenService.currentTimeMillis(),
                 null,
-                null
+                null,
+                0L
         ));
         JsonObject data = new JsonObject();
         data.addProperty("accessToken", accessToken.token());
@@ -259,6 +261,7 @@ public final class AuthService {
         data.addProperty("avatarUpdatedAt", record.avatarUpdatedAt());
         data.addProperty("profileUpdatedAt", record.updatedAt());
         data.addProperty("updatedAt", record.updatedAt());
+        data.addProperty("profileVersion", record.profileVersion());
         if (record.gender() == null) {
             data.add("gender", com.google.gson.JsonNull.INSTANCE);
         } else {

@@ -27,7 +27,8 @@ data class ChatMessage(
     val conversationType: ConversationType = ConversationType.SINGLE,
     val groupId: String? = null,
     val groupName: String? = null,
-    val mentionedUserIds: List<String> = emptyList()
+    val mentionedUserIds: List<String> = emptyList(),
+    val senderProfileVersion: Long? = null
 )
 
 data class Conversation(
@@ -64,7 +65,8 @@ data class UserProfile(
     val avatarUpdatedAt: Long,
     val updatedAt: Long,
     val gender: Gender? = null,
-    val signature: String? = null
+    val signature: String? = null,
+    val profileVersion: Long = 0L
 )
 
 data class GroupInfo(
@@ -84,7 +86,8 @@ data class GroupMember(
     val avatarUrl: String?,
     val role: GroupMemberRole,
     val joinedAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val profileVersion: Long = 0L
 )
 
 data class GroupReadCursor(

@@ -249,7 +249,7 @@ class ConversationListViewModel(
         updateItems(conversations, hasMoreConversations = hasMoreAfterFirstPage)
         val validSession = validSessionProvider()
         if (validSession != null) {
-            profileRepository.refreshProfiles(
+            profileRepository.ensureProfiles(
                 accessToken = validSession.accessToken,
                 userIds = conversations
                     .filterNot { it.type == ConversationType.GROUP || it.conversationId.startsWith("group:") }

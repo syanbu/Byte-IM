@@ -126,7 +126,10 @@ class GroupInfoViewModel(
         }
         val memberIds = members.map { it.userId }
         if (!accessToken.isNullOrBlank()) {
-            profileRepository.refreshProfiles(accessToken, memberIds + session.userId)
+            val memberVersions = members
+                .filter { it.profileVersion > 0L }
+                .associate { it.userId to it.profileVersion }
+            profileRepository.ensureProfiles(accessToken, memberIds + session.userId, memberVersions)
         }
         return backfillMembersFromLocal(members)
     }

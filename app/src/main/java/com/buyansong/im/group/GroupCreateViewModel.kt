@@ -136,7 +136,7 @@ class GroupCreateViewModel(
                 emptyList()
             }
             if (validSession != null) {
-                profileRepository.refreshProfiles(validSession.accessToken, contactIds)
+                profileRepository.ensureProfiles(validSession.accessToken, contactIds)
             }
             val contacts = contactIds.map { contactId ->
                 val profile = profileRepository.localProfile(contactId)

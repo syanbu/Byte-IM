@@ -49,7 +49,8 @@ object ProfileJsonParser {
             avatarUpdatedAt = optionalLong("avatarUpdatedAt") ?: optionalLong("avatar_updated_at") ?: 0L,
             updatedAt = optionalLong("updatedAt") ?: optionalLong("updated_at") ?: 0L,
             gender = optionalString("gender")?.let { runCatching { Gender.valueOf(it) }.getOrNull() },
-            signature = optionalString("signature")
+            signature = optionalString("signature"),
+            profileVersion = optionalLong("profileVersion") ?: optionalLong("profile_version") ?: 0L
         )
     }
 

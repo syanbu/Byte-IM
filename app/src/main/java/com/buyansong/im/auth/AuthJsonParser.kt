@@ -31,6 +31,9 @@ object AuthJsonParser {
                 ?: payload.optionalLong("updatedAt")
                 ?: payload.optionalLong("updated_at")
                 ?: 0L
+            val profileVersion = payload.optionalLong("profileVersion")
+                ?: payload.optionalLong("profile_version")
+                ?: 0L
             val accessExpiresAt = payload.optionalLong("accessExpiresAt")
                 ?: payload.optionalLong("accessExpiresAtMillis")
                 ?: payload.optionalLong("expiresAt")
@@ -54,6 +57,7 @@ object AuthJsonParser {
                         avatarUrl = avatarUrl,
                         avatarUpdatedAt = avatarUpdatedAt,
                         profileUpdatedAt = profileUpdatedAt,
+                        profileVersion = profileVersion,
                         accessExpiresAtMillis = accessExpiresAt,
                         refreshExpiresAtMillis = refreshExpiresAt
                     )

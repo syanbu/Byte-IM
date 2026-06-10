@@ -37,13 +37,16 @@ public final class MockImServer {
     public void start(int port) throws InterruptedException {
         ClientSessionRegistry registry = new ClientSessionRegistry();
         TokenService tokenService = TokenService.defaultService();
+        UserStore userStore = new UserStore(java.nio.file.Path.of("data", "mock-im-users.sqlite"));
         GroupService groupService = new GroupService(
                 new SQLiteGroupStore(java.nio.file.Path.of("data", "mock-im-groups.sqlite")),
+                userStore,
                 System::currentTimeMillis
         );
         FriendService friendService = new FriendService(
                 new FriendStore(java.nio.file.Path.of("data", "mock-im-friends.sqlite")),
-                System::currentTimeMillis
+                System::currentTimeMillis,
+                userStore::profileUpdatedAtByPhone
         );
         java.nio.file.Path messageDatabase = java.nio.file.Path.of("data", "mock-im-messages.sqlite");
         GroupReadCursorStore groupReadCursorStore = new SQLiteGroupReadCursorStore(messageDatabase);
@@ -54,10 +57,11 @@ public final class MockImServer {
                 new MessageRouter.SQLiteAcceptedMessageStore(messageDatabase),
                 groupService,
                 groupReadCursorStore,
+                userStore,
                 System::currentTimeMillis
         );
         AuthService authService = new AuthService(
-                new UserStore(java.nio.file.Path.of("data", "mock-im-users.sqlite")),
+                userStore,
                 new PasswordHasher(new SecureSaltGenerator()),
                 tokenService
         );

@@ -38,7 +38,22 @@ class AndroidUserProfileDao(private val database: SQLiteDatabase) : UserProfileD
         if (userIds.isEmpty()) {
             return emptyList()
         }
-        return userIds.mapNotNull(::findByUserId)
+        val placeholders = userIds.indices.joinToString(",") { "?" }
+        return database.query(
+            "user_profiles",
+            null,
+            "user_id IN ($placeholders)",
+            userIds.toTypedArray(),
+            null,
+            null,
+            null
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.toUserProfile())
+                }
+            }
+        }
     }
 
     private fun UserProfile.toValues(): ContentValues {
@@ -51,6 +66,7 @@ class AndroidUserProfileDao(private val database: SQLiteDatabase) : UserProfileD
             put("updated_at", updatedAt)
             if (gender == null) putNull("gender") else put("gender", gender.name)
             if (signature == null) putNull("signature") else put("signature", signature)
+            put("profile_version", profileVersion)
         }
     }
 
@@ -66,7 +82,8 @@ class AndroidUserProfileDao(private val database: SQLiteDatabase) : UserProfileD
             avatarUpdatedAt = getLong(getColumnIndexOrThrow("avatar_updated_at")),
             updatedAt = getLong(getColumnIndexOrThrow("updated_at")),
             gender = if (isNull(genderIndex)) null else runCatching { Gender.valueOf(getString(genderIndex)) }.getOrNull(),
-            signature = if (isNull(signatureIndex)) null else getString(signatureIndex)
+            signature = if (isNull(signatureIndex)) null else getString(signatureIndex),
+            profileVersion = getLong(getColumnIndexOrThrow("profile_version"))
         )
     }
 }

@@ -1,11 +1,16 @@
 package com.buyansong.imserver.group;
 
+import com.buyansong.imserver.auth.UserRecord;
+import com.buyansong.imserver.auth.UserStore;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
@@ -13,6 +18,7 @@ import java.util.function.LongSupplier;
 public final class GroupService {
     private final LongSupplier clock;
     private final GroupStore groupStore;
+    private final UserStore userStore;
     private final AtomicLong nextGroupNumber;
 
     public GroupService() {
@@ -20,12 +26,17 @@ public final class GroupService {
     }
 
     public GroupService(LongSupplier clock) {
-        this(new InMemoryGroupStore(), clock);
+        this(new InMemoryGroupStore(), null, clock);
     }
 
     public GroupService(GroupStore groupStore, LongSupplier clock) {
+        this(groupStore, null, clock);
+    }
+
+    public GroupService(GroupStore groupStore, UserStore userStore, LongSupplier clock) {
         this.clock = clock;
         this.groupStore = groupStore;
+        this.userStore = userStore;
         this.nextGroupNumber = new AtomicLong(groupStore.maxGroupNumber());
     }
 
@@ -87,12 +98,29 @@ public final class GroupService {
         if (!group.memberUserIds().contains(requesterId)) {
             return failure(403, "Forbidden").toString();
         }
+        Map<String, UserRecord> userByPhone = new HashMap<>();
+        if (userStore != null) {
+            for (UserRecord user : userStore.findByPhones(group.memberUserIds())) {
+                userByPhone.put(user.phone(), user);
+            }
+        }
         JsonArray members = new JsonArray();
         for (String memberUserId : group.memberUserIds()) {
             JsonObject member = new JsonObject();
             member.addProperty("groupId", group.groupId());
             member.addProperty("userId", memberUserId);
-            member.addProperty("displayName", memberUserId);
+            UserRecord user = userByPhone.get(memberUserId);
+            if (user == null) {
+                member.addProperty("displayName", memberUserId);
+            } else {
+                member.addProperty("displayName", user.nickname());
+                if (user.avatarUrl() == null) {
+                    member.add("avatarUrl", JsonNull.INSTANCE);
+                } else {
+                    member.addProperty("avatarUrl", user.avatarUrl());
+                }
+                member.addProperty("profileVersion", user.profileVersion());
+            }
             member.addProperty("role", memberUserId.equals(group.ownerId()) ? "OWNER" : "MEMBER");
             member.addProperty("joinedAt", group.createdAt());
             member.addProperty("updatedAt", group.updatedAt());

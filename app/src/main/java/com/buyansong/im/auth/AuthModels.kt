@@ -10,6 +10,7 @@ data class AuthSession(
     val avatarUrl: String? = null,
     val avatarUpdatedAt: Long = 0L,
     val profileUpdatedAt: Long = 0L,
+    val profileVersion: Long = 0L,
     val accessExpiresAtMillis: Long,
     val refreshExpiresAtMillis: Long
 ) {
@@ -23,6 +24,7 @@ data class AuthSession(
         avatarUrl = null,
         avatarUpdatedAt = 0L,
         profileUpdatedAt = 0L,
+        profileVersion = 0L,
         accessExpiresAtMillis = expiresAtMillis,
         refreshExpiresAtMillis = expiresAtMillis
     )

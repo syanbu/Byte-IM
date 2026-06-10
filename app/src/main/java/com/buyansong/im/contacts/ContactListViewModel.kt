@@ -24,6 +24,7 @@ data class ContactListUiState(
     val items: List<ContactListItem> = emptyList(),
     val selfEntry: ContactListItem? = null,
     val navigationTargetPeerId: String? = null,
+    val isInitialLoading: Boolean = false,
     val firstVisibleItemIndex: Int = 0,
     val firstVisibleItemScrollOffset: Int = 0
 )
@@ -38,14 +39,12 @@ class ContactListViewModel(
 ) {
     private val mutableState = MutableStateFlow(ContactListUiState())
     val state: StateFlow<ContactListUiState> = mutableState.asStateFlow()
-    private var started = false
     private var refreshJob: Job? = null
 
     fun start() {
-        if (started) {
+        if (refreshJob?.isActive == true) {
             return
         }
-        started = true
         refresh()
     }
 
@@ -93,13 +92,19 @@ class ContactListViewModel(
                 mutableState.value = mutableState.value.copy(items = buildItems(cachedContacts.map { it.userId }))
             }
             val validSession = validSessionProvider()
+            if (cachedContacts.isEmpty() && validSession != null) {
+                mutableState.value = mutableState.value.copy(isInitialLoading = true)
+            }
             val contacts = if (validSession != null) {
                 contactRepository.refreshFriends(validSession.accessToken, session.userId)
             } else {
                 cachedContacts
             }
             val contactIds = contacts.map { it.userId }
-            mutableState.value = mutableState.value.copy(items = buildItems(contactIds))
+            mutableState.value = mutableState.value.copy(
+                items = buildItems(contactIds),
+                isInitialLoading = false
+            )
             if (validSession != null) {
                 refreshChangedProfiles(validSession.accessToken, contacts, contactIds)
             }
@@ -119,7 +124,11 @@ class ContactListViewModel(
             .take(INITIAL_PROFILE_REFRESH_LIMIT)
             .let { ids ->
                 if (ids.isNotEmpty()) {
-                    profileRepository.refreshProfiles(accessToken, ids)
+                    profileRepository.ensureProfiles(
+                        accessToken = accessToken,
+                        userIds = ids,
+                        remoteVersions = ids.associateWith { Long.MAX_VALUE }
+                    )
                     mutableState.value = mutableState.value.copy(items = buildItems(contactIds))
                 }
             }
@@ -127,7 +136,11 @@ class ContactListViewModel(
             .drop(INITIAL_PROFILE_REFRESH_LIMIT)
             .chunked(NEXT_PROFILE_REFRESH_LIMIT)
             .forEach { ids ->
-                profileRepository.refreshProfiles(accessToken, ids)
+                profileRepository.ensureProfiles(
+                    accessToken = accessToken,
+                    userIds = ids,
+                    remoteVersions = ids.associateWith { Long.MAX_VALUE }
+                )
                 mutableState.value = mutableState.value.copy(items = buildItems(contactIds))
             }
     }
