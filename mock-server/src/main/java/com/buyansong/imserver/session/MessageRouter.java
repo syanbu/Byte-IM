@@ -9,6 +9,8 @@ import com.buyansong.imserver.group.GroupService;
 import com.buyansong.imserver.groupread.GroupReadCursor;
 import com.buyansong.imserver.groupread.GroupReadCursorStore;
 import com.buyansong.imserver.groupread.InMemoryGroupReadCursorStore;
+import com.buyansong.imserver.push.InMemoryPushNotificationStore;
+import com.buyansong.imserver.push.PushNotificationStore;
 import com.buyansong.imserver.protocol.ImCommand;
 import com.buyansong.imserver.protocol.ImPacket;
 import com.google.gson.JsonObject;
@@ -41,6 +43,7 @@ public final class MessageRouter {
     private final GroupService groupService;
     private final GroupReadCursorStore groupReadCursorStore;
     private final UserStore userStore;
+    private final PushNotificationStore pushNotificationStore;
     private final LongSupplier clock;
     private final ConcurrentMap<String, AcceptedMessage> acceptedMessagesById = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ConcurrentMap<String, AcceptedMessage>> undeliveredMessagesByReceiver = new ConcurrentHashMap<>();
@@ -112,6 +115,21 @@ public final class MessageRouter {
             UserStore userStore,
             LongSupplier clock
     ) {
+        this(registry, tokenService, serverSeqStore, acceptedMessageStore, groupService, groupReadCursorStore,
+                userStore, new InMemoryPushNotificationStore(), clock);
+    }
+
+    public MessageRouter(
+            ClientSessionRegistry registry,
+            TokenService tokenService,
+            ServerSeqStore serverSeqStore,
+            AcceptedMessageStore acceptedMessageStore,
+            GroupService groupService,
+            GroupReadCursorStore groupReadCursorStore,
+            UserStore userStore,
+            PushNotificationStore pushNotificationStore,
+            LongSupplier clock
+    ) {
         this.registry = registry;
         this.tokenService = tokenService;
         this.serverSeqStore = serverSeqStore;
@@ -119,6 +137,7 @@ public final class MessageRouter {
         this.groupService = groupService;
         this.groupReadCursorStore = groupReadCursorStore;
         this.userStore = userStore;
+        this.pushNotificationStore = pushNotificationStore;
         this.clock = clock;
         restoreAcceptedMessages();
     }
@@ -580,6 +599,7 @@ public final class MessageRouter {
                     }
                 },
                 () -> {
+                    pushNotificationStore.enqueueIfAbsent(receiverId, message, clock.getAsLong());
                     if (isGroup) {
                         ImServerLogger.log(
                                 "[IM] GROUP_RECEIVE queued groupId=%s receiver=%s messageId=%s serverSeq=%d",

@@ -3,12 +3,14 @@ package com.buyansong.im
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -102,12 +104,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import com.buyansong.im.profile.MeScreen
 import com.buyansong.im.profile.MeViewModel
 import com.buyansong.im.profile.OkHttpAvatarUploadApi
 import com.buyansong.im.profile.OkHttpProfileApi
 import com.buyansong.im.profile.AvatarUploadApi
 import com.buyansong.im.profile.ProfileRepository
+import com.buyansong.im.push.MockPushTokenStore
+import com.buyansong.im.push.OkHttpPushApi
+import com.buyansong.im.push.PushDeepLink
+import com.buyansong.im.push.PushPollScheduler
+import com.buyansong.im.push.PushTokenRepository
 import com.buyansong.im.storage.AndroidConversationDao
 import com.buyansong.im.storage.AndroidFriendContactDao
 import com.buyansong.im.storage.AndroidGroupDao
@@ -125,9 +134,11 @@ class MainActivity : ComponentActivity() {
     private var connectionLifecycleManager: ConnectionLifecycleManager? = null
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private val pendingPushDeepLink = MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handlePushIntent(intent)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val mockServerConfig = MockServerConfig.load(this)
         val rawConnection = OkHttpImConnection(mockServerConfig.webSocketUrl)
@@ -149,9 +160,17 @@ class MainActivity : ComponentActivity() {
                 validSessionProvider = repository::ensureValidSession,
                 connection = connection,
                 httpBaseUrl = mockServerConfig.httpBaseUrl,
-                thumbnailCache = thumbnailCache
+                thumbnailCache = thumbnailCache,
+                pendingPushDeepLink = pendingPushDeepLink,
+                onPushDeepLinkConsumed = { pendingPushDeepLink.value = null }
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePushIntent(intent)
     }
 
     override fun onStart() {
@@ -167,6 +186,10 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         unregisterNetworkRecoveryCallback()
         super.onDestroy()
+    }
+
+    private fun handlePushIntent(intent: Intent?) {
+        pendingPushDeepLink.value = PushDeepLink.extractConversationId(intent)
     }
 
     private fun registerNetworkRecoveryCallback(connection: ConnectionLifecycleManager) {
@@ -218,7 +241,9 @@ fun SelfHostedImApp(
     validSessionProvider: ValidSessionProvider? = null,
     connection: ImConnection? = null,
     httpBaseUrl: String? = null,
-    thumbnailCache: AndroidChatThumbnailCache? = null
+    thumbnailCache: AndroidChatThumbnailCache? = null,
+    pendingPushDeepLink: StateFlow<String?>? = null,
+    onPushDeepLinkConsumed: () -> Unit = {}
 ) {
     MaterialTheme(colorScheme = ByteImColorScheme) {
         Column(
@@ -267,10 +292,19 @@ fun SelfHostedImApp(
                     profileRepository = accountRepositories.profileRepository,
                     contactRepository = accountRepositories.contactRepository,
                     groupRepository = accountRepositories.groupRepository,
+                    pushTokenRepository = accountRepositories.pushTokenRepository,
                     avatarUploadApi = accountRepositories.avatarUploadApi,
                     imageUploadApi = accountRepositories.imageUploadApi,
+                    pendingPushDeepLink = pendingPushDeepLink,
+                    onPushDeepLinkConsumed = onPushDeepLinkConsumed,
                     onLogout = {
                         accountRepositories.messageRepository.closeConversation()
+                        val validSession = validSessionProvider()
+                        accountRepositories.pushTokenRepository.unregister(
+                            accessToken = validSession?.accessToken ?: session.accessToken,
+                            userId = session.userId
+                        )
+                        PushPollScheduler.cancel(context.applicationContext, session.userId)
                         connection.disconnect()
                         loginViewModel.logout()
                     }
@@ -295,6 +329,7 @@ private class AccountScopedRepositories private constructor(
     val profileRepository: ProfileRepository,
     val contactRepository: ContactRepository,
     val groupRepository: com.buyansong.im.group.GroupRepository,
+    val pushTokenRepository: PushTokenRepository,
     val avatarUploadApi: AvatarUploadApi,
     val imageUploadApi: ImageUploadApi
 ) {
@@ -351,6 +386,13 @@ private class AccountScopedRepositories private constructor(
                 groupDao = AndroidGroupDao(database),
                 conversationDao = conversationDao
             )
+            val pushTokenRepository = PushTokenRepository(
+                api = OkHttpPushApi(baseUrl = httpBaseUrl),
+                tokenStore = MockPushTokenStore(context),
+                deviceIdProvider = {
+                    Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID).orEmpty()
+                }
+            )
             return AccountScopedRepositories(
                 helper = helper,
                 database = database,
@@ -359,6 +401,7 @@ private class AccountScopedRepositories private constructor(
                 profileRepository = profileRepository,
                 contactRepository = contactRepository,
                 groupRepository = groupRepository,
+                pushTokenRepository = pushTokenRepository,
                 avatarUploadApi = OkHttpAvatarUploadApi(baseUrl = httpBaseUrl),
                 imageUploadApi = OkHttpImageUploadApi(baseUrl = httpBaseUrl)
             )
@@ -375,12 +418,17 @@ private fun AuthenticatedImNavHost(
     profileRepository: ProfileRepository,
     contactRepository: ContactRepository,
     groupRepository: com.buyansong.im.group.GroupRepository,
+    pushTokenRepository: PushTokenRepository,
     avatarUploadApi: AvatarUploadApi,
     imageUploadApi: ImageUploadApi,
+    pendingPushDeepLink: StateFlow<String?>?,
+    onPushDeepLinkConsumed: () -> Unit,
     onLogout: suspend () -> Unit
 ) {
     val context = LocalContext.current
     val navController = rememberNavController()
+    val emptyPushDeepLink = remember { MutableStateFlow<String?>(null) }
+    val pushDeepLink by (pendingPushDeepLink ?: emptyPushDeepLink).collectAsState()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val activity = LocalContext.current.findActivity()
@@ -435,6 +483,29 @@ private fun AuthenticatedImNavHost(
             unreadBadgeController.stop()
             messagePacketProcessor.stop()
             messageOutboxWorker.stop()
+        }
+    }
+
+    LaunchedEffect(session.userId, pushTokenRepository) {
+        validSessionProvider()?.let { validSession ->
+            pushTokenRepository.register(validSession.accessToken, session.userId)
+        }
+    }
+
+    DisposableEffect(context, session.userId) {
+        PushPollScheduler.schedule(context.applicationContext, session.userId)
+        onDispose {
+            PushPollScheduler.cancel(context.applicationContext, session.userId)
+        }
+    }
+
+    LaunchedEffect(pushDeepLink, session.userId) {
+        val conversationId = pushDeepLink
+        if (!conversationId.isNullOrBlank()) {
+            SelfHostedImRoute.Chat.createRoute(conversationId)?.let { route ->
+                navController.navigateToChat(route)
+            }
+            onPushDeepLinkConsumed()
         }
     }
 

@@ -11,6 +11,11 @@
 1. 现有项目没有引入任何 FCM / HMS / MiPush SDK，集成真实厂商推送需要 google-services.json、签名、厂商账号等，与"自研 IM 客户端"目标不符。Mock 是项目目标文档明确允许的方案。
 2. 当前 `ConnectionLifecycleManager` 依赖 `MainActivity` 持有，进程被杀后 WebSocket、心跳、重连、ACK 全部停止；没有"被杀后被唤起"的兜底通道。
 
+**Mock 边界补充**：
+
+- WorkManager 可以覆盖"应用退到后台、进程被系统回收/不存在，但应用未被用户强停"的 mock 唤起场景。
+- `adb shell am force-stop <package>` / 设置页"强行停止"会让 Android 阻止该应用的 JobScheduler / WorkManager 任务继续运行；这是系统语义，mock 轮询无法像真实厂商推送一样突破该状态。手工验证应使用后台后 `adb shell am kill <package>` 或等待系统回收进程，不使用 `force-stop`。
+
 **锁定的设计决策**（已与用户确认）：
 
 1. **拉取机制**：WorkManager 周期任务（15 min 最小周期）。
@@ -116,9 +121,10 @@
 - 路径：
   - 已登录 → `navigate("chat/{conversationId}")`。
   - 未登录 / token 失效 → 等 `LoginViewModel` 完成登录后，再 navigate。
-- ChatScreen 端：
-  - 进入时把 push payload 中的 `messageId` 走 `MessageRepository.handlePacket(constructedPushPacket)`。
-  - 注：mock-server 在 user B 上线时已通过 B5.5 把 undelivered 消息重放给 WebSocket；push 这条是"更早一拍的兜底"，即使重复 insert，`insertOrIgnore` 幂等。
+- 消息入库：
+  - push payload 首版只承载通知预览和 deep-link 必需字段，不伪造完整 `RECEIVE_MESSAGE`。
+  - tap 通知 cold-start 后，现有 WebSocket 鉴权/重连路径会通过 B5.5 undelivered replay 把真实消息送入 `MessageRepository.handlePacket`。
+  - 重复 insert 仍由 `messageDao.insertOrIgnore` 兜底；push 不替代 `DELIVERY_ACK`。
 
 ### F6. push payload 不替代 WebSocket RECEIVE_MESSAGE
 

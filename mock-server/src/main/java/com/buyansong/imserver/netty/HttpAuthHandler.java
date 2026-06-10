@@ -5,6 +5,9 @@ import com.buyansong.imserver.ImServerLogger;
 import com.buyansong.imserver.friend.FriendService;
 import com.buyansong.imserver.group.GroupService;
 import com.buyansong.imserver.oss.OssUploadService;
+import com.buyansong.imserver.push.InMemoryPushNotificationStore;
+import com.buyansong.imserver.push.InMemoryPushTokenStore;
+import com.buyansong.imserver.push.PushService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -31,6 +34,7 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
     private final OssUploadService ossUploadService;
     private final GroupService groupService;
     private final FriendService friendService;
+    private final PushService pushService;
 
     public HttpAuthHandler(AuthService authService) {
         this(authService, new OssUploadService());
@@ -45,11 +49,32 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
     }
 
     public HttpAuthHandler(AuthService authService, OssUploadService ossUploadService, GroupService groupService, FriendService friendService) {
+        this(
+                authService,
+                ossUploadService,
+                groupService,
+                friendService,
+                new PushService(new InMemoryPushTokenStore(), new InMemoryPushNotificationStore(), System::currentTimeMillis)
+        );
+    }
+
+    public HttpAuthHandler(AuthService authService, PushService pushService) {
+        this(authService, new OssUploadService(), new GroupService(), new FriendService(), pushService);
+    }
+
+    public HttpAuthHandler(
+            AuthService authService,
+            OssUploadService ossUploadService,
+            GroupService groupService,
+            FriendService friendService,
+            PushService pushService
+    ) {
         super(false);
         this.authService = authService;
         this.ossUploadService = ossUploadService;
         this.groupService = groupService;
         this.friendService = friendService;
+        this.pushService = pushService;
     }
 
     @Override
@@ -253,6 +278,64 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
                 }
             }
 
+            if (path.startsWith("/push")) {
+                Optional<String> authenticatedPhone = authenticatedPhone(request);
+                if (authenticatedPhone.isEmpty()) {
+                    writeJson(context, request, HttpResponseStatus.UNAUTHORIZED, authService.failure(401, "Unauthorized"));
+                    return;
+                }
+
+                if (request.method() == HttpMethod.POST && "/push/register-token".equals(path)) {
+                    String body = request.content().toString(CharsetUtil.UTF_8);
+                    JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
+                    if (readString(json, "pushToken", "").isBlank()) {
+                        writeJson(context, request, HttpResponseStatus.BAD_REQUEST, pushService.failure(400, "pushToken required"));
+                        return;
+                    }
+                    writeJson(
+                            context,
+                            request,
+                            HttpResponseStatus.OK,
+                            pushService.registerToken(
+                                    authenticatedPhone.get(),
+                                    readString(json, "pushToken", ""),
+                                    readString(json, "platform", "android"),
+                                    readString(json, "deviceId", "")
+                            )
+                    );
+                    return;
+                }
+
+                if (request.method() == HttpMethod.POST && "/push/unregister-token".equals(path)) {
+                    writeJson(context, request, HttpResponseStatus.OK, pushService.unregisterToken(authenticatedPhone.get()));
+                    return;
+                }
+
+                if (request.method() == HttpMethod.GET && "/push/pending".equals(path)) {
+                    writeJson(
+                            context,
+                            request,
+                            HttpResponseStatus.OK,
+                            pushService.pending(
+                                    authenticatedPhone.get(),
+                                    readLongQuery(request.uri(), "since", 0L),
+                                    (int) readLongQuery(request.uri(), "limit", 50L)
+                            )
+                    );
+                    return;
+                }
+
+                if (request.method() == HttpMethod.POST && "/push/ack".equals(path)) {
+                    String body = request.content().toString(CharsetUtil.UTF_8);
+                    JsonObject json = body.isBlank() ? new JsonObject() : JsonParser.parseString(body).getAsJsonObject();
+                    JsonArray pushIds = json.has("pushIds") && json.get("pushIds").isJsonArray()
+                            ? json.getAsJsonArray("pushIds")
+                            : new JsonArray();
+                    writeJson(context, request, HttpResponseStatus.OK, pushService.ack(authenticatedPhone.get(), pushIds));
+                    return;
+                }
+            }
+
             writeJson(context, request, HttpResponseStatus.NOT_FOUND, authService.failure("not found"));
         } finally {
             ReferenceCountUtil.release(request);
@@ -287,5 +370,23 @@ public final class HttpAuthHandler extends SimpleChannelInboundHandler<FullHttpR
             return Optional.empty();
         }
         return authService.verifyAccessToken(header.substring("Bearer ".length()).trim());
+    }
+
+    private long readLongQuery(String uri, String name, long fallback) {
+        String[] parts = uri.split("\\?", 2);
+        if (parts.length < 2) {
+            return fallback;
+        }
+        for (String param : parts[1].split("&")) {
+            String[] keyValue = param.split("=", 2);
+            if (keyValue.length == 2 && name.equals(keyValue[0])) {
+                try {
+                    return Long.parseLong(keyValue[1]);
+                } catch (NumberFormatException ignored) {
+                    return fallback;
+                }
+            }
+        }
+        return fallback;
     }
 }

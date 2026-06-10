@@ -15,6 +15,9 @@ import com.buyansong.imserver.netty.HttpAuthHandler;
 import com.buyansong.imserver.netty.WebSocketFrameHandler;
 import com.buyansong.imserver.session.ClientSessionRegistry;
 import com.buyansong.imserver.session.MessageRouter;
+import com.buyansong.imserver.push.PushService;
+import com.buyansong.imserver.push.SQLitePushNotificationStore;
+import com.buyansong.imserver.push.SQLitePushTokenStore;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
@@ -49,6 +52,13 @@ public final class MockImServer {
                 userStore::profileUpdatedAtByPhone
         );
         java.nio.file.Path messageDatabase = java.nio.file.Path.of("data", "mock-im-messages.sqlite");
+        java.nio.file.Path pushDatabase = java.nio.file.Path.of("data", "mock-im-push.sqlite");
+        SQLitePushNotificationStore pushNotificationStore = new SQLitePushNotificationStore(pushDatabase);
+        PushService pushService = new PushService(
+                new SQLitePushTokenStore(pushDatabase),
+                pushNotificationStore,
+                System::currentTimeMillis
+        );
         GroupReadCursorStore groupReadCursorStore = new SQLiteGroupReadCursorStore(messageDatabase);
         MessageRouter messageRouter = new MessageRouter(
                 registry,
@@ -58,6 +68,7 @@ public final class MockImServer {
                 groupService,
                 groupReadCursorStore,
                 userStore,
+                pushNotificationStore,
                 System::currentTimeMillis
         );
         AuthService authService = new AuthService(
@@ -77,7 +88,7 @@ public final class MockImServer {
                             channel.pipeline()
                                     .addLast(new HttpServerCodec())
                                     .addLast(new HttpObjectAggregator(64 * 1024))
-                                    .addLast(new HttpAuthHandler(authService, new com.buyansong.imserver.oss.OssUploadService(), groupService, friendService))
+                                    .addLast(new HttpAuthHandler(authService, new com.buyansong.imserver.oss.OssUploadService(), groupService, friendService, pushService))
                                     .addLast(new WebSocketServerProtocolHandler("/ws", null, true))
                                     .addLast(new WebSocketFrameHandler(registry, messageRouter));
                         }

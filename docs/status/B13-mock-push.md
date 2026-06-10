@@ -12,12 +12,17 @@ B13 来自 `docs/bg/ProjectTarget.md`：
 
 ## Status
 
-**设计中（mock 完整闭环方案已定，待实现）**。Spec 和 plan 已写入项目 docs。
+**实现中（mock 完整闭环首版已接入，待设备 E2E）**。服务端和 Android 首版代码已接入；真实厂商 SDK 不在本期范围内。
 
 - 设计 Spec：[`../superpowers/specs/2026-06-10-b13-mock-push-design.md`](../superpowers/specs/2026-06-10-b13-mock-push-design.md)
 - 实施 Plan：[`../superpowers/plans/2026-06-10-b13-mock-push.md`](../superpowers/plans/2026-06-10-b13-mock-push.md)
+- 功能说明：[`../feature-notes/B13-mock-push.md`](../feature-notes/B13-mock-push.md)
 
-本功能**未开始代码实现**。本状态文档用于在实施过程中记录进度、文件清单、验证结果、已知限制；目前仅描述"设计已完成"。
+当前已完成代码首版：
+
+- mock-server：`push_tokens` / `push_notifications` SQLite store、`/push/register-token`、`/push/unregister-token`、`/push/pending`、`/push/ack`，以及 receiver 离线时的自动 push 入队。
+- Android：`ImApp` 通知 channel、mock token 本地存储与注册/注销、WorkManager 15 min pending 轮询、系统通知、通知 tap deep-link 到会话。
+- push payload 首版只做通知预览和 deep-link；真实消息仍由 B5.5 WebSocket undelivered replay 入库，不用 push 伪造完整消息。
 
 ## Project Context
 
@@ -42,7 +47,7 @@ B13 来自 `docs/bg/ProjectTarget.md`：
 - **服务端离线入队**：`MessageRouter.deliverOrKeepPending` 的离线分支里入 `push_notifications` 表；群聊对每个 member 单独判断。
 - **客户端拉取**：`PushPollWorker` (CoroutineWorker) 周期 15 min 拉取 `/push/pending?since=`，弹 NotificationCompat 通知，POST `/push/ack`。
 - **通知 + deep-link**：`singleTop` launchMode + `pendingDeepLink: StateFlow<String?>`，NavHost 监听并 navigate 到 `chat/{conversationId}`。
-- **消息入库**：`ChatViewModel.start(initialMessageId)` 调 `MessageRepository.handlePacket(constructedPushEnvelope)`，复用现有 `handleIncoming` 路径，幂等性由 `messageDao.insertOrIgnore` 兜底。
+- **消息入库**：tap 通知进入会话后，现有 WebSocket 鉴权/重连路径通过 B5.5 undelivered replay 调 `MessageRepository.handlePacket`，幂等性由 `messageDao.insertOrIgnore` 兜底。
 - **不破坏现有语义**：push 仅是 WebSocket 的兜底；服务端不因为入 push 队列就跳过 B5.5 undelivered 持久化；客户端不能因为收到 push 就跳过 `DELIVERY_ACK`。
 
 ## Current Foundation To Reuse
@@ -65,6 +70,8 @@ Android：
 ## 已知限制（首版）
 
 - WorkManager 周期最小 15 min，演示时需用 `adb shell cmd jobscheduler run -f <pkg> <jobId>` 手动触发加速。
+- 当前代码额外提供 mock 调试广播，可用 `adb shell am broadcast -p com.buyansong.im -a com.buyansong.im.DEBUG_RUN_PUSH_POLL` 立即 enqueue 一次 one-time push poll，比手动找 JobScheduler jobId 更稳定。
+- `force-stop` / 设置页"强行停止"会阻止 WorkManager/JobScheduler；mock push 只覆盖后台进程被系统回收或进程不存在但应用未被强停的场景。
 - 多端 push 路由未做（同 userId 后注册 token 覆盖前者）。
 - 不做 InboxStyle 聚合、不做点击统计、不做富文本通知布局。
 - 群 `@所有人` 不做特殊 push 行为。
@@ -72,4 +79,4 @@ Android：
 
 ## 后续工作
 
-按 [`../superpowers/plans/2026-06-10-b13-mock-push.md`](../superpowers/plans/2026-06-10-b13-mock-push.md) 的 9 步计划实施。
+下一步做真机/模拟器 E2E：后台后 `am kill` user B 进程、user A 发消息、触发 WorkManager job、验证通知和 tap deep-link。
