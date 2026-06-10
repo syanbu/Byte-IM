@@ -44,6 +44,37 @@ object ChatAutoScrollPolicy {
         return messageCount - 1
     }
 
+    fun shouldAnchorLatestAfterImeExpansion(
+        previousImeBottomPx: Int,
+        currentImeBottomPx: Int,
+        messageCount: Int,
+        lastVisibleIndexBeforeImeChange: Int
+    ): Boolean {
+        if (messageCount <= 0) return false
+        if (currentImeBottomPx <= previousImeBottomPx) return false
+        val latestIndex = scrollToLatestIndex(messageCount)
+        return lastVisibleIndexBeforeImeChange >= latestIndex
+    }
+
+    fun imeExpansionScrollDeltaPx(
+        previousImeBottomPx: Int,
+        currentImeBottomPx: Int,
+        messageCount: Int,
+        lastVisibleIndexBeforeImeChange: Int
+    ): Int {
+        if (
+            !shouldAnchorLatestAfterImeExpansion(
+                previousImeBottomPx = previousImeBottomPx,
+                currentImeBottomPx = currentImeBottomPx,
+                messageCount = messageCount,
+                lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeChange
+            )
+        ) {
+            return 0
+        }
+        return currentImeBottomPx - previousImeBottomPx
+    }
+
     fun shouldLoadEarlierHistory(
         visibleMaxIndex: Int,
         messageCount: Int,

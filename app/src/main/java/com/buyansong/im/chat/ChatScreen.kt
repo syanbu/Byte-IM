@@ -13,14 +13,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -121,6 +124,15 @@ fun ChatScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    var previousImeBottomPx by remember { mutableStateOf(imeBottomPx) }
+    val lastVisibleMessageIndex by remember(listState) {
+        derivedStateOf {
+            listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
+        }
+    }
+    var lastVisibleIndexBeforeImeExpansion by remember { mutableStateOf(lastVisibleMessageIndex) }
     val albumViewModel = remember(albumSessionId) {
         AlbumPickerViewModel(AndroidAlbumImageRepository(context.contentResolver))
     }
@@ -186,6 +198,25 @@ fun ChatScreen(
             }
         }
         previousLatestMessageId = latestMessageId
+    }
+
+    LaunchedEffect(imeBottomPx, lastVisibleMessageIndex) {
+        if (imeBottomPx == 0) {
+            lastVisibleIndexBeforeImeExpansion = lastVisibleMessageIndex
+        }
+    }
+
+    LaunchedEffect(imeBottomPx, state.messages.size) {
+        val imeScrollDeltaPx = ChatAutoScrollPolicy.imeExpansionScrollDeltaPx(
+            previousImeBottomPx = previousImeBottomPx,
+            currentImeBottomPx = imeBottomPx,
+            messageCount = state.messages.size,
+            lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeExpansion
+        )
+        if (imeScrollDeltaPx > 0) {
+            listState.animateScrollBy(imeScrollDeltaPx.toFloat())
+        }
+        previousImeBottomPx = imeBottomPx
     }
 
     LaunchedEffect(shouldLoadEarlierHistory) {
