@@ -42,6 +42,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -137,6 +138,13 @@ fun ChatScreen(
     }
     var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
     val latestMessageId = state.messages.lastOrNull()?.messageId
+    val latestMessageIndex = ChatAutoScrollPolicy.scrollToLatestIndex(state.messages.size)
+    val autoScrollAction = ChatAutoScrollPolicy.scrollAction(previousLatestMessageId, latestMessageId)
+    SideEffect {
+        if (autoScrollAction == ChatAutoScrollPolicy.ScrollAction.PRE_MEASURE_ANCHOR_TO_LATEST) {
+            listState.requestScrollToItem(latestMessageIndex)
+        }
+    }
     val shouldLoadEarlierHistory by remember(
         listState,
         state.messages.size,
@@ -165,10 +173,12 @@ fun ChatScreen(
     }
 
     LaunchedEffect(latestMessageId, state.messages.size) {
-        if (ChatAutoScrollPolicy.shouldScrollToLatest(previousLatestMessageId, latestMessageId)) {
-            listState.animateScrollToItem(
-                ChatAutoScrollPolicy.scrollToLatestIndex(state.messages.size)
-            )
+        when (autoScrollAction) {
+            ChatAutoScrollPolicy.ScrollAction.NONE -> Unit
+            ChatAutoScrollPolicy.ScrollAction.PRE_MEASURE_ANCHOR_TO_LATEST -> Unit
+            ChatAutoScrollPolicy.ScrollAction.ANIMATE_TO_LATEST -> {
+                listState.animateScrollToItem(latestMessageIndex)
+            }
         }
         previousLatestMessageId = latestMessageId
     }

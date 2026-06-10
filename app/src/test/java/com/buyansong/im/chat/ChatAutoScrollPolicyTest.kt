@@ -35,10 +35,48 @@ class ChatAutoScrollPolicyTest {
                 latestMessageId = "msg-2"
             )
         )
-        assertTrue(
-            ChatAutoScrollPolicy.shouldScrollToLatest(
+    }
+
+    @Test
+    fun scrollAction_noLatest_returnsNone() {
+        assertEquals(
+            ChatAutoScrollPolicy.ScrollAction.NONE,
+            ChatAutoScrollPolicy.scrollAction(
                 previousLatestMessageId = null,
-                latestMessageId = "msg-1"
+                latestMessageId = null
+            )
+        )
+    }
+
+    @Test
+    fun scrollAction_firstLoadedLatest_returnsPreMeasureAnchor() {
+        assertEquals(
+            ChatAutoScrollPolicy.ScrollAction.PRE_MEASURE_ANCHOR_TO_LATEST,
+            ChatAutoScrollPolicy.scrollAction(
+                previousLatestMessageId = null,
+                latestMessageId = "msg-9"
+            )
+        )
+    }
+
+    @Test
+    fun scrollAction_sameLatest_returnsNone() {
+        assertEquals(
+            ChatAutoScrollPolicy.ScrollAction.NONE,
+            ChatAutoScrollPolicy.scrollAction(
+                previousLatestMessageId = "msg-9",
+                latestMessageId = "msg-9"
+            )
+        )
+    }
+
+    @Test
+    fun scrollAction_latestChangedAfterInitialLoad_returnsAnimate() {
+        assertEquals(
+            ChatAutoScrollPolicy.ScrollAction.ANIMATE_TO_LATEST,
+            ChatAutoScrollPolicy.scrollAction(
+                previousLatestMessageId = "msg-8",
+                latestMessageId = "msg-9"
             )
         )
     }

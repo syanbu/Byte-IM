@@ -4,14 +4,29 @@ object ChatAutoScrollPolicy {
     private const val LOAD_EARLIER_THRESHOLD_ITEMS = 6
     private const val MAX_RETAINED_MESSAGES = 2_000
 
+    enum class ScrollAction {
+        NONE,
+        PRE_MEASURE_ANCHOR_TO_LATEST,
+        ANIMATE_TO_LATEST
+    }
+
+    fun scrollAction(previousLatestMessageId: String?, latestMessageId: String?): ScrollAction {
+        return when {
+            latestMessageId == null -> ScrollAction.NONE
+            previousLatestMessageId == null -> ScrollAction.PRE_MEASURE_ANCHOR_TO_LATEST
+            previousLatestMessageId == latestMessageId -> ScrollAction.NONE
+            else -> ScrollAction.ANIMATE_TO_LATEST
+        }
+    }
+
     fun shouldScrollToLatest(previousLatestMessageId: String?, latestMessageId: String?): Boolean {
-        return latestMessageId != null && latestMessageId != previousLatestMessageId
+        return scrollAction(previousLatestMessageId, latestMessageId) != ScrollAction.NONE
     }
 
     /**
-     * Returns the index the message `LazyColumn` should animate to when
-     * a new message arrives and the caller has already determined (via
-     * [shouldScrollToLatest]) that an auto-scroll is needed.
+     * Returns the index the message `LazyColumn` should move to when
+     * the caller has already determined (via [scrollAction]) that the
+     * latest message should be brought into view.
      *
      * The chat list uses a *normal* top-to-bottom layout (item 0 = oldest
      * = visual top; last item = newest = visual bottom). The "scroll to
