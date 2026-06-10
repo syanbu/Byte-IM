@@ -65,6 +65,166 @@ class ChatViewModel(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
+    private sealed interface ConversationTarget {
+        val peerId: String
+        val conversationId: String
+        val isGroup: Boolean
+
+        fun openConversation(repository: MessageRepository, currentUserId: String) {
+            repository.openConversationById(
+                currentUserId = currentUserId,
+                conversationId = conversationId,
+                peerId = if (isGroup) null else peerId
+            )
+        }
+
+        fun historyPage(repository: MessageRepository, beforeTime: Long?, limit: Int): List<ChatMessage> {
+            return repository.historyPageByConversationId(conversationId, beforeTime, limit)
+        }
+
+        fun peerReadCursor(repository: MessageRepository): Long? {
+            return repository.conversationPeerReadCursorByConversationId(conversationId)
+        }
+
+        fun missingIncomingImageThumbnails(repository: MessageRepository, limit: Int): List<ChatMessage> {
+            return repository.missingIncomingImageThumbnailsByConversationId(conversationId, limit)
+        }
+
+        fun sendText(
+            repository: MessageRepository,
+            senderId: String,
+            content: String,
+            mentionedUserIds: List<String>,
+            now: Long
+        )
+
+        fun createLocalImageMessage(
+            repository: MessageRepository,
+            senderId: String,
+            selectedImage: SelectedChatImage,
+            now: Long
+        ): ChatMessage
+
+        fun createLocalImageMessages(
+            repository: MessageRepository,
+            senderId: String,
+            selectedImages: List<SelectedChatImage>,
+            nowBase: Long
+        ): List<ChatMessage>
+    }
+
+    private data class SingleConversationTarget(
+        override val peerId: String,
+        override val conversationId: String
+    ) : ConversationTarget {
+        override val isGroup: Boolean = false
+
+        override fun sendText(
+            repository: MessageRepository,
+            senderId: String,
+            content: String,
+            mentionedUserIds: List<String>,
+            now: Long
+        ) {
+            repository.sendText(
+                senderId = senderId,
+                receiverId = peerId,
+                content = content,
+                now = now
+            )
+        }
+
+        override fun createLocalImageMessage(
+            repository: MessageRepository,
+            senderId: String,
+            selectedImage: SelectedChatImage,
+            now: Long
+        ): ChatMessage {
+            return repository.createLocalImageMessage(
+                senderId = senderId,
+                receiverId = peerId,
+                localOriginalPath = selectedImage.localOriginalPath,
+                localThumbnailPath = selectedImage.localThumbnailPath,
+                imageWidth = selectedImage.width,
+                imageHeight = selectedImage.height,
+                mimeType = selectedImage.mimeType,
+                now = now
+            )
+        }
+
+        override fun createLocalImageMessages(
+            repository: MessageRepository,
+            senderId: String,
+            selectedImages: List<SelectedChatImage>,
+            nowBase: Long
+        ): List<ChatMessage> {
+            return repository.createLocalImageMessages(
+                senderId = senderId,
+                receiverId = peerId,
+                groupId = null,
+                selectedImages = selectedImages,
+                nowBase = nowBase
+            )
+        }
+    }
+
+    private data class GroupConversationTarget(
+        override val peerId: String
+    ) : ConversationTarget {
+        override val conversationId: String = peerId
+        override val isGroup: Boolean = true
+        private val groupId: String = peerId.removePrefix("group:")
+
+        override fun sendText(
+            repository: MessageRepository,
+            senderId: String,
+            content: String,
+            mentionedUserIds: List<String>,
+            now: Long
+        ) {
+            repository.sendGroupText(
+                senderId = senderId,
+                groupId = groupId,
+                content = content,
+                mentionedUserIds = mentionedUserIds,
+                now = now
+            )
+        }
+
+        override fun createLocalImageMessage(
+            repository: MessageRepository,
+            senderId: String,
+            selectedImage: SelectedChatImage,
+            now: Long
+        ): ChatMessage {
+            return repository.createLocalGroupImageMessage(
+                senderId = senderId,
+                groupId = groupId,
+                localOriginalPath = selectedImage.localOriginalPath,
+                localThumbnailPath = selectedImage.localThumbnailPath,
+                imageWidth = selectedImage.width,
+                imageHeight = selectedImage.height,
+                mimeType = selectedImage.mimeType,
+                now = now
+            )
+        }
+
+        override fun createLocalImageMessages(
+            repository: MessageRepository,
+            senderId: String,
+            selectedImages: List<SelectedChatImage>,
+            nowBase: Long
+        ): List<ChatMessage> {
+            return repository.createLocalImageMessages(
+                senderId = senderId,
+                receiverId = null,
+                groupId = groupId,
+                selectedImages = selectedImages,
+                nowBase = nowBase
+            )
+        }
+    }
+
     private val mutableState = MutableStateFlow(ChatUiState(peerId = initialPeerId))
     val state: StateFlow<ChatUiState> = mutableState.asStateFlow()
     val currentUserId: String = session.userId
@@ -159,23 +319,8 @@ class ChatViewModel(
             return
         }
         withContext(dispatcher) {
-            val targetId = mutableState.value.peerId
-            if (targetId.isGroupConversationId()) {
-                repository.sendGroupText(
-                    senderId = session.userId,
-                    groupId = targetId.removePrefix("group:"),
-                    content = trimmed,
-                    mentionedUserIds = mentionedUserIds,
-                    now = now
-                )
-            } else {
-                repository.sendText(
-                    senderId = session.userId,
-                    receiverId = targetId,
-                    content = trimmed,
-                    now = now
-                )
-            }
+            val target = currentConversationTarget() ?: return@withContext
+            target.sendText(repository, session.userId, trimmed, mentionedUserIds, now)
             refreshKeepingHistory()
         }
     }
@@ -217,30 +362,8 @@ class ChatViewModel(
             return
         }
         withContext(dispatcher) {
-            val targetId = mutableState.value.peerId
-            val localMessage = if (targetId.isGroupConversationId()) {
-                repository.createLocalGroupImageMessage(
-                    senderId = session.userId,
-                    groupId = targetId.removePrefix("group:"),
-                    localOriginalPath = selectedImage.localOriginalPath,
-                    localThumbnailPath = selectedImage.localThumbnailPath,
-                    imageWidth = selectedImage.width,
-                    imageHeight = selectedImage.height,
-                    mimeType = selectedImage.mimeType,
-                    now = now
-                )
-            } else {
-                repository.createLocalImageMessage(
-                    senderId = session.userId,
-                    receiverId = targetId,
-                    localOriginalPath = selectedImage.localOriginalPath,
-                    localThumbnailPath = selectedImage.localThumbnailPath,
-                    imageWidth = selectedImage.width,
-                    imageHeight = selectedImage.height,
-                    mimeType = selectedImage.mimeType,
-                    now = now
-                )
-            }
+            val target = currentConversationTarget() ?: return@withContext
+            val localMessage = target.createLocalImageMessage(repository, session.userId, selectedImage, now)
             refreshKeepingHistory()
 
             uploadImageAndQueueSend(localMessage.messageId, selectedImage)
@@ -258,20 +381,11 @@ class ChatViewModel(
             return
         }
         val batchNow = now
-        val targetId = mutableState.value.peerId
-        val isGroup = targetId.isGroupConversationId()
-        val receiverId: String? = if (isGroup) null else targetId
-        val groupId: String? = if (isGroup) targetId.removePrefix("group:") else null
+        val target = currentConversationTarget() ?: return
         // Phase 1+2: serialize id allocation + batch insert on the IO dispatcher,
         // then trigger a single refresh so all N UPLOADING rows are visible at once.
         val inserted: List<ChatMessage> = withContext(dispatcher) {
-            repository.createLocalImageMessages(
-                senderId = session.userId,
-                receiverId = receiverId,
-                groupId = groupId,
-                selectedImages = ordered,
-                nowBase = batchNow
-            )
+            target.createLocalImageMessages(repository, session.userId, ordered, batchNow)
         }
         refreshKeepingHistory()
         // Phase 3: upload rows in parallel, but queue SEND_MESSAGE in selection
@@ -633,13 +747,9 @@ class ChatViewModel(
     }
 
     private fun scheduleMissingThumbnailRetries(immediate: Boolean) {
-        val peerId = mutableState.value.peerId
-        if (peerId.isEmpty()) {
-            return
-        }
-        repository.missingIncomingImageThumbnails(
-            userId = session.userId,
-            peerId = peerId,
+        val target = currentConversationTarget() ?: return
+        target.missingIncomingImageThumbnails(
+            repository = repository,
             limit = MISSING_THUMBNAIL_RETRY_BATCH_SIZE
         ).forEach { message ->
             if (thumbnailRetryJobs[message.messageId]?.isActive == true) {
@@ -651,6 +761,21 @@ class ChatViewModel(
             thumbnailRetryJobs[message.messageId] = scope.launch(dispatcher) {
                 retryMissingThumbnail(message.messageId, immediate)
             }
+        }
+    }
+
+    private fun currentConversationTarget(): ConversationTarget? {
+        val peerId = mutableState.value.peerId
+        if (peerId.isBlank()) {
+            return null
+        }
+        return if (peerId.isGroupConversationId()) {
+            GroupConversationTarget(peerId)
+        } else {
+            SingleConversationTarget(
+                peerId = peerId,
+                conversationId = repository.conversationIdFor(session.userId, peerId)
+            )
         }
     }
 
@@ -677,32 +802,38 @@ class ChatViewModel(
         return (current + incoming)
             .associateBy { it.messageId }
             .values
-            .let { MessageOrderingPolicy.sortNewestFirst(it) }
+            .let { MessageOrderingPolicy.sortOldestFirst(it) }
             .take(MAX_RETAINED_MESSAGES)
     }
 
     private fun openCurrentConversation() {
-        val targetId = mutableState.value.peerId
-        if (targetId.isGroupConversationId()) {
-            repository.openConversationById(session.userId, targetId)
-        } else {
-            repository.openConversation(session.userId, targetId)
-        }
+        currentConversationTarget()?.openConversation(repository, session.userId)
     }
 
     private fun historyPage(peerId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
-        return if (peerId.isGroupConversationId()) {
-            repository.historyPageByConversationId(peerId, beforeTime, limit)
+        val page = if (peerId == mutableState.value.peerId) {
+            currentConversationTarget()?.historyPage(repository, beforeTime, limit).orEmpty()
+        } else if (peerId.isGroupConversationId()) {
+            GroupConversationTarget(peerId).historyPage(repository, beforeTime, limit)
         } else {
-            repository.historyPage(session.userId, peerId, beforeTime, limit)
+            SingleConversationTarget(
+                peerId = peerId,
+                conversationId = repository.conversationIdFor(session.userId, peerId)
+            ).historyPage(repository, beforeTime, limit)
         }
+        return MessageOrderingPolicy.sortOldestFirst(page)
     }
 
     private fun peerReadCursor(peerId: String): Long? {
-        return if (peerId.isGroupConversationId()) {
-            repository.conversationPeerReadCursorByConversationId(peerId)
+        return if (peerId == mutableState.value.peerId) {
+            currentConversationTarget()?.peerReadCursor(repository)
+        } else if (peerId.isGroupConversationId()) {
+            GroupConversationTarget(peerId).peerReadCursor(repository)
         } else {
-            repository.conversationPeerReadCursor(session.userId, peerId)
+            SingleConversationTarget(
+                peerId = peerId,
+                conversationId = repository.conversationIdFor(session.userId, peerId)
+            ).peerReadCursor(repository)
         }
     }
 

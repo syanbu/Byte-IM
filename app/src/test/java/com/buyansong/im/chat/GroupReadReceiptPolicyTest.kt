@@ -51,14 +51,14 @@ class GroupReadReceiptPolicyTest {
         GroupReadCursor("g_1", readerId, readUpTo, readAt)
 
     @Test
-    fun latestEligible_picksFirstSentOutgoingOwnMessageNewestFirst() {
+    fun latestEligible_picksLatestSentOutgoingOwnMessageOldestFirst() {
         val messages = listOf(
-            msg("m1", status = MessageStatus.SENDING, serverSeq = null),
-            msg("m2", status = MessageStatus.SENT, serverSeq = 1L),
-            msg("m3", status = MessageStatus.SENT, serverSeq = 2L, isRecalled = true),
+            msg("m1", status = MessageStatus.SENT, serverSeq = 1L),
+            msg("m2", status = MessageStatus.SENT, serverSeq = 2L, isRecalled = true),
+            msg("m3", status = MessageStatus.SENT, serverSeq = 3L),
             msg("m4", senderId = "u_b")
         )
-        assertEquals("m2", GroupReadReceiptPolicy.latestEligibleOwnSentMessageId(messages, "u_a"))
+        assertEquals("m3", GroupReadReceiptPolicy.latestEligibleOwnSentMessageId(messages, "u_a"))
     }
 
     @Test

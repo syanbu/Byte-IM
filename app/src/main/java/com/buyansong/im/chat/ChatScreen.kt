@@ -136,7 +136,7 @@ fun ChatScreen(
         }
     }
     var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
-    val latestMessageId = state.messages.firstOrNull()?.messageId
+    val latestMessageId = state.messages.lastOrNull()?.messageId
     val shouldLoadEarlierHistory by remember(
         listState,
         state.messages.size,
@@ -164,9 +164,11 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(latestMessageId) {
+    LaunchedEffect(latestMessageId, state.messages.size) {
         if (ChatAutoScrollPolicy.shouldScrollToLatest(previousLatestMessageId, latestMessageId)) {
-            listState.animateScrollToItem(0)
+            listState.animateScrollToItem(
+                ChatAutoScrollPolicy.scrollToLatestIndex(state.messages.size)
+            )
         }
         previousLatestMessageId = latestMessageId
     }
@@ -219,8 +221,31 @@ fun ChatScreen(
                     .fillMaxWidth()
                     .background(ByteImColors.AppBackground)
                     .padding(horizontal = ByteImDimensions.EdgePadding),
-                reverseLayout = true
+                reverseLayout = false
             ) {
+                if (state.messages.isNotEmpty()) {
+                    item(key = "history-loader") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 72.dp)
+                                .padding(top = 16.dp, bottom = 18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ChatHistoryTopTime(
+                                text = ChatDisplayPolicy.topTimelineTimeText(state.messages.first().createdAt)
+                            )
+                            ChatDisplayPolicy.historyStatusText(state)?.let { statusText ->
+                                Text(
+                                    text = statusText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = ByteImColors.TextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
                 itemsIndexed(state.messages, key = { _, msg -> msg.messageId }) { index, message ->
                     when (ChatDisplayPolicy.rowKind(message)) {
                         ChatMessageRowKind.CENTERED_NOTICE -> RecalledMessageNotice(
@@ -267,29 +292,6 @@ fun ChatScreen(
                                 GroupReadIndicator(
                                     count = state.groupReadCountForLatest,
                                     onClick = { showGroupReadSheet = true }
-                                )
-                            }
-                        }
-                    }
-                }
-                if (state.messages.isNotEmpty()) {
-                    item(key = "history-loader") {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 72.dp)
-                                .padding(top = 16.dp, bottom = 18.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            ChatHistoryTopTime(
-                                text = ChatDisplayPolicy.topTimelineTimeText(state.messages.last().createdAt)
-                            )
-                            ChatDisplayPolicy.historyStatusText(state)?.let { statusText ->
-                                Text(
-                                    text = statusText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = ByteImColors.TextSecondary
                                 )
                             }
                         }

@@ -10,7 +10,7 @@ object GroupReadReceiptPolicy {
     fun latestEligibleOwnSentMessageId(
         messages: List<ChatMessage>,
         currentUserId: String
-    ): String? = messages.firstOrNull { message ->
+    ): String? = messages.lastOrNull { message ->
         message.senderId == currentUserId &&
             message.direction == MessageDirection.OUTGOING &&
             message.status == MessageStatus.SENT &&

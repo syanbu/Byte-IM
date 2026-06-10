@@ -46,3 +46,29 @@ Done for the current local mock-server path.
 - Offline sending, reconnect resend, and richer conversation behavior belong to later B7/B9 work.
 - The current screen is a minimal demo chat screen, not the final conversation-list-first IM flow.
 
+## First-message anchor
+
+In the chat screen, messages are laid out **top-to-bottom** (the message
+`LazyColumn` uses `reverseLayout = false`). The first message of a
+brand-new conversation therefore appears at the top of the visible area,
+and subsequent messages stack immediately below it. As soon as the
+conversation has more messages than fit on one screen, the latest
+message is scrolled into view at the bottom of the list, just above the
+input bar.
+
+This is driven by
+[`ChatAutoScrollPolicy`](../../app/src/main/java/com/buyansong/im/chat/ChatAutoScrollPolicy.kt):
+
+- [`shouldScrollToLatest(previousLatestMessageId, latestMessageId)`](../../app/src/main/java/com/buyansong/im/chat/ChatAutoScrollPolicy.kt) — the existing boolean that returns
+  `true` whenever the latest message id changes (including the very
+  first message arriving in an empty conversation).
+- [`scrollToLatestIndex(messageCount)`](../../app/src/main/java/com/buyansong/im/chat/ChatAutoScrollPolicy.kt) — the helper that returns the last index of the
+  list. `ChatScreen` calls
+  `listState.animateScrollToItem(ChatAutoScrollPolicy.scrollToLatestIndex(state.messages.size))`
+  whenever `shouldScrollToLatest` is `true`, so the latest message is
+  always in view at the bottom of the list.
+
+The `history-loader` block (which displays the time of the oldest
+message and any "no more history" status) is rendered as the *first*
+item of the `LazyColumn` content, before `itemsIndexed`, so it stays
+at the visual top of the column in the new top-to-bottom layout.

@@ -401,8 +401,11 @@ class MessageRepository(
     }
 
     fun historyPage(userId: String, peerId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
-        return messageDao.queryPage(conversationIdFor(userId, peerId), beforeTime, limit)
-            .filter { it.isReadyForChatDisplay() }
+        return historyPageByConversationId(
+            conversationId = conversationIdFor(userId, peerId),
+            beforeTime = beforeTime,
+            limit = limit
+        )
     }
 
     fun historyPageByConversationId(conversationId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
@@ -411,8 +414,15 @@ class MessageRepository(
     }
 
     fun missingIncomingImageThumbnails(userId: String, peerId: String, limit: Int): List<ChatMessage> {
-        return messageDao.queryIncomingImagesMissingLocalThumbnail(
+        return missingIncomingImageThumbnailsByConversationId(
             conversationId = conversationIdFor(userId, peerId),
+            limit = limit
+        )
+    }
+
+    fun missingIncomingImageThumbnailsByConversationId(conversationId: String, limit: Int): List<ChatMessage> {
+        return messageDao.queryIncomingImagesMissingLocalThumbnail(
+            conversationId = conversationId,
             limit = limit
         )
     }
@@ -513,16 +523,11 @@ class MessageRepository(
     }
 
     fun conversationPeerReadCursor(userId: String, peerId: String): Long? {
-        val conversationId = conversationIdFor(userId, peerId)
-        return conversationDao.listConversations(limit = 100)
-            .firstOrNull { it.conversationId == conversationId }
-            ?.peerReadUpToServerSeq
+        return conversationPeerReadCursorByConversationId(conversationIdFor(userId, peerId))
     }
 
     fun conversationPeerReadCursorByConversationId(conversationId: String): Long? {
-        return conversationDao.listConversations(limit = 100)
-            .firstOrNull { it.conversationId == conversationId }
-            ?.peerReadUpToServerSeq
+        return conversation(conversationId)?.peerReadUpToServerSeq
     }
 
     override fun totalUnreadCount(): Int = conversationDao.totalUnreadCount()
