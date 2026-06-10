@@ -1,6 +1,7 @@
 package com.buyansong.im.chat
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -73,8 +74,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.core.content.ContextCompat
+import coil.Coil
 import com.buyansong.im.R
 import com.buyansong.im.message.ChatImageCompressor
+import com.buyansong.im.message.SelectedChatImage
 import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.ConversationType
 import com.buyansong.im.storage.GroupMember
@@ -88,8 +91,10 @@ import com.buyansong.im.ui.ByteImSystemNotice
 import com.buyansong.im.ui.ByteImTopBar
 import com.buyansong.im.ui.byteImBubbleColor
 import com.buyansong.im.ui.byteImBubbleShape
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -413,6 +418,7 @@ fun ChatScreen(
                         )?.copy(selectionOrder = index)
                     }
                     if (preparedImages.isNotEmpty()) {
+                        prewarmOutgoingLocalThumbnails(context, preparedImages)
                         viewModel.sendImages(preparedImages)
                     }
                 }
@@ -425,6 +431,18 @@ fun ChatScreen(
             readers = state.groupReadersForLatest,
             onDismiss = { showGroupReadSheet = false }
         )
+    }
+}
+
+private suspend fun prewarmOutgoingLocalThumbnails(
+    context: Context,
+    images: List<SelectedChatImage>
+) {
+    withContext(Dispatchers.IO) {
+        images.forEach { image ->
+            val request = ChatLocalThumbnailRequest.build(context, image.localThumbnailPath) ?: return@forEach
+            Coil.imageLoader(context).execute(request)
+        }
     }
 }
 

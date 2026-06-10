@@ -1,6 +1,8 @@
 # B11 Image Message Design Status
 
-> **Last modified:** 2026-06-08 — Fixed in-screen overlay back-stack semantics. `ChatImagePreviewScreen` and `AlbumPickerScreen` are rendered as in-screen overlays inside `ChatScreen` (not as NavHost destinations), so without an explicit `BackHandler` the system back press propagated to the NavController and popped the entire `Chat` destination, returning the user straight to `Conversations`. Added two `BackHandler` blocks in `ChatScreen` — one for `showAlbumPicker`, one for `previewMessage` — registered before their respective overlays so back now dismisses the overlay first and the user lands back on the chat, not the messages list.
+> **Last modified:** 2026-06-10 — Fixed sender-side hot image send thumbnail flash. Outgoing images now prewarm their generated local thumbnail files into Coil memory cache before `ChatViewModel.sendImages(...)` creates and emits the local `UPLOADING` rows. `ChatImageBubble` renders local thumbnails through the same explicit `ImageRequest` (`memoryCacheKey`, `diskCacheKey`, `Size.ORIGINAL`) used by prewarm, so the first bubble composition can hit memory instead of briefly showing the gray placeholder while Coil decodes the local file.
+>
+> **Earlier (2026-06-08):** Fixed in-screen overlay back-stack semantics. `ChatImagePreviewScreen` and `AlbumPickerScreen` are rendered as in-screen overlays inside `ChatScreen` (not as NavHost destinations), so without an explicit `BackHandler` the system back press propagated to the NavController and popped the entire `Chat` destination, returning the user straight to `Conversations`. Added two `BackHandler` blocks in `ChatScreen` — one for `showAlbumPicker`, one for `previewMessage` — registered before their respective overlays so back now dismisses the overlay first and the user lands back on the chat, not the messages list.
 >
 > **Earlier (2026-06-07):** Replaced the conversation-list-to-chat preload (5/10 recent local thumbnails enqueued when opening a conversation) with a per-bubble `LaunchedEffect` self-preload inside `ChatImageBubble`. The old approach had a late start (post-navigation), an unverifiable fire-and-forget path (`enqueue` with no result), and a hard-coded single-chat-only branch. The new approach runs from the bubble that actually needs the bitmap, works for both single and group chats, and only triggers `execute` for local files. Removed `ChatThumbnailPreloader`, `MessageDao.queryRecentImagesWithLocalThumbnail`, `MessageRepository.recentLocalThumbnailPaths`, and the `RECENT_THUMBNAIL_PRELOAD_LIMIT` constant.
 
@@ -53,6 +55,7 @@ Implemented for gallery image send with multi-select expansion into independent 
   - gallery multi-image pick
   - local thumbnail bubble preview
   - image bubble stable placeholder/loading area without an inline loading spinner
+  - sender-side hot-send thumbnail prewarm before local outgoing image rows enter chat state, avoiding the visible gray flash while Coil decodes local files
   - upload/send failure text state
   - one-tap retry via the same red failure indicator for both `UPLOAD_FAILED` and `FAILED`
   - image preview overlay for the original image
@@ -157,6 +160,15 @@ Per-bubble self-preload (replaces conversation-list-to-chat preload):
 - `execute` (not `enqueue`) means the coroutine can observe the decode result; Coil still deduplicates with the `SubcomposeAsyncImage` request via shared memory/disk cache keys
 - works uniformly for single chat and group chat (the previous global limit `RECENT_THUMBNAIL_PRELOAD_LIMIT = 10` was hard-coded to skip group chats)
 - no cross-ViewModel dependency: `ConversationListViewModel` no longer carries `ChatThumbnailPreloader` and the conversation-list → chat transition no longer triggers any preload job
+
+Sender-side hot-send prewarm (2026-06-10):
+
+- The bug: after selecting up to 9 images and tapping Send, outgoing image rows were inserted into chat state immediately, but `ChatImageBubble` still had to let Coil decode each generated local thumbnail file on first composition. During that tiny decode window, the stable gray placeholder was visible for a few milliseconds.
+- The fix keeps the existing message and upload pipeline unchanged. `ChatImageCompressor.prepareSelectedImage(...)` still generates local original/thumbnail files first. `ChatScreen` then executes Coil requests for every prepared `localThumbnailPath` before calling `ChatViewModel.sendImages(preparedImages)`.
+- `sendImages(...)` is not only the server-send step. In this codebase it is the orchestration method for outgoing image messages: sort selected images, create local `UPLOADING` rows, refresh chat state, upload thumbnail/original to OSS, and queue/send the final IM packet after upload success.
+- Prewarming before `sendImages(...)` matters because `sendImages(...)` creates the local rows and `refreshKeepingHistory()` emits them to Compose. If prewarm happens after this point, the first bubble frame can already have painted the gray placeholder.
+- `ChatLocalThumbnailRequest` centralizes the local thumbnail Coil request and uses `memoryCacheKey(path)`, `diskCacheKey(path)`, and `Size.ORIGINAL`. `ChatImageBubble` uses the same request for local thumbnail rendering and fallback self-preload, so prewarm and render target the same cache entry.
+- Receiver-side behavior is unchanged. Incoming images still wait for `ThumbnailDownloadScheduler` to cache `thumbnailUrl` into a local file and write `localThumbnailPath`; missing incoming local thumbnails remain hidden from chat history under the strict receiver-side policy.
 
 Current optimized receiver-side strategy:
 
@@ -630,6 +642,13 @@ Likely new mock-server tests:
 - Multi-image send order no longer relies on Android system Photo Picker URI order. The chat composer now opens a self-built album selection flow backed by `MediaStore.Images`, records an explicit `selectionOrder` on each `SelectedChatImage`, and has `ChatViewModel.sendImages(...)` sort by that order before assigning `createdAt`. The album page sends directly; tap-to-preview and drag reorder remain future UX optimizations.
 
 ## Bug Fix Log
+
+### Outgoing Image Bubble Shows Gray Placeholder For A Few Milliseconds
+
+- Status: Fixed on 2026-06-10 by prewarming generated local thumbnails before local outgoing image rows enter chat state.
+- Detailed plan: [`docs/superpowers/plans/2026-06-10-outgoing-image-thumbnail-prewarm.md`](../superpowers/plans/2026-06-10-outgoing-image-thumbnail-prewarm.md).
+- One-line summary: outgoing image send used to create local `UPLOADING` rows before Coil had decoded the generated local thumbnail files, so `ChatImageBubble` briefly painted its stable gray background while the first local-file decode completed. The fix adds `ChatLocalThumbnailRequest`, uses the same explicit Coil request for prewarm and bubble render, and calls prewarm in `ChatScreen` before `ChatViewModel.sendImages(preparedImages)`.
+- Scope note: this only changes the sender-side hot path. It does not alter image upload, ACK handling, retry semantics, receiver-side thumbnail downloads, or the strict rule that incoming image rows remain hidden until `localThumbnailPath` is available.
 
 ### Multi-Image Send Order Reversed
 

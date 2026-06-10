@@ -21,7 +21,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.Coil
 import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
 import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.ui.ByteImColors
@@ -36,12 +35,15 @@ fun ChatImageBubble(
     onLongPress: () -> Unit = {}
 ) {
     val bubbleShape = ByteImShapes.BubbleLarge
-    val model = message.localThumbnailPath ?: message.thumbnailUrl
+    val context = LocalContext.current
+    val localThumbnailRequest = message.localThumbnailPath?.let { path ->
+        ChatLocalThumbnailRequest.build(context, path)
+    }
+    val model = localThumbnailRequest ?: message.thumbnailUrl
     val bubbleSize = ChatImageBubbleLayoutPolicy.displaySize(
         imageWidth = message.imageWidth,
         imageHeight = message.imageHeight
     )
-    val context = LocalContext.current
     // Self-managed preload: warm Coil's memory cache for this bubble's
     // local thumbnail before SubcomposeAsyncImage triggers the same decode.
     // Only local files are preloaded; never fetched from network here, since
@@ -49,13 +51,8 @@ fun ChatImageBubble(
     // receiver-side caching policy.
     LaunchedEffect(message.localThumbnailPath) {
         val path = message.localThumbnailPath ?: return@LaunchedEffect
-        Coil.imageLoader(context).execute(
-            ImageRequest.Builder(context)
-                .data(path)
-                .memoryCacheKey(path)
-                .diskCacheKey(path)
-                .build()
-        )
+        val request = ChatLocalThumbnailRequest.build(context, path) ?: return@LaunchedEffect
+        Coil.imageLoader(context).execute(request)
     }
     Box(
         modifier = modifier
