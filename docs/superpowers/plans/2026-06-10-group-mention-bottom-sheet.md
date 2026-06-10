@@ -4,9 +4,11 @@
 
 **Goal:** Replace the inline group-member mention picker that pops up above the chat composer with a scrollable `ModalBottomSheet`, so that large group member lists no longer push the input bar off-screen. When the sheet opens, hide the soft keyboard; when a member is selected, dismiss the sheet, insert the mention into the draft, and pull the keyboard back up on the input.
 
+**Execution constraint:** Do not run git commands and do not add commit steps while implementing this plan.
+
 **Architecture:**
-- Promote the mention picker from inline (`ChatScreen.kt:470-506`) to a standalone `ModalBottomSheet` (`MentionPickerSheet.kt`), mirroring the existing `GroupReadDetailSheet` pattern (`chat/GroupReadDetailSheet.kt`).
-- Replace the implicit "draft ends with `@`" check inside `ChatComposerBar` with an explicit `showMentionPicker` boolean in `ChatScreen` state, recomputed by the same `ChatMentionPolicy.shouldShowPicker(...)` predicate, so the picker state is observable and the keyboard hide/show can react to it.
+- Promote the mention picker from inline (`ChatScreen.kt:470-506`) to a standalone `ModalBottomSheet` (`MentionPickerSheet.kt`), mirroring the existing `GroupReadDetailSheet` sheet chrome (`chat/GroupReadDetailSheet.kt`) while keeping the current mention row information (avatar + display name + ID).
+- Replace the implicit "draft ends with `@`" check inside `ChatComposerBar` with an explicit `showMentionPicker` boolean in `ChatScreen` state, recomputed by the same `ChatMentionPolicy.shouldShowPicker(...)` predicate plus the existing "there are selectable members" guard, so the picker state is observable and the keyboard hide/show can react to it.
 - Use a `FocusRequester` attached to the composer `TextField` to bring focus back to the input after the user picks a member, and use `LocalSoftwareKeyboardController` to hide on open / show on member-selected-dismiss.
 - `ChatMentionPolicy` stays a pure object; no new logic beyond what the inline picker already uses. All sheet-lifecycle and keyboard management is in the screen layer.
 
@@ -17,15 +19,15 @@
 ## File Structure
 
 ### New files
-- `app/src/main/java/com/buyansong/im/chat/MentionPickerSheet.kt` — single-responsibility bottom-sheet composable. Title row, scrollable `LazyColumn` of `GroupMember`, member row matches the visual style of `GroupReadDetailSheet` (avatar + display name + ID).
+- `app/src/main/java/com/buyansong/im/chat/MentionPickerSheet.kt` — single-responsibility bottom-sheet composable. Title row, scrollable `LazyColumn` of `GroupMember`; sheet chrome follows `GroupReadDetailSheet`, and rows keep mention-picker information density (avatar + display name + ID).
 
 ### Modified files
 - `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
-  - Add `showMentionPicker: Boolean` local state, recomputed in `onDraftChange` via `ChatMentionPolicy.shouldShowPicker(...)`.
-  - Add `LaunchedEffect(showMentionPicker, isGroup)` that hides the keyboard when the sheet opens, and never touches the keyboard while it's closed.
+  - Add `showMentionPicker: Boolean` local state, `isGroupChat`, and `mentionableMembers`, recomputed in `onDraftChange` via `ChatMentionPolicy.shouldShowPicker(...) && mentionableMembers.isNotEmpty()`.
+  - Add `LaunchedEffect(showMentionPicker)` that hides the keyboard when the sheet opens, and never touches the keyboard while it's closed.
   - Add a `FocusRequester` and pass it into `ChatComposerBar`; call `focusRequester.requestFocus()` when a member is selected from the sheet so the keyboard reappears.
   - Render `MentionPickerSheet` after the existing `GroupReadDetailSheet` block (around `ChatScreen.kt:423-428`).
-  - Add a `BackHandler(enabled = showMentionPicker)` (place it next to the other `BackHandler`s at `ChatScreen.kt:383-391`).
+  - Add a `BackHandler(enabled = showMentionPicker)` after the existing overlay `BackHandler`s so the mention sheet consumes Back first while open.
   - Drop the inline `if (ChatMentionPolicy.shouldShowPicker(...))` block in `ChatComposerBar` (lines 470-506).
   - Plumb a new `onOpenMentionPicker` / `onDismissMentionPicker` pair from `ChatScreen` to `ChatComposerBar` is **not** required — the sheet can be driven entirely from `ChatScreen` because the trigger state already lives in `ChatScreen`.
 - `app/src/main/java/com/buyansong/im/chat/ChatMentionPolicy.kt` — no semantic change. The existing `shouldShowPicker(draft, isGroup)` predicate is reused as-is.
@@ -157,7 +159,7 @@ Run:
 ```
 Expected: BUILD SUCCESSFUL. If it fails on `Modifier.clickable` missing import, add `import androidx.compose.foundation.clickable` next to the other `androidx.compose.foundation.*` imports at the top of the file.
 
-- [ ] **Step 1.3: Add a minimal preview test (no Compose UI runner required)**
+- [ ] **Step 1.3: Add a minimal data-assumption test (no Compose UI runner required)**
 
 Add a new file `app/src/test/java/com/buyansong/im/chat/MentionPickerSheetStructureTest.kt`:
 
@@ -170,8 +172,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Smoke-tests the public surface of MentionPickerSheet and shared data
- * assumptions. UI rendering is verified manually in the running app
+ * Documents the shared data assumptions used by MentionPickerSheet's
+ * call site. UI rendering is verified manually in the running app
  * (Compose UI tests are not in this app's test plan).
  */
 class MentionPickerSheetStructureTest {
@@ -223,19 +225,27 @@ Expected: 2 tests pass.
 **Files:**
 - Modify: `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
 
-- [ ] **Step 2.1: Add `showMentionPicker` state and `FocusRequester`**
+- [ ] **Step 2.1: Add picker state, selectable members, and `FocusRequester`**
 
-In `ChatScreen.kt`, find the state declarations block at lines 103-117 (right after the `ChatScreen` composable opens). Add a new state variable and a `FocusRequester` *before* the existing `val focusManager = LocalFocusManager.current` line (currently line 115). Insert the following block:
+In `ChatScreen.kt`, find the state declarations block at lines 103-117 (right after the `ChatScreen` composable opens). Add the picker state, the focus requester, the group flag, and the filtered member list *before* the existing `val focusManager = LocalFocusManager.current` line (currently line 115). Insert the following block:
 
 ```kotlin
     // Picker visibility is UI state only — it tracks the same
     // "draft ends with @" condition that ChatMentionPolicy.shouldShowPicker
-    // checks. The previous inline picker derived the boolean implicitly from
-    // the draft; making it explicit lets us react in a LaunchedEffect (hide
-    // keyboard on open) and lets the BackHandler and the bottom sheet
-    // composable share a single source of truth.
+    // checks, plus the existing guard that there must be someone to select.
+    // Making it explicit lets the keyboard hide/show and BackHandler share
+    // one source of truth.
     var showMentionPicker by remember { mutableStateOf(false) }
     val mentionFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    val isGroupChat = state.peerId.startsWith("group:")
+    val mentionableMembers = state.mentionMembers.filter { it.userId != viewModel.currentUserId }
+
+    fun shouldOpenMentionPicker(text: String): Boolean {
+        return ChatMentionPolicy.shouldShowPicker(
+            draft = text,
+            isGroup = isGroupChat
+        ) && mentionableMembers.isNotEmpty()
+    }
 ```
 
 (Using a fully-qualified `androidx.compose.ui.focus.FocusRequester` here to avoid an import edit; the import can be tidied later if desired.)
@@ -249,15 +259,21 @@ In the `onDraftChange =` lambda passed into `ChatComposerBar` (currently at `Cha
                     draft = it
                     selectedMentions = ChatMentionPolicy.activeMentions(it.text, selectedMentions)
                     // Mirror the previous inline behavior: show the picker
-                    // exactly when the draft ends with "@" in a group chat.
-                    // ChatMentionPolicy.shouldShowPicker is the single source
-                    // of truth, so the trigger cannot drift from the policy.
-                    showMentionPicker = ChatMentionPolicy.shouldShowPicker(
-                        draft = it.text,
-                        isGroup = state.peerId.startsWith("group:")
-                    )
+                    // when the draft ends with "@" in a group chat and there
+                    // is at least one other member to select.
+                    showMentionPicker = shouldOpenMentionPicker(it.text)
                 },
 ```
+
+Add this effect near the other `LaunchedEffect(...)` blocks so the picker also reacts if group/member state changes after the user has already typed `@`:
+
+```kotlin
+    LaunchedEffect(draft.text, isGroupChat, mentionableMembers) {
+        showMentionPicker = shouldOpenMentionPicker(draft.text)
+    }
+```
+
+Because the effect keys do not include `showMentionPicker`, dismissing the sheet by Back or scrim does not immediately reopen it on the same draft; it will only recompute after the draft, group flag, or selectable member list changes.
 
 - [ ] **Step 2.3: Hide the keyboard when the sheet opens**
 
@@ -277,9 +293,8 @@ Add a new `LaunchedEffect` *after* the existing `LaunchedEffect(shouldLoadEarlie
 
 - [ ] **Step 2.4: Re-show the keyboard after a member is selected**
 
-Find the `onMentionSelected = { member -> ... }` lambda passed into `ChatComposerBar` (currently at `ChatScreen.kt:327-334`). The current implementation calls `ChatMentionPolicy.insertMention` and writes the new draft but does not touch focus. Since we are removing `mentionMembers` and `onMentionSelected` from `ChatComposerBar`'s signature (see Step 2.7/2.8 corrections), this lambda will no longer be passed to `ChatComposerBar`. The member selection logic now lives entirely in the shared `handleMemberSelected` function used by `MentionPickerSheet` (see Step 2.6). Remove this lambda from the `ChatComposerBar` call site entirely.
+Find the `onMentionSelected = { member -> ... }` lambda passed into `ChatComposerBar` (currently at `ChatScreen.kt:327-334`). The current implementation calls `ChatMentionPolicy.insertMention` and writes the new draft but does not touch focus. Since `mentionMembers` and `onMentionSelected` are being removed from `ChatComposerBar`'s signature (see Step 2.7/2.8), this lambda will no longer be passed to `ChatComposerBar`. Move the member selection logic into this `ChatScreen` local function, placed after `val keyboardController = LocalSoftwareKeyboardController.current` so the function can call `keyboardController?.show()`:
 
-If for any reason a local handler is still needed elsewhere, extract a shared function at the `ChatScreen` level:
 
 ```kotlin
     fun handleMemberSelected(member: GroupMember) {
@@ -299,7 +314,7 @@ Then use `handleMemberSelected` as the `onMemberSelected` callback in `MentionPi
 
 - [ ] **Step 2.5: Add a `BackHandler` for the sheet**
 
-Find the `BackHandler` block at `ChatScreen.kt:383-391` and insert a new one for the mention picker *before* the `BackHandler(enabled = showAlbumPicker)` line so the picker is the highest-priority overlay:
+Find the `BackHandler` block at `ChatScreen.kt:383-391` and add a new one for the mention picker **after** the existing preview/group/album handlers. Compose back handlers are handled with the later enabled handler taking priority, so placing this last makes the bottom sheet consume Back before the screen-level overlays when it is open:
 
 ```kotlin
     BackHandler(enabled = showMentionPicker) {
@@ -317,7 +332,7 @@ Find the `if (showGroupReadSheet) { GroupReadDetailSheet(...) }` block at `ChatS
 ```kotlin
     if (showMentionPicker) {
         MentionPickerSheet(
-            members = state.mentionMembers.filter { it.userId != viewModel.currentUserId },
+            members = mentionableMembers,
             onMemberSelected = { member -> handleMemberSelected(member) },
             onDismiss = { showMentionPicker = false }
         )
@@ -328,19 +343,9 @@ This uses the shared `handleMemberSelected` function defined in Step 2.4, elimin
 
 - [ ] **Step 2.7: Drop the inline picker block in `ChatComposerBar`**
 
-In `ChatComposerBar` (currently `ChatScreen.kt:446-586`), remove the entire `if (ChatMentionPolicy.shouldShowPicker(draft.text, isGroup) && mentionMembers.isNotEmpty()) { ... }` block at lines 470-506. The composer bar's `mentionMembers` and `onMentionSelected` parameters become unused for rendering, but keep them in the signature for now so the diff stays small. Add a comment above the `Row(...)` that opens the input row at line 507:
+In `ChatComposerBar` (currently `ChatScreen.kt:446-586`), remove the entire `if (ChatMentionPolicy.shouldShowPicker(draft.text, isGroup) && mentionMembers.isNotEmpty()) { ... }` block at lines 470-506. Also remove `isGroup`, `mentionMembers`, and `onMentionSelected` from the `ChatComposerBar` signature and from its single call site in `ChatScreen`.
 
-```kotlin
-        // The @-mention picker used to render inline here. It now lives in
-        // MentionPickerSheet, driven by ChatScreen's `showMentionPicker` state.
-        // `mentionMembers` and `onMentionSelected` are kept on the signature
-        // so existing call sites compile, but they are no longer rendered
-        // inside the composer bar.
-```
-
-Also remove the now-unused `ChatMentionPolicy.shouldShowPicker` import-style reference inside this file (no import is added for it, so nothing to delete on the import side). `ChatMentionPolicy` is still used in Step 2.2 and Step 2.6.
-
-**⚠️ Review correction:** Rather than keeping unused `mentionMembers` and `onMentionSelected` parameters in `ChatComposerBar`'s signature, remove them entirely. They are only called from one site (`ChatScreen`) and leaving them creates unnecessary technical debt. Also remove them from the call site at `ChatScreen.kt:319-363`.
+After this removal, `ChatComposerBar` should not reference `ChatMentionPolicy`, `GroupMember`, or `AvatarImage`; those responsibilities live in `ChatScreen` and `MentionPickerSheet`.
 
 - [ ] **Step 2.8: Plumb the `FocusRequester` into `ChatComposerBar`**
 
@@ -356,8 +361,8 @@ private fun ChatComposerBar(
     onMoreActionsClick: () -> Unit,
     onDismissMoreActions: () -> Unit,
     onPickMoreActionImage: () -> Unit,
-    onEmojiClick: () -> Unit = {},
-    mentionFocusRequester: androidx.compose.ui.focus.FocusRequester
+    mentionFocusRequester: androidx.compose.ui.focus.FocusRequester,
+    onEmojiClick: () -> Unit = {}
 ) {
 ```
 
@@ -380,7 +385,7 @@ Update the `TextField(...)` call's `modifier = ...` chain (currently lines 527-5
                         },
 ```
 
-Finally, update the call site of `ChatComposerBar` at `ChatScreen.kt:319-363` to pass the new parameter and remove the `isGroup`, `mentionMembers`, `onMentionSelected` arguments. Add `mentionFocusRequester = mentionFocusRequester,` as a new argument. The order does not matter as long as it is a named arg.
+Finally, update the call site of `ChatComposerBar` at `ChatScreen.kt:319-363` to pass the new parameter and remove the `isGroup`, `mentionMembers`, `onMentionSelected` arguments. Add `mentionFocusRequester = mentionFocusRequester,` as a named argument.
 
 - [ ] **Step 2.9: Compile**
 
@@ -392,12 +397,12 @@ Expected: BUILD SUCCESSFUL.
 
 ---
 
-## Task 3: Add focused unit tests around `ChatMentionPolicy.shouldShowPicker` and sheet wiring
+## Task 3: Add focused unit tests around mention policy behavior
 
 **Files:**
 - Create: `app/src/test/java/com/buyansong/im/chat/ChatMentionPickerBehaviorTest.kt`
 
-There is currently no test for `ChatMentionPolicy` in the repo. This task adds the minimal coverage that the picker behavior contract relies on: the boolean returned by `shouldShowPicker` must match the screen's `showMentionPicker` state. It also pins the parameter name list of `ChatComposerBar` so a future refactor cannot silently break the new `mentionFocusRequester` argument.
+There is currently no test for `ChatMentionPolicy` in the repo. This task adds the minimal coverage that the picker behavior contract relies on: `shouldShowPicker` only opens the picker for group drafts ending in `@`, and `insertMention` changes the draft/cursor in the way the sheet callback expects.
 
 - [ ] **Step 3.1: Write the tests**
 
@@ -487,7 +492,7 @@ The picker behavior is UI-driven, so a Compose UI test is out of scope for this 
 
 - [ ] **Step 5.1: Open a group chat with more than 10 members**
 
-The existing dev fixtures (the group created via `发起群聊` + a few extra Contacts) provide at least 3 members. To stress the scroll, manually add 30+ group members by repeatedly using `POST /groups` (or temporarily seed `mock-im-groups.sqlite`).
+The existing dev fixtures (the group created via `发起群聊` + a few extra Contacts) provide only a small group. To stress the scroll, create a dev group whose `memberIds` contains 20+ known local users, or temporarily seed `mock-im-groups.sqlite` with extra members for the target group.
 
 Open the group chat. Tap into the input field. The keyboard pops up.
 
@@ -503,7 +508,7 @@ With the keyboard up, type the character `@`. Expected:
 If the group has 20+ members, drag the list inside the sheet. Expected:
 - The list scrolls smoothly within the sheet's bounded height.
 - The title `选择提醒的人` stays pinned at the top of the sheet.
-- The sheet itself does not expand to fill the entire screen; it keeps its `skipPartiallyExpanded = true` cap.
+- The sheet stays within the `ModalBottomSheet` max height and the list scrolls inside it instead of pushing the composer layout.
 
 - [ ] **Step 5.4: Tap a member**
 
@@ -522,11 +527,11 @@ Open the picker again by typing `@`. Press the Android back button. Expected:
 - The draft is unchanged.
 - A subsequent tap on the input field re-shows the keyboard.
 
-- [ ] **Step 5.6: Type `@` then delete it**
+- [ ] **Step 5.6: Dismiss, then delete `@`**
 
-Type `@`, the sheet opens, then delete the `@` from the draft. Expected:
-- The sheet dismisses as soon as the draft no longer ends with `@` (this is driven by the `onDraftChange` recomputation in Step 2.2).
-- The keyboard does not auto-reappear (the user is still in the input field; the IME state depends on the platform's normal focus rules).
+Type `@`, let the sheet open, press Back to dismiss it, tap the input, then delete the `@` from the draft. Expected:
+- The sheet stays dismissed after the draft no longer ends with `@` (this is driven by the `onDraftChange` recomputation in Step 2.2).
+- The keyboard follows normal platform focus behavior; it is not forced open by the mention picker after cancellation.
 
 - [ ] **Step 5.7: Single-chat regression check**
 
@@ -546,29 +551,31 @@ Add a new bullet to the `Implemented in this B10 slice:` list (anywhere among th
 - Group chat mention picker now renders as a scrollable bottom sheet that hides the soft keyboard while open and pulls the keyboard back up on the input after a member is selected, so large group member lists do not push the composer off-screen.
 ```
 
-- [ ] **Step 6.2: Update the verification log in `docs/status/B2-single-chat.md`**
+- [ ] **Step 6.2: Add a verification log to `docs/status/B10-group-chat-and-mention.md`**
 
-The verification log is in the same file format. Add a new row at the bottom of the verification table:
+`B10-group-chat-and-mention.md` does not currently have a verification table. Add a new `## Verification` section near the end of the file using the same Markdown table format as `docs/status/B2-single-chat.md`:
 
 ```markdown
+## Verification
+
+| Date | Area | Command | Result |
+|---|---|---|---|
 | 2026-06-10 | Group Mention Bottom Sheet | `./gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatMentionPickerBehaviorTest --tests com.buyansong.im.chat.MentionPickerSheetStructureTest` | Passed: 7 unit tests covering `ChatMentionPolicy.shouldShowPicker`, `insertMention` cursor/visibility behavior, and member-list filtering; manual smoke test confirmed the bottom sheet appears without the keyboard, scrolls for large groups, re-shows the keyboard on member selection, and dismisses cleanly on back press. |
 ```
-
-If the `B2-single-chat.md` table turns out to be a single-chat-only contract, add the row to `docs/status/B10-group-chat-and-mention.md` instead (there is no verification table in that file today, so introduce a new `## Verification` section using the same Markdown table format as `B2-single-chat.md`).
 
 ---
 
 ## Self-Review
 
 - [ ] **Spec coverage:**
-  - Bottom sheet appears after `@` → covered by Task 2 Step 2.2 + 2.6.
+  - Bottom sheet appears after `@` when selectable group members exist → covered by Task 2 Step 2.1 + 2.2 + 2.6.
   - Bottom sheet is scrollable → covered by Task 1 Step 1.1 (`LazyColumn` inside `ModalBottomSheet`).
   - Keyboard hides when sheet opens → covered by Task 2 Step 2.3.
   - Keyboard re-appears on the input after member selection → covered by Task 2 Step 2.4/2.6 (`handleMemberSelected` calls `mentionFocusRequester.requestFocus()` + `keyboardController?.show()`).
   - No git operations, no protocol/storage changes → confirmed (no commit steps, no `MessageRepository` or `GroupRepository` edits).
 - [ ] **Placeholder scan:** No `TBD` / `TODO` / "implement later" / "similar to Task N" markers. Every code change has the actual code.
 - [ ] **Type consistency:** `mentionFocusRequester` is introduced once in Task 2 Step 2.1 and used in Step 2.4, 2.6, 2.8. `showMentionPicker` is the same `Boolean` state across all references. `ChatMentionPolicy.shouldShowPicker(draft, isGroup)` matches its current signature in `ChatMentionPolicy.kt:24-26`. `GroupMember.role` uses `GroupMemberRole` enum, not `String`.
-- [ ] **No code duplication:** `handleMemberSelected(member)` is extracted as a shared function in `ChatScreen` (Step 2.4) and called from both the `MentionPickerSheet` callback (Step 2.6).
+- [ ] **No code duplication:** `handleMemberSelected(member)` is extracted once in `ChatScreen` (Step 2.4) and called from the `MentionPickerSheet` callback (Step 2.6).
 - [ ] **No dead parameters:** `mentionMembers` and `onMentionSelected` are removed from `ChatComposerBar`'s signature (Step 2.7/2.8), not kept as unused parameters.
 - [ ] **UI consistency:** `MentionPickerSheet` row style matches the current inline picker style (`AvatarImage` 36.dp, `MaterialTheme.typography.titleMedium`/`bodySmall`).
 - [ ] **Test reliability:** No reflection-based structural tests; all tests verify actual behavior (`shouldShowPicker` logic, `insertMention` cursor/visibility, member filtering).

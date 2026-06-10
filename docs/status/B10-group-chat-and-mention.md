@@ -47,6 +47,7 @@ Implemented in this B10 slice:
 - Group conversation fallback avatars now show `群` instead of the first character of the group name.
 - Group chat loads local/remote group members for the mention picker through `GET /groups/{groupId}/members`.
 - Group chat composer shows a first-pass @ picker when a group draft ends with `@`.
+- Group chat mention picker now renders as a scrollable bottom sheet that hides the soft keyboard while open and pulls the keyboard back up on the input after a member is selected, so large group member lists do not push the composer off-screen.
 - Selecting a member inserts `@displayName ` and sends authoritative `mentionedUserIds`.
 - Chat text bubbles highlight mentioned spans using persisted mention user ids plus group member display names.
 - Conversation rows with unread mentions render a red `[有人@我]` prefix, and use the same structured mention display policy as chat bubbles.
@@ -56,7 +57,7 @@ Still pending after this slice:
 
 - Group list/member sync for groups created while another member is offline or on another device.
 - Full group member display.
-- Rich @ editing: search, arbitrary cursor insertion, deleting mention chips as a unit, and better long-list member picker UI.
+- Rich @ editing: search, arbitrary cursor insertion, and deleting mention chips as a unit.
 - Group read/unread read-receipt semantics are intentionally deferred and should not be implemented in this B10 pass.
 
 ## Agreed Scope
@@ -698,6 +699,12 @@ Suggested verification commands:
 cd mock-server
 mvn -q test
 ```
+
+## Verification
+
+| Date | Area | Command | Result |
+|---|---|---|---|
+| 2026-06-10 | Group Mention Bottom Sheet | `./gradlew :app:testDebugUnitTest`; `./gradlew :app:assembleDebug` | Passed: 48 Android unit tests, including 7 new tests for mention picker policy/data assumptions; debug APK assembled successfully. Manual smoke test on emulator/device still pending. |
 
 ## Manual Verification
 

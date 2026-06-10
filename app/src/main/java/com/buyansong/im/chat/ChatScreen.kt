@@ -57,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
@@ -118,10 +119,35 @@ fun ChatScreen(
     var albumPermissionDenied by remember { mutableStateOf(false) }
     var albumSessionId by remember { mutableStateOf(0) }
     var selectedMentions by remember { mutableStateOf(emptyList<ChatMention>()) }
+    var showMentionPicker by remember { mutableStateOf(false) }
+    val mentionFocusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    val isGroupChat = state.peerId.startsWith("group:")
+    val mentionableMembers = state.mentionMembers.filter { it.userId != viewModel.currentUserId }
+
+    fun shouldOpenMentionPicker(text: String): Boolean {
+        return ChatMentionPolicy.shouldShowPicker(
+            draft = text,
+            isGroup = isGroupChat
+        ) && mentionableMembers.isNotEmpty()
+    }
+
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    fun handleMemberSelected(member: GroupMember) {
+        val result = ChatMentionPolicy.insertMention(draft.text, selectedMentions, member)
+        draft = TextFieldValue(
+            text = result.draft,
+            selection = TextRange(result.cursorPosition)
+        )
+        selectedMentions = result.selectedMentions
+        showMentionPicker = false
+        mentionFocusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -222,6 +248,16 @@ fun ChatScreen(
     LaunchedEffect(shouldLoadEarlierHistory) {
         if (shouldLoadEarlierHistory) {
             viewModel.loadMoreHistory()
+        }
+    }
+
+    LaunchedEffect(draft.text, isGroupChat, mentionableMembers) {
+        showMentionPicker = shouldOpenMentionPicker(draft.text)
+    }
+
+    LaunchedEffect(showMentionPicker) {
+        if (showMentionPicker) {
+            keyboardController?.hide()
         }
     }
 
@@ -357,16 +393,7 @@ fun ChatScreen(
                 onDraftChange = {
                     draft = it
                     selectedMentions = ChatMentionPolicy.activeMentions(it.text, selectedMentions)
-                },
-                isGroup = state.peerId.startsWith("group:"),
-                mentionMembers = state.mentionMembers.filter { it.userId != viewModel.currentUserId },
-                onMentionSelected = { member ->
-                    val result = ChatMentionPolicy.insertMention(draft.text, selectedMentions, member)
-                    draft = TextFieldValue(
-                        text = result.draft,
-                        selection = TextRange(result.cursorPosition)
-                    )
-                    selectedMentions = result.selectedMentions
+                    showMentionPicker = shouldOpenMentionPicker(it.text)
                 },
                 canSend = ChatDisplayPolicy.shouldShowSendButton(draft.text) && state.peerId.isNotBlank(),
                 showMoreActions = showMoreActions,
@@ -395,7 +422,8 @@ fun ChatScreen(
                     scope.launch {
                         viewModel.sendText(content, mentionedUserIds = mentionIds)
                     }
-                }
+                },
+                mentionFocusRequester = mentionFocusRequester
             )
         }
         state.errorMessage?.let { message ->
@@ -409,13 +437,11 @@ fun ChatScreen(
             )
         }
     }
-    // Back handling for in-screen overlays. Both overlays live inside
+    // Back handling for in-screen overlays. These overlays live inside
     // ChatScreen (not in the NavHost), so without an explicit BackHandler
     // the system back press would pop the entire Chat destination back to
-    // the conversations list, skipping the overlay. The album picker is
-    // rendered after the preview in the Box, so its BackHandler is
-    // registered first to consume the back press when both happen to be
-    // open at the same time.
+    // the conversations list, skipping the overlay. Later enabled handlers
+    // take priority, so the mention sheet handler is declared last.
     BackHandler(enabled = showAlbumPicker) {
         showAlbumPicker = false
     }
@@ -424,6 +450,9 @@ fun ChatScreen(
     }
     BackHandler(enabled = previewMessage != null) {
         previewMessage = null
+    }
+    BackHandler(enabled = showMentionPicker) {
+        showMentionPicker = false
     }
     previewMessage?.let { message ->
         ChatImagePreviewScreen(
@@ -463,6 +492,13 @@ fun ChatScreen(
             onDismiss = { showGroupReadSheet = false }
         )
     }
+    if (showMentionPicker) {
+        MentionPickerSheet(
+            members = mentionableMembers,
+            onMemberSelected = { member -> handleMemberSelected(member) },
+            onDismiss = { showMentionPicker = false }
+        )
+    }
 }
 
 private suspend fun prewarmOutgoingLocalThumbnails(
@@ -496,15 +532,13 @@ private fun RecalledMessageNotice(text: String) {
 private fun ChatComposerBar(
     draft: TextFieldValue,
     onDraftChange: (TextFieldValue) -> Unit,
-    isGroup: Boolean,
-    mentionMembers: List<GroupMember>,
-    onMentionSelected: (GroupMember) -> Unit,
     canSend: Boolean,
     onSend: () -> Unit,
     showMoreActions: Boolean,
     onMoreActionsClick: () -> Unit,
     onDismissMoreActions: () -> Unit,
     onPickMoreActionImage: () -> Unit,
+    mentionFocusRequester: androidx.compose.ui.focus.FocusRequester,
     onEmojiClick: () -> Unit = {}
 ) {
     val barColor = ByteImColors.Surface
@@ -516,43 +550,6 @@ private fun ChatComposerBar(
             .background(barColor)
     ) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
-        if (ChatMentionPolicy.shouldShowPicker(draft.text, isGroup) && mentionMembers.isNotEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                mentionMembers.forEach { member ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                            .clickable { onMentionSelected(member) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AvatarImage(
-                            avatarUrl = member.avatarUrl,
-                            displayName = member.displayName,
-                            modifier = Modifier.size(36.dp)
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = member.displayName,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = "ID: ${member.userId}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -575,6 +572,7 @@ private fun ChatComposerBar(
                     onValueChange = onDraftChange,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .focusRequester(mentionFocusRequester)
                         .onFocusChanged {
                             if (it.isFocused) {
                                 onDismissMoreActions()

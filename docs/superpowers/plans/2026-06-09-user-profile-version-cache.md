@@ -1,230 +1,515 @@
-# IM 客户端/服务端"用户资料缓存与 version 一致性"调研与改造方案
+# 用户资料缓存：profileVersion + 统一刷新接口 + 消除 N+1
 
-> 状态：调研完成 + 改造方案已确认  
-> 日期：2026-06-09  
-> 范围确认：**P0 + P1**（profileVersion 字段 + 缓存判断 + WebSocket 消息/群成员带 version）  
-> 显式排除：P2 推送、remarkName
-
-## Context
-
-IM 客户端当前用 `user_profiles` SQLite 表缓存用户资料，但**没有单调递增的 `profileVersion` 字段**——只有 `updated_at`（毫秒时间戳）和 `avatar_updated_at`（仅头像粒度）。mock-server 端 `users` 表同样如此。
-
-后果：
-- 消息体、WebSocket 帧、会话列表、群成员接口都**不下发** sender 的 profileVersion；
-- 服务端 `PUT /users/me` 更新资料时**没有**递增计数器（只更新 `updated_at`），也不向其他在线 socket 广播资料变更；
-- 客户端刷新用户资料完全靠"打开页面时按需拉一次 `POST /users/batch`"，**没有 `remote > local` 的版本比较**——所以即便本地缓存落后，也不会主动失效；
-- 唯一一处"新鲜度"判断在 `ContactListViewModel.changedProfileIds`（L135），比较的是 `friend_contacts.profileUpdatedAt > user_profiles.updatedAt`，但只覆盖联系人页。
-
-目标：让 user/profile 表带 `profileVersion` 计数器，服务端递增，客户端在消息/会话/群成员/@ 等场景拿到 `remoteProfileVersion > localProfileVersion` 时**只**批量重拉过期的那批。
+> 状态：方案已确认
+> 日期：2026-06-10
+> 核心诉求：抽象一个统一刷新接口，让单聊/群聊/消息列表/联系人/联系人详情等场景走同一套逻辑，只拉 version 变了的数据，避免 N+1
 
 ---
 
-## 1. 当前实现现状
+## 0. 设计要点
 
-### 1.1 客户端本地表
+### 0.1 profileVersion 计数器
 
-| 表 | 路径 | 关键字段 | 是否有 profileVersion |
-|---|---|---|---|
-| `user_profiles` | `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt:99-114` | `user_id, phone, nickname, avatar_url, avatar_updated_at, updated_at, gender, signature` | ❌ 无 |
-| `friend_contacts` | `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt:116-134` | `owner_user_id, friend_user_id, profile_updated_at, sort_order` | ❌ 无（只有 `profile_updated_at` 时间戳） |
+服务端 `users` 表新增 `profile_version INTEGER NOT NULL DEFAULT 0`。`PUT /users/me` 任意字段变化时 `profile_version += 1`。不回退。
 
-数据类 `UserProfile`（`app/src/main/java/com/buyansong/im/storage/StorageModels.kt:59-68`）字段：`userId, phone, nickname, avatarUrl?, avatarUpdatedAt, updatedAt, gender?, signature?`，**无 `profileVersion`、无 `remarkName`**。
+### 0.2 统一刷新接口
 
-### 1.2 DAO / Repository / Flow
+所有调用方统一走 `ProfileRepository.ensureProfiles()`：
 
-- `UserProfileDao` 全部为**同步**方法：`app/src/main/java/com/buyansong/im/storage/UserProfileDao.kt:3-13`，无 `Flow<...>` 暴露。
-- `AndroidUserProfileDao.findByUserIds` 是 **N+1**（每 id 一次 `SQLiteDatabase.query`）：`app/src/main/java/com/buyansong/im/storage/AndroidUserProfileDao.kt:37-42`。
-- `ProfileRepository`（`app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt`）：
-  - `refreshProfile(token, userId)` **永远**打 `/users/{id}`，不查本地。
-  - `refreshProfiles(token, ids)` 做 `distinct()` 去重后**一次性** `POST /users/batch`，然后 `upsertAll`。
-  - **不做** `remoteVersion > localVersion` 判断。
+```kotlin
+suspend fun ensureProfiles(
+    accessToken: String,
+    userIds: List<String>,
+    remoteVersions: Map<String, Long> = emptyMap()  // userId → 远端 profileVersion
+): List<UserProfile>
+```
 
-### 1.3 协议/接口下发情况
+- **有 version hints**（消息体带了 `senderProfileVersion`、群成员带了 `memberProfileVersion`）：只拉 `remote > local` 的用户
+- **无 version hints**（会话列表、联系人等）：拉本地缺失的用户，batch 返回后按 version 判断是否 upsert
+- **永远不覆盖** `remote.profileVersion <= local.profileVersion` 的记录
 
-| 通道 | 是否带 profileVersion |
+### 0.3 消除 N+1
+
+| 位置 | 现状 | 改法 |
+|---|---|---|
+| 客户端 `AndroidUserProfileDao.findByUserIds` | 每个 userId 一次 `query` | `WHERE user_id IN (?, ?, …)` 单次查询 |
+| 服务端 `UserStore.findByPhones` | 每个手机号一次 `findByPhone` | `WHERE phone IN (?, ?, …)` 单次查询 |
+
+### 0.4 DATABASE_VERSION
+
+demo 阶段，`onUpgrade` 不做增量迁移。只需将 `DATABASE_VERSION` 从 10 → 11，触发 `onCreate` 重建所有表即可。
+
+---
+
+## 1. 改造步骤
+
+### 步骤 1 — 服务端：profile_version 列 + 计数器 + 全量暴露
+
+**1a. UserRecord 加字段**
+
+`UserRecord.java`（record 声明）新增 `long profileVersion`，紧凑构造函数加默认 `0L`：
+
+```java
+public record UserRecord(
+    String phone, String salt, String passwordHash,
+    String nickname, String avatarUrl, String avatarObjectKey,
+    long avatarUpdatedAt, long updatedAt, long createdAt,
+    String gender, String signature,
+    long profileVersion                                    // ← 新增
+) {
+    public UserRecord(String phone, String salt, String passwordHash, long createdAt) {
+        this(phone, salt, passwordHash, phone, null, null, 0L, createdAt, createdAt, null, null, 0L);
+    }
+}
+```
+
+**1b. UserStore — 建表 + 所有 SQL**
+
+| 方法 | 改动 |
 |---|---|
-| WebSocket `RECEIVE_MESSAGE` 消息体 | ❌ 不带 `senderNickname`/`senderAvatarUrl`/`senderProfileVersion`，只带 `senderId` |
-| `POST /users/batch` 响应 | ❌ 不带 `profileVersion`，但带 `profileUpdatedAt` / `updatedAt` 毫秒时间戳 |
-| `GET /groups/{id}/members` 响应 | ❌ 群成员对象只有 `userId/displayName(=userId)/role/joinedAt/updatedAt(群时间)` |
-| `GET /conversations` | ❌ mock-server **没有这个端点** |
-| `USER_PROFILE_UPDATED` 推送 | ❌ `ImCommand` 枚举里没有这个 cmd；`UserStore.updateProfile` 不广播 |
+| `initialize()` CREATE TABLE | 加 `profile_version INTEGER NOT NULL DEFAULT 0` |
+| `ensureUserProfileColumns()` | 加 `ALTER TABLE users ADD COLUMN profile_version INTEGER NOT NULL DEFAULT 0` |
+| `insert()` | INSERT 列表加 `profile_version`，`statement.setLong(12, record.profileVersion())` |
+| `findByPhone()` | SELECT 列表加 `profile_version` |
+| `readUser()` | 构造 `UserRecord` 时传入 `resultSet.getLong("profile_version")` |
+| `updateProfile()` | ① 先读当前 `profileVersion`；② `nextVersion = current + 1`；③ UPDATE SET 加 `profile_version = ?` |
 
-### 1.4 服务端 `users` 表
+`updateProfile` 改动示例：
 
-`mock-server/src/main/java/com/buyansong/imserver/auth/UserStore.java:222-262`：
+```java
+public synchronized Optional<UserRecord> updateProfile(...) {
+    Optional<UserRecord> current = findByPhone(phone);
+    if (current.isEmpty()) return Optional.empty();
+    long nextVersion = current.get().profileVersion() + 1;   // ← 递增
+    try (Connection connection = connect();
+         PreparedStatement statement = connection.prepareStatement(
+             """
+             UPDATE users SET nickname=?, avatar_url=?, avatar_object_key=?,
+                 avatar_updated_at=?, updated_at=?, gender=?, signature=?,
+                 profile_version=?
+             WHERE phone=?
+             """
+         )) {
+        // ... 原有 setXxx ...
+        statement.setLong(8, nextVersion);   // ← profile_version
+        statement.setString(9, phone);
+        statement.executeUpdate();
+        return findByPhone(phone);
+    } ...
+}
+```
 
-```sql
-CREATE TABLE users (
-  phone VARCHAR(11) PRIMARY KEY,
-  ...
-  avatar_updated_at BIGINT NOT NULL DEFAULT 0,
-  updated_at BIGINT NOT NULL DEFAULT 0,
-  ...
+**1c. AuthService — addProfileFields 暴露**
+
+```java
+private void addProfileFields(JsonObject data, UserRecord record) {
+    // ... 原有字段 ...
+    data.addProperty("profileVersion", record.profileVersion());  // ← 新增
+}
+```
+
+**1d. AuthService — 所有 new UserRecord 调用点补 profileVersion**
+
+| 位置 | 改动 |
+|---|---|
+| `register()` L57-69 | 构造加 `0L` |
+| `success()` fallback L193-205 | 构造加 `0L` |
+
+**1e. UserStore.findByPhones — 消除 N+1**
+
+```java
+public synchronized List<UserRecord> findByPhones(List<String> phones) {
+    if (phones.isEmpty()) return List.of();
+    String placeholders = String.join(",", phones.stream().map(_ -> "?").toList());
+    try (Connection connection = connect();
+         PreparedStatement statement = connection.prepareStatement(
+             "SELECT phone, salt, password_hash, nickname, avatar_url, avatar_object_key, " +
+             "avatar_updated_at, updated_at, created_at, gender, signature, profile_version " +
+             "FROM users WHERE phone IN (" + placeholders + ")"
+         )) {
+        for (int i = 0; i < phones.size(); i++) statement.setString(i + 1, phones.get(i));
+        try (ResultSet rs = statement.executeQuery()) {
+            List<UserRecord> records = new ArrayList<>();
+            while (rs.next()) records.add(readUser(rs));
+            return records;
+        }
+    } catch (SQLException error) {
+        throw new IllegalStateException("Unable to find users by phones", error);
+    }
+}
+```
+
+> 注意：`readUser()` 需要在步骤 1b 中已加 `profile_version` 列的读取。
+
+**验收**：`PUT /users/me` 改昵称后 `GET /users/me` 响应中 `profileVersion` 比之前大 1。
+
+---
+
+### 步骤 2 — 客户端：数据层 + N+1 修复
+
+**2a. UserProfile 加字段**
+
+`StorageModels.kt`:
+
+```kotlin
+data class UserProfile(
+    val userId: String,
+    val phone: String,
+    val nickname: String,
+    val avatarUrl: String?,
+    val avatarUpdatedAt: Long,
+    val updatedAt: Long,
+    val gender: Gender? = null,
+    val signature: String? = null,
+    val profileVersion: Long = 0L                               // ← 新增
 )
 ```
 
-`UserStore.updateProfile` 在任意字段变化时把 `updated_at = nowMillis`（`UserStore.java:95-128`），头像变化额外 bump `avatar_updated_at`；**没有计数器**。
+**2b. ImDatabaseHelper — 建表 + 版本号**
 
-### 1.5 UI 资料来源（消息/会话/群成员/@）
+- `createUserProfilesTable()` 加 `profile_version INTEGER NOT NULL DEFAULT 0`
+- `DATABASE_VERSION` 从 `10` → `11`（demo 阶段 `onUpgrade` 无需改动，DROP ALL + `onCreate` 重建即可）
 
-| 场景 | 文件:行 | 资料来源 |
-|---|---|---|
-| 消息气泡 | `app/src/main/java/com/buyansong/im/chat/ChatDisplayPolicy.kt:36` `bubbleAvatar` | 单聊：`Conversation.peerName/peerAvatarUrl`；群聊：`UserProfile.nickname/avatarUrl`（来自 `state.senderProfiles`） |
-| 会话列表 | `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt:316` `Conversation.toItem` | SINGLE：`UserProfileDao.localProfile(peerId)`；GROUP：`Conversation.avatarUrl/title` |
-| 群成员 | `app/src/main/java/com/buyansong/im/group/GroupInfoScreen.kt:177` `GroupMemberCell` | 优先 `UserProfileDao`，fallback 服务端返回的 `displayName` |
-| @提醒 | `app/src/main/java/com/buyansong/im/chat/ChatMentionPolicy.kt:96` `mentionsForMessage` | 同步读 `state.mentionMembers`（已在内存的 `GroupMember` 列表） |
-| 联系人页 | `app/src/main/java/com/buyansong/im/contacts/ContactListViewModel.kt:135` `changedProfileIds` | **唯一一处** 比较 `contact.profileUpdatedAt > local.updatedAt` |
+**2c. AndroidUserProfileDao — 读写 profile_version + 消除 N+1**
 
----
+`toValues()`:
 
-## 2. 已支持的部分
+```kotlin
+private fun UserProfile.toValues(): ContentValues = ContentValues().apply {
+    // ... 原有字段 ...
+    put("profile_version", profileVersion)                      // ← 新增
+}
+```
 
-- ✅ 客户端有 `user_profiles` 缓存表和 `UserProfileDao`（同步接口 + 内存实现 + Android SQLite 实现）
-- ✅ 客户端有 `ProfileRepository.refreshProfiles(token, ids)`：去重 + 一次 `POST /users/batch` + `upsertAll`
-- ✅ 客户端有 6 处调用方（ChatVM/ConvListVM/GroupInfoVM/GroupCreateVM/ContactListVM 等），都走 batch 路径
-- ✅ 客户端 `@` 提醒是**纯内存**读取，不打接口
-- ✅ 服务端有 `PUT /users/me` 更新资料
-- ✅ 服务端有 `POST /users/batch` 批量接口
-- ✅ 服务端在 `users.updated_at` 上有时间戳粒度的版本信号
+`toUserProfile()`:
 
-## 3. 缺失或有风险的部分
+```kotlin
+private fun Cursor.toUserProfile(): UserProfile = UserProfile(
+    // ... 原有字段 ...
+    profileVersion = getLong(getColumnIndexOrThrow("profile_version"))  // ← 新增
+)
+```
 
-| # | 风险 | 严重度 |
-|---|---|---|
-| R1 | 客户端 `UserProfile` / `user_profiles` / DAO / Parser **完全无 `profileVersion` 字段** | 高 |
-| R2 | 服务端 `users` 表 / `UserRecord` / `addProfileFields` JSON **完全无 `profileVersion` 字段** | 高 |
-| R3 | 服务端更新资料**不递增计数器**（只有 `updated_at` 时间戳） | 高 |
-| R4 | `POST /users/batch` 响应**不带** `profileVersion`，客户端无法做"是否过期"判断 | 高 |
-| R5 | WebSocket `RECEIVE_MESSAGE` 消息体**不带** `senderProfileVersion` —— 群聊新来一条陌生人消息无法触发"过期重拉" | 中 |
-| R6 | 群成员 `GET /groups/{id}/members` 响应**不带** `memberProfileVersion` | 中 |
-| R7 | mock-server **没有 `USER_PROFILE_UPDATED` 推送事件**——好友改了昵称/头像，自己收不到通知 | 中 |
-| R8 | `ProfileRepository.refreshProfiles` **不比较** `remote > local`，每次都覆盖本地（即便本地较新也会被旧值覆盖） | 高 |
-| R9 | `AndroidUserProfileDao.findByUserIds` 是 **N+1**（每 id 一次 `query`） | 中（性能） |
-| R10 | 6 个 ViewModel 各自调 `refreshProfiles`，**无跨屏去重/合并** —— 同时打开会话列表 + 群详情可能打两次 `/users/batch` | 中 |
-| R11 | `friend_contacts` 表与 `user_profiles` 表靠 `userId` 关联，**无外键**约束；删除用户/退出登录时两边可能不同步 | 低 |
-| R12 | `ProfileRepository.refreshProfile`（单点 `/users/{id}`）**永不打本地**——`ContactProfileViewModel` 每次进详情页都打接口 | 低 |
-| R13 | mock-server `POST /users/batch` 内部是 `for (phone : phones) findByPhone(phone)` **N+1** | 中（性能） |
-| R14 | 数据库迁移用 **DROP ALL**（`app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt:170-182`），新增 `profile_version` 列时如果不改 `onUpgrade`，开发期数据会丢 | 低（开发期） |
+`findByUserIds()` — 消除 N+1：
 
----
+```kotlin
+override fun findByUserIds(userIds: List<String>): List<UserProfile> {
+    if (userIds.isEmpty()) return emptyList()
+    val placeholders = userIds.indices.joinToString(",") { "?" }
+    return database.query(
+        "user_profiles", null,
+        "user_id IN ($placeholders)", userIds.toTypedArray(),
+        null, null, null
+    ).use { cursor ->
+        buildList { while (cursor.moveToNext()) add(cursor.toUserProfile()) }
+    }
+}
+```
 
-## 4. 已确认范围（用户决策后）
+**2d. ProfileJsonParser — 解析 profileVersion**
 
-| 维度 | 决定 |
-|---|---|
-| 服务端 version 信号 | **新增 `profileVersion` 计数器**（PUT /users/me 任意字段变化时 +1；不回退） |
-| 范围 | **P0 + P1** 全做（profileVersion 字段 + 缓存判断 + WebSocket 消息体带 senderProfileVersion + 群成员接口带 memberProfileVersion） |
-| 显式排除 | **P2** 暂不做（USER_PROFILE_UPDATED 推送、`AndroidUserProfileDao` N+1、跨屏去重、mock-server `POST /users/batch` 内部 N+1） |
-| `remarkName` | **本次不加**（仅做 profileVersion） |
+```kotlin
+private fun JsonObject.toUserProfile(): UserProfile = UserProfile(
+    // ... 原有字段 ...
+    profileVersion = optionalLong("profileVersion") ?: 0L       // ← 新增
+)
+```
+
+**验收**：app 启动后 `PRAGMA table_info(user_profiles)` 能看到 `profile_version` 列；`POST /users/batch` 返回的 profileVersion 被正确写入本地。
 
 ---
 
-## 5. 最终改造步骤
+### 步骤 3 — 客户端：统一刷新接口 `ensureProfiles`
 
-按依赖顺序，每个步骤独立可提交、可回归。
+在 `ProfileRepository` 中新增核心方法，替换现有 `refreshProfiles` / `refreshProfile`：
 
-### 步骤 1 — 服务端：加 `profile_version` 列与 DTO
-- `mock-server/src/main/java/com/buyansong/imserver/auth/UserStore.java:226-238` `CREATE TABLE` 新增 `profile_version INTEGER NOT NULL DEFAULT 0`
-- `mock-server/src/main/java/com/buyansong/imserver/auth/UserStore.java:288-313` `ensureUserProfileColumns` 同步新增 `ALTER TABLE ADD COLUMN profile_version INTEGER NOT NULL DEFAULT 0`
-- `mock-server/src/main/java/com/buyansong/imserver/auth/UserStore.java:95-128` `updateProfile` 内 `nextVersion = current.get().profileVersion() + 1`，UPDATE 写入
-- `mock-server/src/main/java/com/buyansong/imserver/auth/UserRecord.java` 新增 `long profileVersion`，构造时默认 `0L`
-- `mock-server/src/main/java/com/buyansong/imserver/auth/AuthService.java:245-272` `addProfileFields` 加 `data.addProperty("profileVersion", record.profileVersion())`
+```kotlin
+/**
+ * 确保指定用户的资料在本地可用且最新。
+ *
+ * @param accessToken    访问令牌
+ * @param userIds        需要确保的用户 ID 列表
+ * @param remoteVersions 远端版本映射（userId → profileVersion），用于增量判断。
+ *                       为空时只拉取本地缺失的用户资料。
+ * @return 所有请求用户的本地资料
+ */
+suspend fun ensureProfiles(
+    accessToken: String,
+    userIds: List<String>,
+    remoteVersions: Map<String, Long> = emptyMap()
+): List<UserProfile> {
+    val distinctIds = userIds.distinct().filter { it.isNotBlank() }
+    if (distinctIds.isEmpty()) return emptyList()
 
-**验收**：sqlite3 查 `users.profile_version` 列存在；`PUT /users/me` 后再 `GET /users/me` 响应里 `profileVersion` 比之前大 1。
+    // 1. 批量读本地版本（单次 SQL，无 N+1）
+    val localProfiles = userProfileDao.findByUserIds(distinctIds)
+    val localVersionMap = localProfiles.associate { it.userId to it.profileVersion }
 
-### 步骤 2 — 客户端：数据类 + 表 + 迁移 + DAO + Parser
-- `app/src/main/java/com/buyansong/im/storage/StorageModels.kt:59-68` `UserProfile` 加 `val profileVersion: Long = 0L`
-- `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt:99-114` `onCreate` 加 `profile_version INTEGER NOT NULL DEFAULT 0`
-- `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt:170-182` **必须改** `onUpgrade` —— 当前是 DROP ALL，改为按 `oldVersion` 分支 `ALTER TABLE user_profiles ADD COLUMN profile_version INTEGER NOT NULL DEFAULT 0`
-- `app/src/main/java/com/buyansong/im/storage/AndroidUserProfileDao.kt:44-71` `toValues()` / `toUserProfile()` 同步读写 `profile_version`
-- `app/src/main/java/com/buyansong/im/profile/ProfileJsonParser.kt:42-54` 解析 `profileVersion`，缺省 `0L`
+    // 2. 确定需要拉取的 ID
+    val idsToFetch = if (remoteVersions.isNotEmpty()) {
+        // 有远端 version hints：只拉 remote > local 或本地无记录的
+        distinctIds.filter { id ->
+            val remote = remoteVersions[id] ?: 0L
+            val local = localVersionMap[id] ?: 0L
+            remote > local                              // 本地缺失时 local=0，remote≥1 → 必拉
+        }
+    } else {
+        // 无远端 hints：只拉本地缺失的
+        distinctIds.filter { it !in localVersionMap }
+    }
 
-**验收**：app 启动后 `adb shell run-as com.buyansong.im sqlite3 databases/im.db "PRAGMA table_info(user_profiles)"` 能看到 `profile_version` 列；旧库升级路径走 `ALTER TABLE` 而非 `DROP`。
+    if (idsToFetch.isEmpty()) return localProfiles
 
-### 步骤 3 — 客户端：核心缓存判断
-- `app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt:58-76` `refreshProfiles` 改为：先批量拉远端，**再用本地版本过滤**，仅 upsert `remote.profileVersion > local.profileVersion` 的项
-- `app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt:44-55` `refreshProfile` 同样：先读本地 version，相同或更新则跳过接口
+    // 3. batch 拉取
+    val remoteProfiles = when (val result = profileApi.batch(accessToken, idsToFetch)) {
+        is ProfileBatchResult.Success -> result.profiles
+        is ProfileBatchResult.Failure -> emptyList()
+    }
 
-**验收**：在 `app/src/test/` 新增 `ProfileRepositoryTest`，4 个 case：
-1) 本地空 → 全部 upsert
-2) 本地 `profileVersion=5`，远端 `=5` → 不 upsert
-3) 本地 `=3`，远端 `=5` → upsert
-4) ids 含重复/空字符串 → 实际一次 `ProfileApi.batch` 调用
+    // 4. 只 upsert version 更新的记录
+    val toUpsert = remoteProfiles.filter { remote ->
+        val localVersion = localVersionMap[remote.userId] ?: 0L
+        remote.profileVersion > localVersion
+    }
+    if (toUpsert.isNotEmpty()) userProfileDao.upsertAll(toUpsert)
 
-### 步骤 4 — 客户端：调用方适配"只拉缺失/过期"
-- `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt:465-521` `refreshProfiles` 现状是无脑全拉，改为只把"本地缺失 或 本地 version 较旧"的 senderId 加入 batch 列表
-- `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt:229-275` `refresh` 同样：先读本地 version，过滤后再 batch
-- `app/src/main/java/com/buyansong/im/group/GroupInfoViewModel.kt:120-135` `backfillMembersRemote`：用 DAO 中已存 version 过滤
-- `app/src/main/java/com/buyansong/im/group/GroupCreateViewModel.kt:139`、`app/src/main/java/com/buyansong/im/contacts/ContactListViewModel.kt:122-130` 同样过滤
-- 注意：此时消息体 / 群成员响应还没有 version，所以"过期"判断**只在** DAO 内旧记录 vs 无记录之间；真正的"远端 vs 本地"判断要在步骤 5/6/7/8 完成后才能跑通
+    // 5. 返回所有请求用户的最新本地资料
+    return userProfileDao.findByUserIds(distinctIds)
+}
+```
 
-### 步骤 5 — 服务端：WebSocket 消息体带 `senderProfileVersion`
-- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java:91-170` `handleSendMessage` 在拼 `RECEIVE_MESSAGE` 帧前查 `UserStore.findByPhone(senderId)` 拿 `profileVersion`，塞进 JSON：`data.addProperty("senderProfileVersion", sender.profileVersion())`
-- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java` 群消息分支同样塞
-- 客户端 `app/src/main/java/com/buyansong/im/storage/StorageModels.kt` `ChatMessage` 加 `senderProfileVersion: Long? = null`
-- 客户端 ChatMessage 解析处同步加字段（搜 `senderId`、`senderNickname` 等在 JSON parser 中的位置）
+**保留的兼容方法**（内部转发到 `ensureProfiles`）：
 
-### 步骤 6 — 客户端：消息到来时按 `senderProfileVersion` 触发重拉
-- `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt:465-521` `refreshProfiles`：
-  ```kotlin
-  val staleSenders = state.messages.mapNotNull { msg ->
-      val local = profileRepository.localProfile(msg.senderId)?.profileVersion ?: 0L
-      val remote = msg.senderProfileVersion ?: 0L
-      if (remote > local) msg.senderId else null
-  }.distinct()
-  if (staleSenders.isNotEmpty()) profileRepository.refreshProfiles(token, staleSenders)
-  ```
-- 同样处理 "消息列表滚动加载历史消息" / "WebSocket 收到新消息 push" 两个入口
+```kotlin
+suspend fun refreshProfiles(accessToken: String, userIds: List<String>): List<UserProfile> =
+    ensureProfiles(accessToken, userIds)
 
-### 步骤 7 — 服务端：群成员接口带 `memberProfileVersion`
-- `mock-server/src/main/java/com/buyansong/imserver/group/GroupService.java:82-108` `membersJson` join `users` 表，把每个 member 的 `nickname / avatarUrl / profileVersion` 一并返回
-- 服务端 `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java` 群消息分支可选：拼 `senderProfileVersion` 的同时把 `senderNickname / senderAvatarUrl` 也塞上（一步到位让"陌生人消息"也能展示）
+suspend fun refreshProfile(accessToken: String, userId: String): UserProfile? {
+    val trimmed = userId.trim()
+    if (trimmed.isEmpty()) return null
+    return ensureProfiles(accessToken, listOf(trimmed)).firstOrNull()
+}
+```
 
-### 步骤 8 — 客户端：群成员刷新时按 `memberProfileVersion` 触发重拉
-- `app/src/main/java/com/buyansong/im/group/GroupInfoViewModel.kt:120-135` `backfillMembersRemote`：在拿到服务端返回的 `GroupMember` 列表后，对每个 `member.userId` 比较 `member.profileVersion > local.profileVersion`，把过期的并入 `refreshProfiles` 列表
-- 客户端 `GroupMember` DTO 加 `profileVersion: Long = 0L`：`app/src/main/java/com/buyansong/im/storage/StorageModels.kt`
-- 客户端 `GroupJsonParser`（如有）同步加解析
+**验收**：`ProfileRepositoryTest` 覆盖 4 个 case：
+1. 本地无记录 → batch 拉取 + 全部 upsert
+2. 本地 version=5，远端 version=5 → 不拉取不 upsert
+3. 本地 version=3，远端 version=5 → 只拉取并 upsert 该用户
+4. ids 含重复/空字符串 → 只调一次 batch
 
-### 步骤 9 — 端到端验证
-- 单元测试：`app/src/test/` 的 `ProfileRepositoryTest` 4 个 case 全过
-- 集成：`mock-test/seed_local_messages.py` 灌数据，启动 mock-server + Android
-- 手工：
-  1. 用户 A 改昵称 → `GET /users/{A}` 看 `profileVersion` 增 1
-  2. 客户端 B 发消息给 A → 收到 `RECEIVE_MESSAGE` 中 `senderProfileVersion=N` → 本地 `user_profiles.profile_version` 是 N-1 → 自动 batch 拉 A → 更新
-  3. 打开群详情 → 服务端群成员响应每个都带 `profileVersion` → 客户端只 batch 那些"过期"的用户
+---
 
-### 显式不在本次范围
-- ❌ `USER_PROFILE_UPDATED` 推送事件
-- ❌ `AndroidUserProfileDao.findByUserIds` N+1 优化
-- ❌ `ProfileRepository` 跨屏 in-flight coalescing
-- ❌ mock-server `POST /users/batch` 内部 N+1 优化
+### 步骤 4 — 客户端：调用方迁移
+
+所有调用方改为使用 `ensureProfiles`，根据场景决定是否传 `remoteVersions`。
+
+#### 4a. ChatViewModel.refreshProfiles()
+
+当前 L601+：无脑全拉 senderIds + memberIds。
+
+改为：
+
+```kotlin
+private suspend fun refreshProfiles() {
+    val currentSession = validSessionProvider() ?: session
+    profileRepository.bootstrapSession(currentSession)
+    val peerId = mutableState.value.peerId
+    if (peerId.isGroupConversationId()) {
+        val conversation = repository.conversation(peerId)
+        val groupId = peerId.removePrefix("group:")
+        val groupRepo = groupRepository
+        val rawMentionMembers = if (groupRepo != null && currentSession.accessToken.isNotBlank()) {
+            groupRepo.syncMembers(currentSession.accessToken, groupId)
+        } else {
+            groupRepo?.localMembers(groupId).orEmpty()
+        }
+        val senderIds = mutableState.value.messages
+            .map { it.senderId }.filter { it.isNotBlank() }.distinct()
+        val memberIds = rawMentionMembers.map { it.userId }
+        val allIds = (senderIds + memberIds + currentSession.userId).distinct()
+
+        // 从消息体提取 senderProfileVersion
+        val remoteVersions = mutableState.value.messages
+            .filter { it.senderProfileVersion != null }
+            .associate { it.senderId to it.senderProfileVersion!! }
+
+        // 从群成员提取 memberProfileVersion（步骤 5 完成后才有值）
+        val memberVersions = rawMentionMembers
+            .filter { it.profileVersion > 0 }
+            .associate { it.userId to it.profileVersion }
+
+        val allRemoteVersions = remoteVersions + memberVersions
+
+        val remoteProfiles = if (currentSession.accessToken.isNotBlank()) {
+            profileRepository.ensureProfiles(currentSession.accessToken, allIds, allRemoteVersions)
+        } else emptyList()
+
+        // ... 后续组装 senderProfiles / mentionMembers 逻辑不变 ...
+    } else {
+        // 单聊逻辑不变（只需 peer 的 profile）
+        ...
+    }
+}
+```
+
+#### 4b. ConversationListViewModel
+
+当前：全拉 peerIds。改为 `ensureProfiles(accessToken, peerIds)` — 无 version hints，只拉本地缺失的。
+
+#### 4c. GroupInfoViewModel.backfillMembersRemote()
+
+改为 `ensureProfiles(accessToken, memberIds, memberVersionMap)` — 群成员带 version hints（步骤 5 完成后）。
+
+#### 4d. GroupCreateViewModel
+
+改为 `ensureProfiles(accessToken, selectedIds)` — 无 version hints。
+
+#### 4e. ContactListViewModel.refreshChangedProfiles()
+
+改为 `ensureProfiles(accessToken, changedIds)` — 原来的 `profileUpdatedAt > local.updatedAt` 比较逻辑由 `ensureProfiles` 的 version 比较替代。
+
+#### 4f. ContactProfileViewModel
+
+改为调用 `ensureProfiles(accessToken, listOf(userId))`，替代原来的 `refreshProfile`。
+
+**验收**：各页面打开时网络请求量减少——重复进入同一会话不再发 batch 请求。
+
+---
+
+### 步骤 5 — 服务端：消息体 + 群成员带 profileVersion
+
+**5a. WebSocket RECEIVE_MESSAGE 带 senderProfileVersion**
+
+`MessageRouter.handleSendMessage()` / `handleGroupSendMessage()`：
+
+需要注入 `UserStore` 依赖。修改 `MessageRouter` 主构造函数加 `UserStore userStore`，级联构造函数加 `new UserStore(...)` 或从调用方传入。
+
+在拼 `RECEIVE_MESSAGE` 帧时：
+
+```java
+// 单聊 & 群聊通用
+Optional<UserRecord> sender = userStore.findByPhone(senderUserId);
+sender.ifPresent(s -> message.addProperty("senderProfileVersion", s.profileVersion()));
+```
+
+**5b. 群成员接口带 memberProfileVersion + nickname + avatarUrl**
+
+`GroupService.membersJson()` 当前只返回 `userId/displayName(=userId)/role/joinedAt/updatedAt`。
+
+需要注入 `UserStore` 依赖，在构建 member JSON 时查 `userStore.findByPhones(memberIds)` 一次（已修复 N+1，批量查）：
+
+```java
+public String membersJson(String groupId, String requesterId) {
+    GroupRecord group = groupStore.findById(groupId).orElse(null);
+    if (group == null || !group.memberUserIds().contains(requesterId)) { ... }
+    // 批量查用户资料（单次 SQL，无 N+1）
+    Map<String, UserRecord> userByPhone = new HashMap<>();
+    for (UserRecord u : userStore.findByPhones(group.memberUserIds())) {
+        userByPhone.put(u.phone(), u);
+    }
+    JsonArray members = new JsonArray();
+    for (String memberUserId : group.memberUserIds()) {
+        JsonObject member = new JsonObject();
+        member.addProperty("groupId", group.groupId());
+        member.addProperty("userId", memberUserId);
+        UserRecord user = userByPhone.get(memberUserId);
+        if (user != null) {
+            member.addProperty("displayName", user.nickname());
+            member.addProperty("avatarUrl", user.avatarUrl());
+            member.addProperty("profileVersion", user.profileVersion());
+        } else {
+            member.addProperty("displayName", memberUserId);
+        }
+        member.addProperty("role", memberUserId.equals(group.ownerId()) ? "OWNER" : "MEMBER");
+        member.addProperty("joinedAt", group.createdAt());
+        member.addProperty("updatedAt", group.updatedAt());
+        members.add(member);
+    }
+    // ...
+}
+```
+
+**验收**：WebSocket 收到消息包含 `senderProfileVersion`；`GET /groups/{id}/members` 每个成员包含 `profileVersion` / `nickname` / `avatarUrl`。
+
+---
+
+### 步骤 6 — 客户端：解析 version hints
+
+**6a. ChatMessage 加 senderProfileVersion**
+
+`StorageModels.kt`:
+
+```kotlin
+data class ChatMessage(
+    // ... 原有字段 ...
+    val senderProfileVersion: Long? = null                      // ← 新增
+)
+```
+
+在消息 JSON 解析处（`MessagePacketProcessor` 或 `MessageRepository` 中解析 WebSocket 帧的位置）加：
+
+```kotlin
+senderProfileVersion = jsonObject.optionalLong("senderProfileVersion")
+```
+
+**6b. GroupMember 加 profileVersion**
+
+`StorageModels.kt`:
+
+```kotlin
+data class GroupMember(
+    // ... 原有字段 ...
+    val profileVersion: Long = 0L                               // ← 新增
+)
+```
+
+`group_members` 表加 `profile_version INTEGER NOT NULL DEFAULT 0`（随 `DATABASE_VERSION` 递增重建）。
+
+`AndroidGroupDao.toGroupMember()` / `GroupMember.toValues()` 同步加读写。
+
+`GroupJsonParser.toGroupMember()` 加解析：
+
+```kotlin
+profileVersion = optionalLong("profileVersion") ?: 0L
+```
+
+**验收**：收到带 `senderProfileVersion` 的消息后，`ChatMessage.senderProfileVersion` 非空；打开群详情后，`GroupMember.profileVersion` 反映服务端值。
+
+---
+
+### 步骤 7 — 端到端验证
+
+1. 用户 A 改昵称 → `GET /users/A` 的 `profileVersion` 增 1
+2. 客户端 B 打开与 A 的单聊 → 收到消息带 `senderProfileVersion=N` → 本地 version=N-1 → 自动 batch 拉取 A → 更新
+3. 客户端 B 再次打开同一会话 → `ensureProfiles` 判断 `remote=N == local=N` → 不发请求
+4. 打开群详情 → 群成员响应每人带 `profileVersion` → 只 batch 那些"过期"的用户
+5. 用户 C 从未在本地缓存 → `ensureProfiles` 发现本地缺失 → 拉取并缓存
+
+---
+
+## 2. 不在本次范围
+
+- ❌ `USER_PROFILE_UPDATED` WebSocket 推送事件
+- ❌ `ProfileRepository` 跨屏 in-flight coalescing（多次调用 `ensureProfiles` 合并为一次 batch）
 - ❌ `remarkName` 字段、备注名 UI
 
 ---
 
-## 6. 关键文件路径速查
+## 3. 关键文件路径
 
 ### 服务端
-- `mock-server/src/main/java/com/buyansong/imserver/auth/UserStore.java` — 表结构、updateProfile
-- `mock-server/src/main/java/com/buyansong/imserver/auth/UserRecord.java` — DTO
-- `mock-server/src/main/java/com/buyansong/imserver/auth/AuthService.java` — `addProfileFields` L245-272、`updateProfile` L151-190
-- `mock-server/src/main/java/com/buyansong/imserver/session/MessageRouter.java` — `handleSendMessage` L91-170
-- `mock-server/src/main/java/com/buyansong/imserver/group/GroupService.java` — `membersJson` L82-108
-- `mock-server/src/main/java/com/buyansong/imserver/friend/FriendService.java` — `friendsJson` L34-52
-- `mock-server/src/main/java/com/buyansong/imserver/protocol/ImCommand.java` — 命令码枚举
+- `mock-server/.../auth/UserStore.java` — 表结构、updateProfile、findByPhones
+- `mock-server/.../auth/UserRecord.java` — DTO
+- `mock-server/.../auth/AuthService.java` — addProfileFields、所有 UserRecord 构造点
+- `mock-server/.../session/MessageRouter.java` — handleSendMessage（需注入 UserStore）
+- `mock-server/.../group/GroupService.java` — membersJson（需注入 UserStore）
 
 ### 客户端
-- `app/src/main/java/com/buyansong/im/storage/StorageModels.kt` — `UserProfile` / `ChatMessage` / `GroupMember` / `Conversation`
-- `app/src/main/java/com/buyansong/im/storage/ImDatabaseHelper.kt` — 建表 + 迁移
-- `app/src/main/java/com/buyansong/im/storage/UserProfileDao.kt` — 接口
-- `app/src/main/java/com/buyansong/im/storage/AndroidUserProfileDao.kt` — SQLite 实现
-- `app/src/main/java/com/buyansong/im/profile/ProfileApi.kt` — 接口
-- `app/src/main/java/com/buyansong/im/profile/OkHttpProfileApi.kt` — HTTP 实现
-- `app/src/main/java/com/buyansong/im/profile/ProfileJsonParser.kt` — JSON 解析
-- `app/src/main/java/com/buyansong/im/profile/ProfileRepository.kt` — `refreshProfiles` L58-76、`refreshProfile` L44
-- `app/src/main/java/com/buyansong/im/chat/ChatViewModel.kt` — `refreshProfiles` L465-521
-- `app/src/main/java/com/buyansong/im/chat/ChatDisplayPolicy.kt` — `bubbleAvatar` L36
-- `app/src/main/java/com/buyansong/im/chat/ChatMentionPolicy.kt` — @ 提醒
-- `app/src/main/java/com/buyansong/im/conversation/ConversationListViewModel.kt` — `toItem` L316、`refresh` L229-275
-- `app/src/main/java/com/buyansong/im/group/GroupInfoViewModel.kt` — `backfillMembersRemote` L120-135
-- `app/src/main/java/com/buyansong/im/contacts/ContactListViewModel.kt` — `changedProfileIds` L135、`refreshChangedProfiles` L109
+- `app/.../storage/StorageModels.kt` — UserProfile / ChatMessage / GroupMember
+- `app/.../storage/ImDatabaseHelper.kt` — 建表 + DATABASE_VERSION
+- `app/.../storage/AndroidUserProfileDao.kt` — findByUserIds N+1 修复
+- `app/.../storage/AndroidGroupDao.kt` — GroupMember 读写
+- `app/.../profile/ProfileRepository.kt` — ensureProfiles 核心逻辑
+- `app/.../profile/ProfileJsonParser.kt` — 解析 profileVersion
+- `app/.../chat/ChatViewModel.kt` — refreshProfiles 改用 ensureProfiles + version hints
+- `app/.../group/GroupApi.kt` — GroupJsonParser 解析 memberProfileVersion
