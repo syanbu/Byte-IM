@@ -20,6 +20,7 @@ class PushPollWorker(
     context: Context,
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
+    // Worker 的核心逻辑：轮询服务器是否有新的推送消息，并在本地发送通知
     override suspend fun doWork(): Result {
         Log.d(TAG, "start")
         val appContext = applicationContext

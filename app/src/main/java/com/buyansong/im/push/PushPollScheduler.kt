@@ -8,6 +8,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
+// 单例对象: 负责调度和管理 PushPollWorker 的周期性执行
 object PushPollScheduler {
     private const val WORK_NAME_PREFIX = "push-poll-"
 
@@ -16,6 +17,7 @@ object PushPollScheduler {
             return
         }
         MockPushTokenStore(context).saveLastKnownUserId(userId)
+        // 创建一个周期任务，每 15 分钟执行一次 PushPollWorker，要求网络连接
         val request = PeriodicWorkRequestBuilder<PushPollWorker>(15, TimeUnit.MINUTES)
             .setConstraints(
                 Constraints.Builder()
@@ -23,8 +25,10 @@ object PushPollScheduler {
                     .build()
             )
             .build()
+        // 让WorkerManager 登记一个唯一的周期任务
         WorkManager.getInstance(context.applicationContext)
             .enqueueUniquePeriodicWork(workName(userId), ExistingPeriodicWorkPolicy.KEEP, request)
+        // WorkManager 会向 Android 系统注册一个 Job
     }
 
     fun scheduleLastKnown(context: Context) {
