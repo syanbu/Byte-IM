@@ -1,14 +1,12 @@
 # IM 客户端开发状态索引
 
-最后更新时间：2026-06-04
+最后更新时间：2026-06-11
 
 本文是 IM 客户端开发进度的顶层索引，项目目标见
 [`ProjectTarget.md`](ProjectTarget.md)。各功能模块的详细状态记录在
 `../status/` 目录下。
 
 设计路线图：`../superpowers/plans/2026-05-21-im-client-roadmap.md`。
-
-开发约束：[`docs/bg/DEVELOPMENT-CONSTRAINTS.md`](DEVELOPMENT-CONSTRAINTS.md)。
 
 功能说明：[`docs/feature-notes/messages-conversation-summary-and-unread.md`](../feature-notes/messages-conversation-summary-and-unread.md)。
 
@@ -26,13 +24,13 @@
 | B6 | 自定义二进制协议，包含 header、body、CRC | 已完成 | [B6-binary-protocol.md](../status/B6-binary-protocol.md) |
 | B7 | 心跳和断线重连 | 已完成 | [B7-heartbeat-reconnect.md](../status/B7-heartbeat-reconnect.md) |
 | B8 | 基于 client seq / server ACK 的消息有序性 | 已完成 | [B8-message-ordering.md](../status/B8-message-ordering.md) |
-| B9 | ACK、重试、去重等可靠性能力 | 发送侧首版已完成 | [B9-message-reliability.md](../status/B9-message-reliability.md) |
+| B9 | ACK、重试、去重等可靠性能力 | 已完成 | [B9-message-reliability.md](../status/B9-message-reliability.md) |
 | B9.5 | 接收侧 DELIVERY_ACK | 已完成 | [B9.5-delivery-ack.md](../status/B9.5-delivery-ack.md) |
-| Mock server | 本地 Netty 服务，支持鉴权、WebSocket、持久化重放和当前 demo 联调能力 | 当前 B1-B9.5 路径已完成，并被后续功能继续扩展 | [mock-server.md](../status/mock-server.md) |
-| B10 | 群聊、群创建和 @ 提醒基础能力 | 部分完成 | [B10-group-chat-and-mention.md](../status/B10-group-chat-and-mention.md) |
+| Mock server | 本地 Netty 服务，支持鉴权、WebSocket、持久化重放、friends/profile/group/group-read/push/OSS upload-target 等本地联调能力 | 当前 B1-B13 mock 路径均已有代码接入。 | [mock-server.md](../status/mock-server.md) |
+| B10 | 群聊、群创建、群资料、已加入群列表和 @ 提醒基础能力 | 部分完成；成员增删、退群和完整群管理仍待完善 | [B10-group-chat-and-mention.md](../status/B10-group-chat-and-mention.md) |
 | B11 | 图片消息：图库选择、多选拆分、上传/重试分层、缩略图渐进展示 | 图片消息首版已实现 | [B11-image-message-design-status.md](../status/B11-image-message-design-status.md) |
 | B12 | 消息撤回和已读回执 | 单聊已读回执、群聊已读人数/读者列表已实现；撤回使用单聊/群聊共享聊天 UI 路径 | [B12-message-recall-and-read-receipts.md](../status/B12-message-recall-and-read-receipts.md) |
-| B13 | 推送 | 实现中（mock 完整闭环首版已接入，待设备 E2E） | [B13-mock-push.md](../status/B13-mock-push.md) |
+| B13 | 推送 | 已经实现；mock token、pending push、WorkManager 轮询、通知、ack 和 deep-link 首版已接入 | [B13-mock-push.md](../status/B13-mock-push.md) |
 
 ## 近期自设计工作
 
@@ -41,15 +39,20 @@
 | 功能 | 范围 | 状态 | 详情 |
 |---|---|---|---|
 | Profile/Chat UI 自设计 | 增加 Messages/Contacts/Me tab、profile 缓存和编辑、头像上传链路、会话/聊天昵称头像、向量 tab 图标、头像缓存、聊天输入栏优化、Navigation Compose 返回、统一 Back 语义和聊天 UI 清理 | 已实现；仍建议做模拟器/真机 UI 和真实 OSS 验证 | [self-design-profile-chat-ui-status.md](../status/self-design-profile-chat-ui-status.md) |
+| Contacts/Friends | 服务端好友列表、Android 本地 `friend_contacts` 缓存、联系人页、联系人资料页、从联系人发起单聊/建群 | 已实现首版；好友添加/申请流不在当前源码闭环内 | [self-design-profile-chat-ui-status.md](../status/self-design-profile-chat-ui-status.md) |
+| 群资料与已加入群列表 | 群资料页、群成员展示、群名刷新、已加入群列表入口 | 已实现首版；成员管理类操作仍未产品化 | [B10-group-chat-and-mention.md](../status/B10-group-chat-and-mention.md) |
 | 消息顶部弹窗 | 非当前会话收到文本/图片消息时展示应用内顶部弹窗，支持点击进入会话、关闭和 4 秒自动消失 | 已实现；建议补充多设备手工 UI 验证 | [message-toast-popup.md](../status/message-toast-popup.md) |
 
 ## 下一步
 
-如果后续需要服务端历史消息，再继续 B4 的 server-backed history；当前本地 SQLite 历史分页路径已经实现。
+如果后续需要服务端历史消息，再继续 B4 的 server-backed history；当前本地 SQLite 历史分页路径已经实现，协议枚举中已保留 `HISTORY_QUERY` / `HISTORY_RESULT`，但 mock-server 和 Android 尚未实现远端 history 请求/响应闭环。
 
-近期 self-design 工作的下一步是按
-[self-design-profile-chat-ui-status.md](../status/self-design-profile-chat-ui-status.md)
-中的 checklist 做模拟器/真机验证，覆盖 profile/avatar、聊天视觉、向量 tab 图标、Back 语义和 OSS 头像上传。
+近期主要下一步：
+
+- 按 [B13-mock-push.md](../status/B13-mock-push.md) 做设备端 E2E，验证 mock push 在离线、通知展示、ack 和点击通知进入会话上的完整闭环。
+- 按 [self-design-profile-chat-ui-status.md](../status/self-design-profile-chat-ui-status.md) 做模拟器/真机验证，覆盖 profile/avatar、聊天视觉、向量 tab 图标、Back 语义和 OSS 头像上传。
+- 按原始验收标准补性能和抓包证据：消息延迟、100 条并发顺序、50 次断网重连、1 万条会话列表性能、Wireshark/Charles 协议截图。
+- 当前代码树中功能 Test 用例已移除，仅剩 `mock-server/src/test/java/com/buyansong/imserver/auth/FixedSaltGenerator.java` 辅助类和 `mock-test/seed_local_messages.py` 冒烟脚本；如果要恢复自动化质量门禁，需要重新补关键 DAO、协议、JSON parser、ViewModel 和 mock-server 测试。
 
 B3 当前本地单聊范围已经完成：
 
@@ -61,7 +64,7 @@ B3 当前本地单聊范围已经完成：
 - 当前打开会话收到新消息时刷新预览但不增加未读。
 - 会话行会从 Repository conversation update 事件刷新，包括聊天页处理的消息。
 - 底部 `Messages` tab 展示所有会话总未读，`0` 时隐藏，超过 99 显示 `99+`。
-- 空会话列表不再展示固定 mock 联系人；本地 demo 账号通过 `Contacts` tab 暴露。
+- 空会话列表不再展示固定 mock 联系人；联系人通过服务端 `/friends/me` 和本地 `friend_contacts` 缓存暴露在 `Contacts` tab。
 - 连接/鉴权状态和登出只显示在会话列表；聊天页保留返回导航。
 
 B4 本地历史分页已经在当前 SQLite 聊天路径实现：
@@ -85,9 +88,13 @@ B4 本地历史分页已经在当前 SQLite 聊天路径实现：
 - B7 Android 心跳和重连已完成：前台 15 秒心跳、后台 75 秒心跳、心跳 ACK 存活判断、超时断开、指数退避重连和 `Reconnecting` UI 状态。
 - B8 消息有序性已完成：sender-side `clientSeq` 仅作为本地/ACK 关联元数据，mock server 按会话分配 `serverSeq`，Android 查询/合并路径按 `serverSeq` 排序。
 - B9 发送侧可靠性首版已完成：Android 持久化 pending outbox，在 `Authenticated` 后重试到期消息，超过重试次数标记 `FAILED`，刷新聊天发送状态；mock server 基于 `messageId` 保持幂等。
-- 本地 Java/Netty mock server 支持当前鉴权和单聊 WebSocket 路径。
+- 本地 Java/Netty mock server 支持鉴权、好友列表、profile、OSS upload-target、WebSocket 消息、群聊、群已读游标、消息撤回持久化补发、push token/pending/ack 等当前联调路径。
 - Self-design Profile/Chat UI 已实现，包括 Messages/Contacts/Me tab、资料展示/编辑、头像上传链路、昵称头像展示、向量 tab 图标、头像缓存、聊天输入栏优化和 Back 语义修正。
-- 项目级开发约束记录在 `docs/bg/DEVELOPMENT-CONSTRAINTS.md`。
+- Contacts/Friends 首版已实现：mock-server 提供 `/friends/me`，Android 使用 `ContactRepository` 和 `friend_contacts` 本地缓存展示联系人，联系人资料页可进入单聊，建群流程从联系人中选择成员。
+- B10 群相关 UI 首版继续扩展：已加入群列表、群资料页、群成员展示、群名刷新和群聊天入口已接入；成员增删、退群、权限等完整群管理仍未产品化。
+- B11 图片消息首版已实现：本地相册选择、多图拆分、OSS message-image upload-target、上传/发送失败分层、缩略图缓存和预加载/渐进显示路径已接入。
+- B12 消息撤回和已读回执首版已实现：单聊 read cursor、群聊 read cursor/读者列表、撤回 ACK/NOTIFY、撤回状态持久化和离线撤回通知补发路径已接入。
+- 项目级约束目前以 `ProjectTarget.md`、`ProjectBg.md`、`docs/status/` 和 `docs/feature-notes/` 中的模块约束为准；当前 `docs/bg/` 下没有独立的 `DEVELOPMENT-CONSTRAINTS.md` 文件。
 
 ## 进行中
 
@@ -102,20 +109,37 @@ B4 本地历史分页已经在当前 SQLite 聊天路径实现：
   - mock-server 在 `data/mock-im-groups.sqlite` 持久化群元数据和群成员。
   - mock-server 暴露已鉴权 group HTTP endpoint；Android 的发起群聊流程通过 `GroupApi`/`GroupRepository` 调用 `POST /groups`，不再创建纯本地群。
   - Android 可以通过 `PATCH /groups/{groupId}` 重命名群，会话列表通过 `GET /groups` 刷新群名。
-  - 多端成员同步、完整群成员 UI、@ composer/highlight 体验仍未完全收敛。
+  - Android 已有 `GroupInfoScreen`、`JoinedGroupsScreen`、`MentionPickerSheet`、`GroupReadIndicator` 和 `GroupReadDetailSheet`。
+  - 多端成员长期同步、成员增删/退群、群权限和完整群管理仍未完全收敛。
+- B13 mock 推送首版已接入：
+  - mock-server 使用 `mock-im-push.sqlite` 持久化 push token 和 pending push notification。
+  - Android 使用 `MockPushTokenStore`、`PushTokenRepository` 注册/注销 mock token。
+  - Android 使用 `PushPollScheduler` / `PushPollWorker` 通过 WorkManager 轮询 `/push/pending`，展示系统通知后调用 `/push/ack`。
+  - 通知点击通过 `PushDeepLink` 打开目标 conversation。
+  - 真实厂商推送 SDK 未接入。
 - B4 服务端历史消息尚未接入。后续如果需要远端历史，应使用 `HISTORY_QUERY` 和 `HISTORY_RESULT`。
 - 最新 self-design Profile/Chat UI 仍需要手工模拟器验证。
 
 ## 未开始
 
 - Phase 10 性能、抓包和稳定性证据。
+- 自动化功能测试恢复：当前 `app/src/test` 和 `mock-server/src/test` 不再包含功能 Test 文件，后续需要按关键模块补回。
 
 ## 最近完成
 
+- B13 mock push 首版：
+  - mock-server 已接入 `/push/register-token`、`/push/unregister-token`、`/push/pending` 和 `/push/ack`。
+  - 离线消息可进入 pending push store；Android WorkManager 可轮询并展示通知。
+  - 通知点击 deep-link 可携带 conversation id 返回 App。
+  - 待完成设备端 E2E 和真机通知权限/后台限制验证。
+- B12 群已读与撤回补强：
+  - mock-server 已持久化 group read cursor，并在认证后 replay 相关群读游标。
+  - Android 已有群已读人数、读者列表和群已读详情 bottom sheet。
+  - 撤回状态在 accepted messages 中持久化，未通知接收方可在重连后补发 `RECALL_NOTIFY`。
 - B1 refresh-token rotation 修复：
   - mock-server `/refresh` 现在同时签发新的 access token 和 refresh token。
   - 旧 refresh token 在同一个 SQLite rotation transaction 中废弃，不能再复用。
-  - Android 鉴权解析/持久化测试覆盖了保存 refresh 返回的新 refresh token。
+  - 当前源码仍保留 refresh-token rotation 实现；但功能 Test 用例文件已移除，相关自动化覆盖需要后续恢复。
 - B5.5 mock-server 持久化：
   - mock server 将 accepted messages 持久化到 `mock-server/data/mock-im-messages.sqlite`。
   - accepted-message recovery 可以跨 server 重启保持 sender-side `messageId` 幂等。

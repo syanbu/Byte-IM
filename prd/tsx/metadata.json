@@ -1,6 +1,0 @@
-{
-  "name": "ByteIM",
-  "description": "Secure, private, and entirely yours messenger platform.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
