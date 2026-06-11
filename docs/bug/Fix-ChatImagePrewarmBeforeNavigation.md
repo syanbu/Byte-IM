@@ -596,7 +596,7 @@ Expected:
 
 - [Fix-ChatImageGrayPlaceholderOnChatEntry.md](Fix-ChatImageGrayPlaceholderOnChatEntry.md)
 - [Fix-ChatImageGrayscalePlaceholderOnNotificationEntry.md](Fix-ChatImageGrayscalePlaceholderOnNotificationEntry.md)
-- [Chat-Initial-Blank-Screen-Optimization.md](Chat-Initial-Blank-Screen-Optimization.md)
+- [Fix-ChatInitialBlankScreenOptimization.md](Fix-ChatInitialBlankScreenOptimization.md)
 - [../feature-notes/coil-image-preload-mechanism.md](../feature-notes/coil-image-preload-mechanism.md)
 
 ## Self-Review

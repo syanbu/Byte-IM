@@ -350,5 +350,5 @@ fun selectPeer(peerId: String) {
 
 ## Related Docs
 
-- [`docs/bug/Chat-Initial-Blank-Screen-Optimization.md`](Chat-Initial-Blank-Screen-Optimization.md) — 消息 LRU 缓存优化（类似的首帧问题，不同层面）
+- [`docs/bug/Fix-ChatInitialBlankScreenOptimization.md`](Fix-ChatInitialBlankScreenOptimization.md) — 消息 LRU 缓存优化（类似的首帧问题，不同层面）
 - [`docs/feature-notes/user-profile-version-cache.md`](../feature-notes/user-profile-version-cache.md) — 用户资料版本缓存机制

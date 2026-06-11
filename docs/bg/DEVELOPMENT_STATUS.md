@@ -3,7 +3,7 @@
 最后更新时间：2026-06-11
 
 本文是 IM 客户端开发进度的顶层索引，项目目标见
-[`ProjectTarget.md`](ProjectTarget.md)。各功能模块的详细状态记录在
+[`PROJECT_TARGET.md`](PROJECT_TARGET.md)。各功能模块的详细状态记录在
 `../status/` 目录下。
 
 设计路线图：`../superpowers/plans/2026-05-21-im-client-roadmap.md`。
@@ -94,7 +94,7 @@ B4 本地历史分页已经在当前 SQLite 聊天路径实现：
 - B10 群相关 UI 首版继续扩展：已加入群列表、群资料页、群成员展示、群名刷新和群聊天入口已接入；成员增删、退群、权限等完整群管理仍未产品化。
 - B11 图片消息首版已实现：本地相册选择、多图拆分、OSS message-image upload-target、上传/发送失败分层、缩略图缓存和预加载/渐进显示路径已接入。
 - B12 消息撤回和已读回执首版已实现：单聊 read cursor、群聊 read cursor/读者列表、撤回 ACK/NOTIFY、撤回状态持久化和离线撤回通知补发路径已接入。
-- 项目级约束目前以 `ProjectTarget.md`、`ProjectBg.md`、`docs/status/` 和 `docs/feature-notes/` 中的模块约束为准；当前 `docs/bg/` 下没有独立的 `DEVELOPMENT-CONSTRAINTS.md` 文件。
+- 项目级约束目前以 `PROJECT_TARGET.md`、`PROJECT_BACKGROUND.md`、`docs/status/` 和 `docs/feature-notes/` 中的模块约束为准；当前 `docs/bg/` 下没有独立的 `DEVELOPMENT-CONSTRAINTS.md` 文件。
 
 ## 进行中
 
