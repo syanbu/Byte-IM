@@ -46,13 +46,15 @@ object ChatDisplayPolicy {
         if (message.direction == MessageDirection.OUTGOING) {
             return BubbleAvatar(displayName = "我", avatarUrl = currentUserAvatarUrl)
         }
-        if (message.conversationType == ConversationType.GROUP) {
-            return BubbleAvatar(
-                displayName = senderProfile?.nickname ?: message.senderId,
-                avatarUrl = senderProfile?.avatarUrl
-            )
+        val fallbackName = if (message.conversationType == ConversationType.GROUP) {
+            message.senderId
+        } else {
+            peerName
         }
-        return BubbleAvatar(displayName = peerName, avatarUrl = peerAvatarUrl)
+        return BubbleAvatar(
+            displayName = senderProfile?.nickname ?: fallbackName.takeIf { it.isNotBlank() } ?: message.senderId,
+            avatarUrl = senderProfile?.avatarUrl ?: peerAvatarUrl
+        )
     }
 
     fun bubbleAvatarUserId(message: ChatMessage, currentUserId: String): String? {

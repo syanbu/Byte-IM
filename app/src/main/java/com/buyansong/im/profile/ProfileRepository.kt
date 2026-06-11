@@ -2,6 +2,7 @@ package com.buyansong.im.profile
 
 import com.buyansong.im.auth.AuthSession
 import com.buyansong.im.storage.Gender
+import com.buyansong.im.storage.GroupMember
 import com.buyansong.im.storage.UserProfile
 import com.buyansong.im.storage.UserProfileDao
 
@@ -109,6 +110,20 @@ class ProfileRepository(
             userProfileDao.upsertAll(profilesToUpsert)
         }
         return userProfileDao.findByUserIds(distinctUserIds)
+    }
+
+    fun backfillFromProfiles(
+        members: List<GroupMember>,
+        profilesById: Map<String, UserProfile>
+    ): List<GroupMember> {
+        if (members.isEmpty()) return members
+        return members.map { member ->
+            val profile = profilesById[member.userId]
+            member.copy(
+                displayName = profile?.nickname?.takeIf { it.isNotBlank() } ?: member.displayName,
+                avatarUrl = profile?.avatarUrl ?: member.avatarUrl
+            )
+        }
     }
 
     suspend fun updateMe(

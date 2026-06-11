@@ -37,11 +37,18 @@ class ChatViewModelInitialCacheTest {
         override fun send(packet: ImPacket): Boolean = true
     }
 
-    private class FakeProfileApi : ProfileApi {
+    private class FakeProfileApi(
+        var profilesById: Map<String, UserProfile> = emptyMap()
+    ) : ProfileApi {
+        val batchRequests = mutableListOf<List<String>>()
+
         override suspend fun me(accessToken: String): ProfileResult = ProfileResult.Failure("unused")
-        override suspend fun user(accessToken: String, userId: String): ProfileResult = ProfileResult.Failure("unused")
+        override suspend fun user(accessToken: String, userId: String): ProfileResult {
+            return profilesById[userId]?.let(ProfileResult::Success) ?: ProfileResult.Failure("unused")
+        }
         override suspend fun batch(accessToken: String, userIds: List<String>): ProfileBatchResult {
-            return ProfileBatchResult.Success(emptyList())
+            batchRequests += userIds
+            return ProfileBatchResult.Success(userIds.mapNotNull(profilesById::get))
         }
 
         override suspend fun updateMe(
@@ -61,7 +68,7 @@ class ChatViewModelInitialCacheTest {
         expiresAtMillis = Long.MAX_VALUE
     )
 
-    private fun message(id: String, createdAt: Long): ChatMessage {
+    private fun message(id: String, createdAt: Long, senderProfileVersion: Long? = null): ChatMessage {
         return ChatMessage(
             messageId = id,
             conversationId = "single:u_a:u_b",
@@ -73,7 +80,8 @@ class ChatViewModelInitialCacheTest {
             status = MessageStatus.RECEIVED,
             direction = MessageDirection.INCOMING,
             createdAt = createdAt,
-            updatedAt = createdAt
+            updatedAt = createdAt,
+            senderProfileVersion = senderProfileVersion
         )
     }
 
@@ -134,6 +142,33 @@ class ChatViewModelInitialCacheTest {
     }
 
     @Test
+    fun constructor_usesCachedCurrentUserProfileBeforeNetworkRefresh() {
+        val profileDao = InMemoryUserProfileDao()
+        profileDao.upsert(profile("u_a", nickname = "Alice", avatarUrl = "https://avatar.example/u_a.png"))
+        val repository = MessageRepository(
+            messageDao = InMemoryMessageDao(),
+            conversationDao = InMemoryConversationDao(),
+            pendingMessageDao = InMemoryPendingMessageDao(),
+            connection = FakeConnection(),
+            messageIdGenerator = MessageIdGenerator(),
+            seqGenerator = SeqGenerator()
+        )
+
+        val viewModel = ChatViewModel(
+            session = session(),
+            repository = repository,
+            connection = FakeConnection(),
+            profileRepository = ProfileRepository(profileDao, FakeProfileApi()),
+            initialPeerId = "u_b",
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            dispatcher = Dispatchers.Unconfined
+        )
+
+        assertEquals("https://avatar.example/u_a.png", viewModel.state.value.currentUserAvatarUrl)
+        viewModel.stop()
+    }
+
+    @Test
     fun selectPeer_usesCachedPeerProfileInsteadOfFlashingPeerId() {
         val profileDao = InMemoryUserProfileDao()
         profileDao.upsert(profile("u_c", nickname = "Cee", avatarUrl = "https://avatar.example/u_c.png"))
@@ -161,7 +196,111 @@ class ChatViewModelInitialCacheTest {
         viewModel.stop()
     }
 
-    private fun profile(userId: String, nickname: String, avatarUrl: String? = null): UserProfile {
+    @Test
+    fun start_singleChatUsesMessageProfileVersionToRefreshSenderProfileMap() {
+        val profileDao = InMemoryUserProfileDao()
+        profileDao.upsert(
+            profile(
+                "u_b",
+                nickname = "Old Bee",
+                avatarUrl = "old.png",
+                profileVersion = 1L
+            )
+        )
+        val profileApi = FakeProfileApi(
+            profilesById = mapOf(
+                "u_b" to profile(
+                    "u_b",
+                    nickname = "New Bee",
+                    avatarUrl = "new.png",
+                    profileVersion = 2L
+                )
+            )
+        )
+        val messageDao = InMemoryMessageDao()
+        messageDao.insertOrIgnore(message("m1", createdAt = 1L, senderProfileVersion = 2L))
+        val repository = MessageRepository(
+            messageDao = messageDao,
+            conversationDao = InMemoryConversationDao(),
+            pendingMessageDao = InMemoryPendingMessageDao(),
+            connection = FakeConnection(),
+            messageIdGenerator = MessageIdGenerator(),
+            seqGenerator = SeqGenerator()
+        )
+
+        val viewModel = ChatViewModel(
+            session = session(),
+            repository = repository,
+            connection = FakeConnection(),
+            profileRepository = ProfileRepository(profileDao, profileApi),
+            initialPeerId = "u_b",
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            dispatcher = Dispatchers.Unconfined
+        )
+
+        viewModel.start()
+
+        assertEquals(listOf(listOf("u_b")), profileApi.batchRequests)
+        assertEquals("New Bee", viewModel.state.value.senderProfiles["u_b"]?.nickname)
+        assertEquals("new.png", viewModel.state.value.peerAvatarUrl)
+        viewModel.stop()
+    }
+
+    @Test
+    fun start_singleChatForceRefreshesCachedPeerWhenMessagesHaveNoProfileVersionHint() {
+        val profileDao = InMemoryUserProfileDao()
+        profileDao.upsert(
+            profile(
+                "u_b",
+                nickname = "Old Bee",
+                avatarUrl = "old.png",
+                profileVersion = 1L
+            )
+        )
+        val profileApi = FakeProfileApi(
+            profilesById = mapOf(
+                "u_b" to profile(
+                    "u_b",
+                    nickname = "New Bee",
+                    avatarUrl = "new.png",
+                    profileVersion = 2L
+                )
+            )
+        )
+        val messageDao = InMemoryMessageDao()
+        messageDao.insertOrIgnore(message("m1", createdAt = 1L, senderProfileVersion = null))
+        val repository = MessageRepository(
+            messageDao = messageDao,
+            conversationDao = InMemoryConversationDao(),
+            pendingMessageDao = InMemoryPendingMessageDao(),
+            connection = FakeConnection(),
+            messageIdGenerator = MessageIdGenerator(),
+            seqGenerator = SeqGenerator()
+        )
+
+        val viewModel = ChatViewModel(
+            session = session(),
+            repository = repository,
+            connection = FakeConnection(),
+            profileRepository = ProfileRepository(profileDao, profileApi),
+            initialPeerId = "u_b",
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            dispatcher = Dispatchers.Unconfined
+        )
+
+        viewModel.start()
+
+        assertEquals("New Bee", viewModel.state.value.senderProfiles["u_b"]?.nickname)
+        assertEquals("new.png", viewModel.state.value.peerAvatarUrl)
+        viewModel.stop()
+    }
+
+    private fun profile(
+        userId: String,
+        nickname: String,
+        avatarUrl: String? = null,
+        profileVersion: Long = 1L
+    ): UserProfile {
         return UserProfile(
             userId = userId,
             phone = userId,
@@ -169,7 +308,7 @@ class ChatViewModelInitialCacheTest {
             avatarUrl = avatarUrl,
             avatarUpdatedAt = 0L,
             updatedAt = 0L,
-            profileVersion = 1L
+            profileVersion = profileVersion
         )
     }
 }

@@ -1,6 +1,8 @@
 package com.buyansong.im.profile
 
 import com.buyansong.im.storage.Gender
+import com.buyansong.im.storage.GroupMember
+import com.buyansong.im.storage.GroupMemberRole
 import com.buyansong.im.storage.InMemoryUserProfileDao
 import com.buyansong.im.storage.UserProfile
 import kotlinx.coroutines.runBlocking
@@ -154,6 +156,21 @@ class ProfileRepositoryTest {
         assertEquals("New", dao.findByUserId("u1")?.nickname)
     }
 
+    @Test
+    fun backfillFromProfilesUsesProfileNicknameAndAvatarWhenPresent() {
+        val repository = ProfileRepository(InMemoryUserProfileDao(), FakeProfileApi(emptyMap()))
+        val member = groupMember("u1", displayName = "Old Name", avatarUrl = "old.png")
+        val profile = profile("u1", nickname = "New Name", profileVersion = 2L).copy(avatarUrl = "new.png")
+
+        val backfilled = repository.backfillFromProfiles(
+            members = listOf(member),
+            profilesById = mapOf("u1" to profile)
+        )
+
+        assertEquals("New Name", backfilled.single().displayName)
+        assertEquals("new.png", backfilled.single().avatarUrl)
+    }
+
     private fun profile(userId: String, nickname: String, profileVersion: Long): UserProfile {
         return UserProfile(
             userId = userId,
@@ -163,6 +180,19 @@ class ProfileRepositoryTest {
             avatarUpdatedAt = 0L,
             updatedAt = 0L,
             profileVersion = profileVersion
+        )
+    }
+
+    private fun groupMember(userId: String, displayName: String, avatarUrl: String?): GroupMember {
+        return GroupMember(
+            groupId = "g1",
+            userId = userId,
+            displayName = displayName,
+            avatarUrl = avatarUrl,
+            role = GroupMemberRole.MEMBER,
+            joinedAt = 0L,
+            updatedAt = 0L,
+            profileVersion = 1L
         )
     }
 }

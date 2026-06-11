@@ -108,13 +108,7 @@ class GroupInfoViewModel(
             .map { it.userId }
             .mapNotNull(profileRepository::localProfile)
             .associateBy { it.userId }
-        return members.map { member ->
-            val profile = profilesById[member.userId]
-            member.copy(
-                displayName = profile?.nickname?.takeIf { it.isNotBlank() } ?: member.displayName,
-                avatarUrl = profile?.avatarUrl ?: member.avatarUrl
-            )
-        }
+        return profileRepository.backfillFromProfiles(members, profilesById)
     }
 
     private suspend fun backfillMembersRemote(

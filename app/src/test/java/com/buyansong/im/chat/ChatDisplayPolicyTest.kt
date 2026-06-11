@@ -4,6 +4,7 @@ import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.ConversationType
 import com.buyansong.im.storage.MessageDirection
 import com.buyansong.im.storage.MessageStatus
+import com.buyansong.im.storage.UserProfile
 import java.util.Calendar
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -107,6 +108,38 @@ class ChatDisplayPolicyTest {
         )
     }
 
+    @Test
+    fun bubbleAvatar_singleIncomingUsesSenderProfileBeforePeerFallback() {
+        val avatar = ChatDisplayPolicy.bubbleAvatar(
+            message = chatMessage(createdAt = 1L),
+            groupTitle = "",
+            peerName = "Peer",
+            peerAvatarUrl = "peer.png",
+            currentUserAvatarUrl = "me.png",
+            currentUserId = "receiver-1",
+            senderProfile = userProfile("sender-1", nickname = "Sender", avatarUrl = "sender.png")
+        )
+
+        assertEquals("Sender", avatar.displayName)
+        assertEquals("sender.png", avatar.avatarUrl)
+    }
+
+    @Test
+    fun bubbleAvatar_groupIncomingFallsBackToSenderIdWhenProfileMissing() {
+        val avatar = ChatDisplayPolicy.bubbleAvatar(
+            message = chatMessage(createdAt = 1L, conversationType = ConversationType.GROUP),
+            groupTitle = "Group",
+            peerName = "Group",
+            peerAvatarUrl = "group.png",
+            currentUserAvatarUrl = "me.png",
+            currentUserId = "receiver-1",
+            senderProfile = null
+        )
+
+        assertEquals("sender-1", avatar.displayName)
+        assertEquals("group.png", avatar.avatarUrl)
+    }
+
     private fun chatMessage(
         createdAt: Long,
         conversationType: ConversationType = ConversationType.SINGLE
@@ -124,6 +157,18 @@ class ChatDisplayPolicyTest {
             createdAt = createdAt,
             updatedAt = createdAt,
             conversationType = conversationType
+        )
+    }
+
+    private fun userProfile(userId: String, nickname: String, avatarUrl: String?): UserProfile {
+        return UserProfile(
+            userId = userId,
+            phone = userId,
+            nickname = nickname,
+            avatarUrl = avatarUrl,
+            avatarUpdatedAt = 0L,
+            updatedAt = 0L,
+            profileVersion = 1L
         )
     }
 

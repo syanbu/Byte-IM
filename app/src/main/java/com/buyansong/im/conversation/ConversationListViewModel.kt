@@ -249,13 +249,28 @@ class ConversationListViewModel(
         updateItems(conversations, hasMoreConversations = hasMoreAfterFirstPage)
         val validSession = validSessionProvider()
         if (validSession != null) {
+            val singleChatPeerIds = conversations
+                .filterNot { it.type == ConversationType.GROUP || it.conversationId.startsWith("group:") }
+                .map { it.peerIdForCurrentSession() }
+            val allUserIds = singleChatPeerIds
+                .plus(mentionedUserIdsFor(conversations))
+                .plus(recalledUserIdsFor(conversations))
+                .distinct()
+            val remoteVersions = conversations
+                .filterNot { it.type == ConversationType.GROUP || it.conversationId.startsWith("group:") }
+                .mapNotNull { conversation ->
+                    val peerId = conversation.peerIdForCurrentSession()
+                    val lastMessage = conversation.lastMessageId?.let(repository::findMessageById)
+                    lastMessage
+                        ?.takeIf { it.senderId == peerId }
+                        ?.senderProfileVersion
+                        ?.let { peerId to it }
+                }
+                .toMap()
             profileRepository.ensureProfiles(
                 accessToken = validSession.accessToken,
-                userIds = conversations
-                    .filterNot { it.type == ConversationType.GROUP || it.conversationId.startsWith("group:") }
-                    .map { it.peerIdForCurrentSession() }
-                    .plus(mentionedUserIdsFor(conversations))
-                    .plus(recalledUserIdsFor(conversations))
+                userIds = allUserIds,
+                remoteVersions = remoteVersions
             )
             groupRepository?.syncGroups(validSession.accessToken)
         }

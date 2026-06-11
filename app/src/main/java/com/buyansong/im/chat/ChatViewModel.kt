@@ -639,13 +639,7 @@ class ChatViewModel(
             val profilesById = (remoteProfiles + memberIds.mapNotNull(profileRepository::localProfile))
                 .distinctBy { it.userId }
                 .associateBy { it.userId }
-            val mentionMembers = rawMentionMembers.map { member ->
-                val profile = profilesById[member.userId]
-                member.copy(
-                    displayName = profile?.nickname?.takeIf { it.isNotBlank() } ?: member.displayName,
-                    avatarUrl = profile?.avatarUrl ?: member.avatarUrl
-                )
-            }
+            val mentionMembers = profileRepository.backfillFromProfiles(rawMentionMembers, profilesById)
             val senderProfiles = (remoteProfiles + senderIds.mapNotNull(profileRepository::localProfile))
                 .distinctBy { it.userId }
                 .associateBy { it.userId }
@@ -661,14 +655,36 @@ class ChatViewModel(
         }
         if (peerId.isNotBlank()) {
             applyCachedPeerDisplay(peerId)
-            profileRepository.refreshProfiles(currentSession.accessToken, listOf(currentSession.userId, peerId))
+            val hadCachedPeerProfile = profileRepository.localProfile(peerId) != null
+            val senderIds = mutableState.value.messages
+                .map { it.senderId }
+                .filter { it.isNotBlank() }
+                .distinct()
+            val messageVersions = mutableState.value.messages
+                .mapNotNull { message -> message.senderProfileVersion?.let { message.senderId to it } }
+                .toMap()
+            val hasPeerVersionHint = peerId in messageVersions
+            if (currentSession.accessToken.isNotBlank()) {
+                profileRepository.ensureProfiles(
+                    accessToken = currentSession.accessToken,
+                    userIds = senderIds + currentSession.userId + peerId,
+                    remoteVersions = messageVersions
+                )
+                if (!hasPeerVersionHint && hadCachedPeerProfile) {
+                    profileRepository.refreshProfile(currentSession.accessToken, peerId)
+                }
+            }
         }
         val peerProfile = profileRepository.localProfile(peerId)
         val currentUserProfile = profileRepository.localProfile(currentSession.userId)
+        val senderProfiles = listOf(peerProfile, currentUserProfile)
+            .filterNotNull()
+            .associateBy { it.userId }
         mutableState.value = mutableState.value.copy(
             peerName = peerProfile?.nickname ?: peerId,
             peerAvatarUrl = peerProfile?.avatarUrl,
             currentUserAvatarUrl = currentUserProfile?.avatarUrl,
+            senderProfiles = senderProfiles,
             mentionMembers = emptyList()
         )
     }
@@ -805,6 +821,7 @@ class ChatViewModel(
             repository.conversationIdFor(session.userId, peerId)
         }
         applyCachedPeerDisplay(peerId)
+        applyCachedCurrentUserDisplay()
         val cachedMessages = repository.getCachedInitialPage(conversationId) ?: return
         val orderedMessages = MessageOrderingPolicy.sortOldestFirst(cachedMessages)
         mutableState.value = mutableState.value.copy(
@@ -815,6 +832,13 @@ class ChatViewModel(
             peerReadUpToServerSeq = repository.conversationPeerReadCursorByConversationId(conversationId)
         )
         recomputeGroupReadIndicator()
+    }
+
+    private fun applyCachedCurrentUserDisplay() {
+        val currentUserProfile = profileRepository.localProfile(session.userId)
+        mutableState.value = mutableState.value.copy(
+            currentUserAvatarUrl = currentUserProfile?.avatarUrl
+        )
     }
 
     private fun applyCachedPeerDisplay(peerId: String) {
