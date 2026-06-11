@@ -5,6 +5,7 @@ import com.buyansong.im.storage.GroupMember
 import com.buyansong.im.storage.GroupMemberRole
 import com.buyansong.im.storage.InMemoryUserProfileDao
 import com.buyansong.im.storage.UserProfile
+import com.buyansong.im.auth.AuthSession
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -171,6 +172,37 @@ class ProfileRepositoryTest {
         assertEquals("new.png", backfilled.single().avatarUrl)
     }
 
+    @Test
+    fun bootstrapSessionReturnsNewerLocalProfileWhenSessionIsStale() {
+        val dao = InMemoryUserProfileDao()
+        dao.upsert(profile("u1", nickname = "Cached", profileVersion = 3L).copy(avatarUrl = "cached.png"))
+        val repository = ProfileRepository(dao, FakeProfileApi(emptyMap()))
+
+        val profile = repository.bootstrapSession(session("u1", nickname = "Session", avatarUrl = null, profileVersion = 1L))
+
+        assertEquals("Cached", profile.nickname)
+        assertEquals("cached.png", profile.avatarUrl)
+    }
+
+    @Test
+    fun currentUserProfileKeepsNewerLocalProfileWhenRemoteResponseIsOlder() = runBlocking {
+        val dao = InMemoryUserProfileDao()
+        dao.upsert(profile("u1", nickname = "Cached", profileVersion = 3L).copy(avatarUrl = "cached.png"))
+        val api = FakeProfileApi(
+            profilesById = mapOf(
+                "u1" to profile("u1", nickname = "Remote Old", profileVersion = 2L).copy(avatarUrl = "old.png")
+            )
+        )
+        val repository = ProfileRepository(dao, api)
+
+        val profile = repository.currentUserProfile(
+            session("u1", nickname = "Session", avatarUrl = null, profileVersion = 1L)
+        )
+
+        assertEquals("Cached", profile.nickname)
+        assertEquals("cached.png", profile.avatarUrl)
+    }
+
     private fun profile(userId: String, nickname: String, profileVersion: Long): UserProfile {
         return UserProfile(
             userId = userId,
@@ -193,6 +225,26 @@ class ProfileRepositoryTest {
             joinedAt = 0L,
             updatedAt = 0L,
             profileVersion = 1L
+        )
+    }
+
+    private fun session(
+        userId: String,
+        nickname: String,
+        avatarUrl: String?,
+        profileVersion: Long
+    ): AuthSession {
+        return AuthSession(
+            accessToken = "token",
+            refreshToken = "refresh",
+            userId = userId,
+            username = nickname,
+            phone = userId,
+            nickname = nickname,
+            avatarUrl = avatarUrl,
+            profileVersion = profileVersion,
+            accessExpiresAtMillis = Long.MAX_VALUE,
+            refreshExpiresAtMillis = Long.MAX_VALUE
         )
     }
 }

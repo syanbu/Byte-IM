@@ -13,7 +13,7 @@ class ProfileRepository(
     fun bootstrapSession(session: AuthSession): UserProfile {
         val profile = session.toUserProfile()
         upsertIfNewer(profile)
-        return profile
+        return userProfileDao.findByUserId(session.userId) ?: profile
     }
 
     fun localProfile(userId: String): UserProfile? = userProfileDao.findByUserId(userId)
@@ -25,7 +25,7 @@ class ProfileRepository(
         return when (val result = profileApi.me(session.accessToken)) {
             is ProfileResult.Success -> {
                 upsertIfNewer(result.profile)
-                result.profile
+                userProfileDao.findByUserId(result.profile.userId) ?: result.profile
             }
             is ProfileResult.Failure -> local
         }

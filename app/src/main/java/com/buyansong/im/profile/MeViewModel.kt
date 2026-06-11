@@ -33,7 +33,9 @@ class MeViewModel(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
-    private val mutableState = MutableStateFlow(MeUiState())
+    private val mutableState = MutableStateFlow(
+        MeUiState(profile = profileRepository.bootstrapSession(session))
+    )
     val state: StateFlow<MeUiState> = mutableState.asStateFlow()
     private var job: Job? = null
 
