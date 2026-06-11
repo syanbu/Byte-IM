@@ -25,6 +25,41 @@ class ChatInitialImagePrewarmerTest {
         )
     }
 
+    @Test
+    fun thumbnailPathsToPrewarmCanBeLimitedAfterDistinctFiltering() {
+        val messages = listOf(
+            message("text", type = MessageType.TEXT, localThumbnailPath = "/cache/text.jpg"),
+            message("image-1", type = MessageType.IMAGE, localThumbnailPath = "/cache/a.jpg"),
+            message("image-2", type = MessageType.IMAGE, localThumbnailPath = "/cache/a.jpg"),
+            message("image-3", type = MessageType.IMAGE, localThumbnailPath = "/cache/b.jpg"),
+            message("image-4", type = MessageType.IMAGE, localThumbnailPath = "/cache/c.jpg")
+        )
+
+        assertEquals(
+            listOf("/cache/a.jpg", "/cache/b.jpg"),
+            ChatInitialImagePrewarmer.thumbnailPathsToPrewarm(messages, maxImages = 2)
+        )
+    }
+
+    @Test
+    fun shouldPrewarmBeforeNavigationReturnsFalseWhenThereAreNoLocalImageThumbnails() {
+        val messages = listOf(
+            message("text", type = MessageType.TEXT, localThumbnailPath = "/cache/text.jpg"),
+            message("image-empty", type = MessageType.IMAGE, localThumbnailPath = null)
+        )
+
+        assertEquals(false, ChatInitialImagePrewarmer.shouldPrewarmBeforeNavigation(messages))
+    }
+
+    @Test
+    fun shouldPrewarmBeforeNavigationReturnsTrueWhenLocalImageThumbnailExists() {
+        val messages = listOf(
+            message("image-1", type = MessageType.IMAGE, localThumbnailPath = "/cache/a.jpg")
+        )
+
+        assertEquals(true, ChatInitialImagePrewarmer.shouldPrewarmBeforeNavigation(messages))
+    }
+
     private fun message(
         id: String,
         type: MessageType,

@@ -107,6 +107,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import com.buyansong.im.profile.MeScreen
 import com.buyansong.im.profile.MeViewModel
 import com.buyansong.im.profile.OkHttpAvatarUploadApi
@@ -459,9 +460,11 @@ private fun AuthenticatedImNavHost(
     }
     val openPreloadedChat: (String) -> Unit = remember(context, uiScope, messageRepository, navController) {
         { conversationId ->
-            val messages = messageRepository.preloadInitialPageSync(conversationId)
-            ChatInitialImagePrewarmer.prewarmAsync(uiScope, context, messages)
-            SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
+            uiScope.launch {
+                val messages = messageRepository.preloadInitialPageSync(conversationId)
+                ChatInitialImagePrewarmer.prewarmBeforeNavigation(context, messages)
+                SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
+            }
         }
     }
     val contactListViewModel = remember(session.userId) {
