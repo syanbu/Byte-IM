@@ -235,6 +235,10 @@ class ChatViewModel(
     private val thumbnailRetryCounts = mutableMapOf<String, Int>()
     private val thumbnailRetryJobs = mutableMapOf<String, Job>()
 
+    init {
+        hydrateInitialStateFromCache(initialPeerId)
+    }
+
     fun start() {
         if (started) {
             return
@@ -787,6 +791,27 @@ class ChatViewModel(
                 conversationId = repository.conversationIdFor(session.userId, peerId)
             )
         }
+    }
+
+    private fun hydrateInitialStateFromCache(peerId: String) {
+        if (peerId.isBlank()) {
+            return
+        }
+        val conversationId = if (peerId.isGroupConversationId()) {
+            peerId
+        } else {
+            repository.conversationIdFor(session.userId, peerId)
+        }
+        val cachedMessages = repository.getCachedInitialPage(conversationId) ?: return
+        val orderedMessages = MessageOrderingPolicy.sortOldestFirst(cachedMessages)
+        mutableState.value = mutableState.value.copy(
+            messages = orderedMessages,
+            hasMoreLocal = orderedMessages.size == HISTORY_PAGE_SIZE,
+            isHistoryMemoryLimitReached = false,
+            errorMessage = null,
+            peerReadUpToServerSeq = repository.conversationPeerReadCursorByConversationId(conversationId)
+        )
+        recomputeGroupReadIndicator()
     }
 
     private suspend fun retryMissingThumbnail(messageId: String, immediate: Boolean) {

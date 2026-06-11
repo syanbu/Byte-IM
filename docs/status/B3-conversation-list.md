@@ -41,6 +41,7 @@ Done for the current local single-chat scope.
 - Conversation list page trigger threshold is 10 items from the bottom, matching one full screen on a typical device.
 - Conversation list refreshes merge already-loaded pages with refreshed recent rows, so incoming updates do not shrink the visible list back to the first page.
 - Conversation list now preserves its `LazyColumn` scroll position when the user opens a chat from `Messages` and then returns with Back, matching the existing `Contacts` behavior for long lists.
+- Opening a conversation from the Messages list now pre-loads the target conversation's initial message page before navigating to `Chat`, trading a bounded tap-time wait for an already-populated first chat frame. The same pre-loaded chat helper is also used by message-alert and push deep-link chat openings.
 - Connection/auth status and logout are only displayed on the conversation list; chat detail keeps only back navigation.
 - Empty conversation lists no longer show a fixed mock peer; demo contacts live in the separate `Contacts` tab and do not create conversation rows until a real message exists.
 - The demo Contacts tab now uses four mutual demo accounts:
@@ -65,6 +66,7 @@ Done for the current local single-chat scope.
 | 2026-06-06 | B3 derivedStateOf + prefetch | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListLoadMorePolicyTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest` | Passed: `ConversationListLoadMorePolicy` covers all trigger branches (threshold met, not yet met, loading, end-of-list, empty, short list); ViewModel covers cache-hit on second `loadMoreConversations` (delta=1 vs. real-query delta=2) and `refresh` clearing pending pre-fetch; row-layout sniff test now asserts `derivedStateOf` instead of `snapshotFlow`. |
 | 2026-06-06 | B3 prefetch warm-start + background cached-page apply | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.conversation.ConversationListViewModelTest --tests com.buyansong.im.conversation.ConversationListLoadMorePolicyTest --tests com.buyansong.im.conversation.ConversationRowLayoutTest --console=plain` | Passed: startup now prefetches page 2 before the first 50-row boundary, cached-page `loadMoreConversations()` no longer updates synchronously on the caller thread, and refresh rebuilds a fresh cached page for the next scroll. |
 | 2026-06-09 | B3 chat-back scroll restore | `./gradlew :app:testDebugUnitTest --console=plain` | Passed: `ConversationList` now persists `firstVisibleItemIndex` / `firstVisibleItemScrollOffset` in `ConversationListViewModel`, so returning from `Chat` restores the previous browse position instead of jumping back to the top. |
+| 2026-06-11 | B3 pre-loaded chat navigation | `./gradlew testDebugUnitTest`; `./gradlew compileDebugKotlin` | Passed: conversation-list chat entry compiles with the shared pre-loaded navigation helper; repository cache tests cover repeated initial-page reads, LRU eviction, and invalidation after send/receive/delete. |
 
 ## Next Implementation Slice
 

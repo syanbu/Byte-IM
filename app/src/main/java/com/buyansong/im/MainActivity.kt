@@ -456,6 +456,12 @@ private fun AuthenticatedImNavHost(
             connection = connection
         )
     }
+    val openPreloadedChat: (String) -> Unit = remember(messageRepository, navController) {
+        { conversationId ->
+            messageRepository.preloadInitialPageSync(conversationId)
+            SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
+        }
+    }
     val contactListViewModel = remember(session.userId) {
         ContactListViewModel(
             session = session,
@@ -502,9 +508,7 @@ private fun AuthenticatedImNavHost(
     LaunchedEffect(pushDeepLink, session.userId) {
         val conversationId = pushDeepLink
         if (!conversationId.isNullOrBlank()) {
-            SelfHostedImRoute.Chat.createRoute(conversationId)?.let { route ->
-                navController.navigateToChat(route)
-            }
+            openPreloadedChat(conversationId)
             onPushDeepLinkConsumed()
         }
     }
@@ -555,7 +559,7 @@ private fun AuthenticatedImNavHost(
                             }
                         },
                         onOpenConversation = { conversationId ->
-                            SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
+                            openPreloadedChat(conversationId)
                         }
                     )
                     TopLevelBottomBar(
@@ -645,8 +649,7 @@ private fun AuthenticatedImNavHost(
                     state = joinedGroupsState,
                     onBack = { navController.popBackStack() },
                     onOpenGroup = { groupId ->
-                        SelfHostedImRoute.Chat.createRoute("group:$groupId")
-                            ?.let(navController::navigateToChat)
+                        openPreloadedChat("group:$groupId")
                     }
                 )
             }
@@ -705,8 +708,7 @@ private fun AuthenticatedImNavHost(
                     onSendMessage = { peerUserId ->
                         // self-to-self 是占位:目前不实现"自己给自己发消息",按钮先放着。
                         if (peerUserId != session.userId) {
-                            SelfHostedImRoute.Chat.createSingleRoute(session.userId, peerUserId)
-                                ?.let { navController.navigateToChat(it) }
+                            openPreloadedChat(messageRepository.conversationIdFor(session.userId, peerUserId))
                         }
                     }
                 )
@@ -780,8 +782,7 @@ private fun AuthenticatedImNavHost(
             MessageAlertHost(
                 controller = messageAlertController,
                 onOpenConversation = { conversationId ->
-                    SelfHostedImRoute.Chat.createRoute(conversationId)
-                        ?.let(navController::navigateToChat)
+                    openPreloadedChat(conversationId)
                 },
                 modifier = Modifier.padding(innerPadding)
             )

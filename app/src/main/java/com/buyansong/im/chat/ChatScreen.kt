@@ -792,7 +792,7 @@ private fun ChatMessageContent(
 private fun ChatHistoryTopTime(
     text: String
 ) {
-    ByteImSystemNotice(text = text)
+    ChatMessageTimeSeparator(text = text)
 }
 
 @Composable

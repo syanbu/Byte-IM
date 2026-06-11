@@ -51,6 +51,7 @@ Implemented in this B10 slice:
 - Selecting a member inserts `@displayName ` and sends authoritative `mentionedUserIds`.
 - Chat text bubbles highlight mentioned spans using persisted mention user ids plus group member display names.
 - Conversation rows with unread mentions render a red `[有人@我]` prefix, and use the same structured mention display policy as chat bubbles.
+- Group chat opening now shares the same initial-page optimization as single chat: `group:<groupId>` conversations can be synchronously pre-loaded before navigation, repository initial-page cache hits hydrate `ChatViewModel` before first composition, and group message send/receive/recall/delete paths invalidate the cached first page for the affected conversation.
 - If token refresh or server group creation fails, the create screen stays put and does not create a local-only group row.
 
 Still pending after this slice:
@@ -705,6 +706,7 @@ mvn -q test
 | Date | Area | Command | Result |
 |---|---|---|---|
 | 2026-06-10 | Group Mention Bottom Sheet | `./gradlew :app:testDebugUnitTest`; `./gradlew :app:assembleDebug` | Passed: 48 Android unit tests, including 7 new tests for mention picker policy/data assumptions; debug APK assembled successfully. Manual smoke test on emulator/device still pending. |
+| 2026-06-11 | Group Chat Initial Render Cache | `./gradlew testDebugUnitTest`; `./gradlew compileDebugKotlin` | Passed: 73 Android unit tests, including `ChatViewModelGroupReadReceiptTest`, repository initial-page cache/invalidation tests, and constructor hydration from cached messages. |
 
 ## Manual Verification
 

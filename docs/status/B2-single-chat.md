@@ -26,6 +26,7 @@ Done for the current local mock-server path.
 - Default peer is temporarily hard-coded from the logged-in account for local demo convenience.
 - Single-chat conversation ids are canonicalized by sorting the two user ids.
 - Fixed chat text-bubble layout so long outgoing and incoming text wraps onto the next line instead of expanding horizontally and pushing the avatar out of the row. This change was made after reproducing that longer single-chat and group-chat text messages could hide the avatar even though avatar data was present.
+- Single-chat initial history now uses a repository-level in-memory LRU cache for the first 20 messages. Chat entry points synchronously pre-load the target conversation before navigation, and `ChatViewModel` hydrates cached messages during construction so the first chat composition can render existing content instead of an empty message list flash.
 
 ## Verification
 
@@ -40,6 +41,7 @@ Done for the current local mock-server path.
 | 2026-05-22 | Manual A/B Chat Smoke Test | Two Android emulators + local mock server | Passed by user verification: both `13800113800 -> 13900113900` and `13900113900 -> 13800113800` messages were ACKed and forwarded after both clients were online. |
 | 2026-05-22 | WebSocket Auth State Display | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.connection.ConnectionStateReducerTest --tests com.buyansong.im.chat.ChatViewModelTest --console=plain`; `mvn -q test -Dtest=MessageRouterTest` in `mock-server` | Passed: Android maps `AUTH_ACK` to `ConnectionState.Authenticated`, chat UI exposes connection status text, and mock-server records authenticated status after sending AUTH_ACK. |
 | 2026-06-06 | Chat Text Bubble Width Guard | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatTextBubbleLayoutPolicyTest --console=plain` | Passed: long text bubbles are width-constrained to 72% of the available row width so content wraps instead of pushing single-chat or group-chat avatars out of the row. |
+| 2026-06-11 | Chat Initial Render Cache | `./gradlew testDebugUnitTest`; `./gradlew compileDebugKotlin` | Passed: 73 Android unit tests, including repository initial-page cache/invalidation coverage and `ChatViewModel` constructor hydration from cached initial messages. |
 
 ## Remaining Risks
 

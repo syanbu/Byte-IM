@@ -22,12 +22,19 @@ import com.buyansong.im.storage.PendingMessageDao
 import com.buyansong.im.storage.TransactionRunner
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import java.util.Collections
+import java.util.LinkedHashMap
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class MessageRepository(
     private val messageDao: MessageDao,
@@ -57,6 +64,13 @@ class MessageRepository(
     val messageAlerts: SharedFlow<IncomingMessageAlert> = mutableMessageAlerts.asSharedFlow()
     private val mutableRecallFailures = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val recallFailures: SharedFlow<String> = mutableRecallFailures.asSharedFlow()
+    private val initialPageCache = Collections.synchronizedMap(
+        object : LinkedHashMap<String, List<ChatMessage>>(INITIAL_PAGE_CACHE_SIZE, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<ChatMessage>>?): Boolean {
+                return size > INITIAL_PAGE_CACHE_SIZE
+            }
+        }
+    )
 
     fun sendText(senderId: String, receiverId: String, content: String, now: Long): ChatMessage {
         val conversationId = conversationIdFor(senderId, receiverId)
@@ -88,7 +102,7 @@ class MessageRepository(
                 )
             )
         }
-        notifyConversationChanged()
+        notifyConversationChanged(conversationId)
         connection.send(packet)
         return message
     }
@@ -138,7 +152,7 @@ class MessageRepository(
                 )
             )
         }
-        notifyConversationChanged()
+        notifyConversationChanged(conversationId)
         connection.send(packet)
         return message
     }
@@ -177,7 +191,7 @@ class MessageRepository(
             messageDao.insertOrIgnore(message)
             conversationDao.upsertFromMessage(message, incrementUnread = false)
         }
-        notifyConversationChanged()
+        notifyConversationChanged(conversationId)
         return message
     }
 
@@ -219,7 +233,7 @@ class MessageRepository(
             messageDao.insertOrIgnore(message)
             conversationDao.upsertFromMessage(message, incrementUnread = false)
         }
-        notifyConversationChanged()
+        notifyConversationChanged(conversationId)
         return message
     }
 
@@ -285,7 +299,7 @@ class MessageRepository(
                 conversationDao.upsertFromMessage(message, incrementUnread = false)
             }
         }
-        notifyConversationChanged()
+        notifyConversationChanged(conversationId)
         return built
     }
 
@@ -334,7 +348,7 @@ class MessageRepository(
                 )
             )
         }
-        notifyConversationChanged()
+        notifyConversationChanged(message.conversationId)
         connection.send(packet)
     }
 
@@ -361,23 +375,25 @@ class MessageRepository(
                 )
             )
         }
-        notifyConversationChanged()
+        notifyConversationChanged(message.conversationId)
         connection.send(packet)
         return true
     }
 
     fun markImageUploadFailed(messageId: String, now: Long): Boolean {
+        val conversationId = messageDao.findByMessageId(messageId)?.conversationId
         val changed = messageDao.markStatus(messageId, MessageStatus.UPLOAD_FAILED, now)
         if (changed) {
-            notifyConversationChanged()
+            notifyConversationChanged(conversationId)
         }
         return changed
     }
 
     fun markImageUploading(messageId: String, now: Long): Boolean {
+        val conversationId = messageDao.findByMessageId(messageId)?.conversationId
         val changed = messageDao.markStatus(messageId, MessageStatus.UPLOADING, now)
         if (changed) {
-            notifyConversationChanged()
+            notifyConversationChanged(conversationId)
         }
         return changed
     }
@@ -409,8 +425,45 @@ class MessageRepository(
     }
 
     fun historyPageByConversationId(conversationId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
-        return messageDao.queryPage(conversationId, beforeTime, limit)
+        if (isInitialPageRequest(beforeTime, limit)) {
+            initialPageCache[conversationId]?.let { return it }
+        }
+        val result = messageDao.queryPage(conversationId, beforeTime, limit)
             .filter { it.isReadyForChatDisplay() }
+        if (isInitialPageRequest(beforeTime, limit)) {
+            initialPageCache[conversationId] = result
+        }
+        return result
+    }
+
+    fun getCachedInitialPage(conversationId: String): List<ChatMessage>? {
+        return initialPageCache[conversationId]
+    }
+
+    fun preloadInitialPageSync(conversationId: String): List<ChatMessage> {
+        initialPageCache[conversationId]?.let { return it }
+        return runBlocking {
+            withTimeoutOrNull(INITIAL_PAGE_SYNC_TIMEOUT_MS) {
+                withContext(Dispatchers.IO) {
+                    loadInitialPageFromDao(conversationId).also { messages ->
+                        initialPageCache[conversationId] = messages
+                    }
+                }
+            } ?: emptyList()
+        }
+    }
+
+    fun preloadInitialPageAsync(conversationId: String, scope: CoroutineScope) {
+        if (initialPageCache.containsKey(conversationId)) {
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            if (initialPageCache.containsKey(conversationId)) {
+                return@launch
+            }
+            val messages = loadInitialPageFromDao(conversationId)
+            initialPageCache[conversationId] = messages
+        }
     }
 
     fun missingIncomingImageThumbnails(userId: String, peerId: String, limit: Int): List<ChatMessage> {
@@ -468,7 +521,7 @@ class MessageRepository(
             if (activeConversationId == conversationId) {
                 closeConversation()
             }
-            notifyConversationChanged()
+            notifyConversationChanged(conversationId)
         }
         return changed
     }
@@ -496,7 +549,7 @@ class MessageRepository(
             updatedAt = now
         )
         conversationDao.upsertConversation(conversation)
-        notifyConversationChanged()
+        notifyConversationChanged(conversation.conversationId)
         return conversation
     }
 
@@ -518,7 +571,7 @@ class MessageRepository(
             updatedAt = now
         )
         conversationDao.upsertConversation(conversation)
-        notifyConversationChanged()
+        notifyConversationChanged(conversation.conversationId)
         return conversation
     }
 
@@ -535,6 +588,7 @@ class MessageRepository(
     fun retryDuePendingMessages(now: Long, limit: Int = DEFAULT_RETRY_BATCH_SIZE) {
         val dueMessages = pendingMessageDao.dueMessages(now, limit)
         var changed = false
+        val changedConversationIds = mutableSetOf<String>()
         dueMessages.forEach { pending ->
             val current = messageDao.findByMessageId(pending.messageId)
             if (current == null) {
@@ -546,15 +600,18 @@ class MessageRepository(
             if (current.status == MessageStatus.SENT && current.serverSeq != null) {
                 if (pendingMessageDao.delete(pending.messageId)) {
                     changed = true
+                    changedConversationIds += current.conversationId
                 }
                 return@forEach
             }
             if (retryPolicy.isExhausted(pending.retryCount)) {
                 if (messageDao.markFailed(pending.messageId, now)) {
                     changed = true
+                    changedConversationIds += current.conversationId
                 }
                 if (pendingMessageDao.delete(pending.messageId)) {
                     changed = true
+                    changedConversationIds += current.conversationId
                 }
                 return@forEach
             }
@@ -570,6 +627,7 @@ class MessageRepository(
             if (latest?.status == MessageStatus.SENT && latest.serverSeq != null) {
                 if (pendingMessageDao.delete(pending.messageId)) {
                     changed = true
+                    changedConversationIds += latest.conversationId
                 }
                 return@forEach
             }
@@ -583,8 +641,10 @@ class MessageRepository(
                 )
             )
             changed = true
+            changedConversationIds += current.conversationId
         }
         if (changed) {
+            changedConversationIds.forEach(initialPageCache::remove)
             notifyConversationChanged()
         }
     }
@@ -619,7 +679,7 @@ class MessageRepository(
                 now = now
             )
         }
-        notifyConversationChanged()
+        notifyConversationChanged(conversationId)
         return conversationId
     }
 
@@ -667,9 +727,10 @@ class MessageRepository(
         val messageId = body.requiredString("messageId")
         val serverSeq = body.requiredLong("serverSeq")
         val serverTime = body.optionalLong("serverTime") ?: System.currentTimeMillis()
+        val conversationId = messageDao.findByMessageId(messageId)?.conversationId
         messageDao.markAcked(messageId, serverSeq, serverTime)
         pendingMessageDao.delete(messageId)
-        notifyConversationChanged()
+        notifyConversationChanged(conversationId)
     }
 
     private fun handleIncoming(json: String) {
@@ -730,7 +791,7 @@ class MessageRepository(
                 incrementMentionUnread = incrementUnread && receiverId in mentionedUserIds
             )
             emitIncomingAlertIfNeeded(message = message, shouldAlert = incrementUnread)
-            notifyConversationChanged()
+            notifyConversationChanged(message.conversationId)
         }
         if (serverSeq != null) {
             connection.send(
@@ -828,7 +889,7 @@ class MessageRepository(
         val readAt = body.optionalLong("readAt") ?: System.currentTimeMillis()
         val changed = conversationDao.updatePeerReadCursor(conversationId, readUpToServerSeq, readAt)
         if (changed) {
-            notifyConversationChanged()
+            notifyConversationChanged(conversationId)
         }
     }
 
@@ -911,7 +972,7 @@ class MessageRepository(
         val changed = messageDao.markRecalled(messageId, recalledBy, recalledAt)
         val previewChanged = conversationDao.updatePreviewForRecalledMessage(messageId, preview, recalledAt)
         if (changed || previewChanged) {
-            notifyConversationChanged()
+            notifyConversationChanged(message.conversationId)
         }
     }
 
@@ -968,7 +1029,7 @@ class MessageRepository(
         return thumbnailDownloadScheduler.enqueue(message, priority) { messageId, localPath ->
             val changed = messageDao.updateLocalThumbnailPath(messageId, localPath, System.currentTimeMillis())
             if (changed) {
-                notifyConversationChanged()
+                notifyConversationChanged(message.conversationId)
             }
         }
     }
@@ -979,7 +1040,19 @@ class MessageRepository(
             localThumbnailPath != null
     }
 
-    private fun notifyConversationChanged() {
+    private fun loadInitialPageFromDao(conversationId: String): List<ChatMessage> {
+        return messageDao.queryPage(conversationId, beforeTime = null, limit = INITIAL_PAGE_SIZE)
+            .filter { it.isReadyForChatDisplay() }
+    }
+
+    private fun isInitialPageRequest(beforeTime: Long?, limit: Int): Boolean {
+        return beforeTime == null && limit == INITIAL_PAGE_SIZE
+    }
+
+    private fun notifyConversationChanged(conversationId: String? = null) {
+        if (conversationId != null) {
+            initialPageCache.remove(conversationId)
+        }
         mutableConversationUpdates.tryEmit(Unit)
     }
 
@@ -1106,6 +1179,9 @@ class MessageRepository(
     private companion object {
         const val DEFAULT_ACK_TIMEOUT_MS = 5_000L
         const val DEFAULT_RETRY_BATCH_SIZE = 50
+        const val INITIAL_PAGE_SIZE = 20
+        const val INITIAL_PAGE_CACHE_SIZE = 10
+        const val INITIAL_PAGE_SYNC_TIMEOUT_MS = 100L
         const val IMAGE_PLACEHOLDER_CONTENT = "[图片]"
         const val RECALL_FAILURE_MESSAGE = "撤回失败，请重试"
     }
