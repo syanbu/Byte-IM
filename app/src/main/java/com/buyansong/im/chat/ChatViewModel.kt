@@ -287,10 +287,11 @@ class ChatViewModel(
 
     fun selectPeer(peerId: String) {
         val trimmedPeerId = peerId.trim()
+        val (peerName, peerAvatarUrl) = cachedPeerDisplay(trimmedPeerId)
         mutableState.value = mutableState.value.copy(
             peerId = trimmedPeerId,
-            peerName = trimmedPeerId,
-            peerAvatarUrl = null,
+            peerName = peerName,
+            peerAvatarUrl = peerAvatarUrl,
             messages = emptyList(),
             isLoadingMore = false,
             hasMoreLocal = true,
@@ -659,6 +660,7 @@ class ChatViewModel(
             return
         }
         if (peerId.isNotBlank()) {
+            applyCachedPeerDisplay(peerId)
             profileRepository.refreshProfiles(currentSession.accessToken, listOf(currentSession.userId, peerId))
         }
         val peerProfile = profileRepository.localProfile(peerId)
@@ -802,6 +804,7 @@ class ChatViewModel(
         } else {
             repository.conversationIdFor(session.userId, peerId)
         }
+        applyCachedPeerDisplay(peerId)
         val cachedMessages = repository.getCachedInitialPage(conversationId) ?: return
         val orderedMessages = MessageOrderingPolicy.sortOldestFirst(cachedMessages)
         mutableState.value = mutableState.value.copy(
@@ -812,6 +815,23 @@ class ChatViewModel(
             peerReadUpToServerSeq = repository.conversationPeerReadCursorByConversationId(conversationId)
         )
         recomputeGroupReadIndicator()
+    }
+
+    private fun applyCachedPeerDisplay(peerId: String) {
+        val (peerName, peerAvatarUrl) = cachedPeerDisplay(peerId)
+        mutableState.value = mutableState.value.copy(
+            peerName = peerName,
+            peerAvatarUrl = peerAvatarUrl
+        )
+    }
+
+    private fun cachedPeerDisplay(peerId: String): Pair<String, String?> {
+        if (peerId.isGroupConversationId()) {
+            val conversation = repository.conversation(peerId)
+            return (conversation?.title ?: conversation?.peerName ?: peerId) to conversation?.avatarUrl
+        }
+        val peerProfile = profileRepository.localProfile(peerId)
+        return (peerProfile?.nickname ?: peerId) to peerProfile?.avatarUrl
     }
 
     private suspend fun retryMissingThumbnail(messageId: String, immediate: Boolean) {

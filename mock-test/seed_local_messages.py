@@ -11,8 +11,7 @@ friend_contacts，也不会覆盖好友的 user_profiles，但会按需把 user_
 不做 git 操作、不改 app 代码；需要 adb 通路（debug 包走 run-as；模拟器/root 走 su）。
 
 用法：
-    python mock-test/seed_local_messages.py --user-a 15000000000 --start 15000000002 --end 15000000499 --per-peer 100
-    python mock-test/seed_local_messages.py --user-a 15000000000 --start 15000000002 --end 15000000499 --per-peer 100 --device 192.168.137.76:42595
+    python mock-test/seed_local_messages.py --user-a 15000000000 --start 15000000003 --end 15000000003 --per-peer 5000
 """
 
 import argparse
@@ -40,6 +39,7 @@ DEFAULT_PER_PEER = 100
 DEFAULT_MOCK_USER_DB = (
     Path(__file__).resolve().parent.parent / "mock-server" / "data" / "mock-im-users.sqlite"
 )
+DEFAULT_PEER_READ = "all"
 
 OUT_STATUS = "SENT"
 IN_STATUS = "RECEIVED"
@@ -217,6 +217,7 @@ def build_rows(
     friends: List[str],
     per_peer: int,
     now_ms: int,
+    peer_read_mode: str = DEFAULT_PEER_READ,
     user_a_profile: Optional[Tuple[str, str, str, Optional[str], int, int, None, None]] = None,
 ) -> Tuple[List[Tuple], List[Tuple], List[Tuple], List[Tuple]]:
     messages: List[Tuple] = []
@@ -229,10 +230,14 @@ def build_rows(
 
     for idx, peer in enumerate(friends):
         conv_id = conversation_id(user_a, peer)
-        # 基准时间：每个好友整体往后错开 1 秒，避免最后一条预览全部撞同一毫秒
-        base_t = now_ms - (len(friends) - idx) * 60_000
+        # 基准时间锚定“最后一条消息”接近 now_ms。
+        # 否则当 per_peer 很大时（例如 5000），k * 1000 会把最后一条消息推到未来一小时以后。
+        conversation_span_ms = max(per_peer - 1, 0) * 1000 + 500
+        base_t = now_ms - (len(friends) - idx) * 60_000 - conversation_span_ms
 
         last_msg_id, last_preview, last_time = None, None, None
+        last_out_server_seq = None
+        last_out_time = None
 
         for k in range(per_peer):
             t = base_t + k * 1000  # 每条 1s 间隔
@@ -240,10 +245,12 @@ def build_rows(
             # user_a → peer（OUTGOING）
             mid_out = f"seed-out-{peer}-{k}"
             content_out = f"[{user_a[-3:]}→{peer[-3:]}] 这是 A 发送的第 {k+1} 条消息"
+            out_client_seq = k * 2
+            out_server_seq = k * 2 + 1
             messages.append((
                 mid_out, conv_id, CONV_TYPE, None,
                 user_a, peer,
-                k * 2, k * 2 + 1,            # client_seq, server_seq
+                out_client_seq, out_server_seq,
                 content_out, None, MSG_TYPE,
                 None, None, None, None, None, None, None, None,
                 0, None, None,
@@ -251,6 +258,7 @@ def build_rows(
                 t, t,
             ))
             last_msg_id, last_preview, last_time = mid_out, content_out, t
+            last_out_server_seq, last_out_time = out_server_seq, t
 
             # peer → user_a（INCOMING），时间略晚于同序号的 OUT
             mid_in = f"seed-in-{peer}-{k}"
@@ -270,13 +278,19 @@ def build_rows(
 
         # 每条 INCOMING 算 1 条未读，UI 上能看到红点
         unread = per_peer
+        if peer_read_mode == "all":
+            peer_read_up_to_server_seq = last_out_server_seq
+            peer_read_at = last_out_time
+        else:
+            peer_read_up_to_server_seq = None
+            peer_read_at = None
         # peer_name/title 只是会话兜底显示名；真实昵称由已灌入的 user_profiles 提供。
         peer_name = peer
         conversations.append((
             conv_id, peer, peer_name, CONV_TYPE, peer_name, None,
             last_msg_id, last_preview, last_time,
             unread, 0,                       # unread_count, mention_unread_count
-            last_time, None, None,          # peer_read_* 留空
+            last_time, peer_read_up_to_server_seq, peer_read_at,
         ))
 
     return messages, conversations, profiles, contacts
@@ -346,6 +360,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--start", type=int, default=DEFAULT_START, help="候选 ID 起始（含）")
     p.add_argument("--end", type=int, default=DEFAULT_END, help="候选 ID 结束（含）")
     p.add_argument("--per-peer", type=int, default=DEFAULT_PER_PEER, help="每个好友的消息数（OUT/IN 各一半）")
+    p.add_argument(
+        "--peer-read",
+        choices=("all", "none"),
+        default=DEFAULT_PEER_READ,
+        help="是否给会话写入对端已读游标：all=所有 OUTGOING 显示已读，none=不写已读游标",
+    )
     p.add_argument("--mock-user-db", default=str(DEFAULT_MOCK_USER_DB), help="mock-server 用户库路径；用于补齐 user_a 的本地头像资料")
     p.add_argument("--keep-local", action="store_true", help="保留本地暂存 DB 文件")
     p.add_argument("--no-restart", action="store_true", help="写完不重启 app")
@@ -368,7 +388,7 @@ def main() -> int:
     else:
         print(f"[info] user_a={args.user_a} 已从候选范围剔除；好友 = {len(friends)} 个")
     print(f"[plan] user_a={args.user_a} friends={len(friends)} per_peer={args.per_peer} "
-          f"total_messages={len(friends) * args.per_peer * 2}")
+          f"total_messages={len(friends) * args.per_peer * 2} peer_read={args.peer_read}")
 
     try:
         global DEVICE_SERIAL
@@ -399,7 +419,12 @@ def main() -> int:
     else:
         print(f"[warn] mock 用户库不存在：{mock_user_db}；跳过补齐 user_a 本地头像")
     messages, conversations, profiles, contacts = build_rows(
-        args.user_a, friends, args.per_peer, now_ms, user_a_profile=user_a_profile
+        args.user_a,
+        friends,
+        args.per_peer,
+        now_ms,
+        peer_read_mode=args.peer_read,
+        user_a_profile=user_a_profile,
     )
     insert_all(cur, messages, conversations, profiles, contacts)
     con.commit()

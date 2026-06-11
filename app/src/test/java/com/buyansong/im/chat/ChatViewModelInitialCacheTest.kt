@@ -16,6 +16,7 @@ import com.buyansong.im.storage.InMemoryConversationDao
 import com.buyansong.im.storage.InMemoryMessageDao
 import com.buyansong.im.storage.InMemoryPendingMessageDao
 import com.buyansong.im.storage.InMemoryUserProfileDao
+import com.buyansong.im.storage.UserProfile
 import com.buyansong.im.storage.MessageDirection
 import com.buyansong.im.storage.MessageStatus
 import kotlinx.coroutines.CoroutineScope
@@ -102,5 +103,73 @@ class ChatViewModelInitialCacheTest {
 
         assertEquals(listOf("m1", "m2"), viewModel.state.value.messages.map { it.messageId })
         viewModel.stop()
+    }
+
+    @Test
+    fun constructor_usesCachedPeerProfileBeforeNetworkRefreshEvenWithoutMessageCache() {
+        val profileDao = InMemoryUserProfileDao()
+        profileDao.upsert(profile("u_b", nickname = "Bee", avatarUrl = "https://avatar.example/u_b.png"))
+        val repository = MessageRepository(
+            messageDao = InMemoryMessageDao(),
+            conversationDao = InMemoryConversationDao(),
+            pendingMessageDao = InMemoryPendingMessageDao(),
+            connection = FakeConnection(),
+            messageIdGenerator = MessageIdGenerator(),
+            seqGenerator = SeqGenerator()
+        )
+
+        val viewModel = ChatViewModel(
+            session = session(),
+            repository = repository,
+            connection = FakeConnection(),
+            profileRepository = ProfileRepository(profileDao, FakeProfileApi()),
+            initialPeerId = "u_b",
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            dispatcher = Dispatchers.Unconfined
+        )
+
+        assertEquals("Bee", viewModel.state.value.peerName)
+        assertEquals("https://avatar.example/u_b.png", viewModel.state.value.peerAvatarUrl)
+        viewModel.stop()
+    }
+
+    @Test
+    fun selectPeer_usesCachedPeerProfileInsteadOfFlashingPeerId() {
+        val profileDao = InMemoryUserProfileDao()
+        profileDao.upsert(profile("u_c", nickname = "Cee", avatarUrl = "https://avatar.example/u_c.png"))
+        val repository = MessageRepository(
+            messageDao = InMemoryMessageDao(),
+            conversationDao = InMemoryConversationDao(),
+            pendingMessageDao = InMemoryPendingMessageDao(),
+            connection = FakeConnection(),
+            messageIdGenerator = MessageIdGenerator(),
+            seqGenerator = SeqGenerator()
+        )
+        val viewModel = ChatViewModel(
+            session = session(),
+            repository = repository,
+            connection = FakeConnection(),
+            profileRepository = ProfileRepository(profileDao, FakeProfileApi()),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            dispatcher = Dispatchers.Unconfined
+        )
+
+        viewModel.selectPeer("u_c")
+
+        assertEquals("Cee", viewModel.state.value.peerName)
+        assertEquals("https://avatar.example/u_c.png", viewModel.state.value.peerAvatarUrl)
+        viewModel.stop()
+    }
+
+    private fun profile(userId: String, nickname: String, avatarUrl: String? = null): UserProfile {
+        return UserProfile(
+            userId = userId,
+            phone = userId,
+            nickname = nickname,
+            avatarUrl = avatarUrl,
+            avatarUpdatedAt = 0L,
+            updatedAt = 0L,
+            profileVersion = 1L
+        )
     }
 }
