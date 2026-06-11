@@ -68,6 +68,7 @@ import com.buyansong.im.auth.LoginViewModel
 import com.buyansong.im.auth.OkHttpAuthApi
 import com.buyansong.im.auth.SharedPreferencesTokenStore
 import com.buyansong.im.auth.ValidSessionProvider
+import com.buyansong.im.chat.ChatInitialImagePrewarmer
 import com.buyansong.im.chat.ChatScreen
 import com.buyansong.im.chat.ChatViewModel
 import com.buyansong.im.connection.OkHttpImConnection
@@ -433,9 +434,9 @@ private fun AuthenticatedImNavHost(
     val currentRoute = backStackEntry?.destination?.route
     val activity = LocalContext.current.findActivity()
     val lifecycleOwner = LocalLifecycleOwner.current
-    val alertScope = rememberCoroutineScope()
+    val uiScope = rememberCoroutineScope()
     val messageAlertController = remember(session.userId) {
-        MessageAlertController(scope = alertScope)
+        MessageAlertController(scope = uiScope)
     }
     val unreadBadgeController = remember(session.userId) {
         MessagesTabUnreadBadgeController(
@@ -456,9 +457,10 @@ private fun AuthenticatedImNavHost(
             connection = connection
         )
     }
-    val openPreloadedChat: (String) -> Unit = remember(messageRepository, navController) {
+    val openPreloadedChat: (String) -> Unit = remember(context, uiScope, messageRepository, navController) {
         { conversationId ->
-            messageRepository.preloadInitialPageSync(conversationId)
+            val messages = messageRepository.preloadInitialPageSync(conversationId)
+            ChatInitialImagePrewarmer.prewarmAsync(uiScope, context, messages)
             SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
         }
     }
