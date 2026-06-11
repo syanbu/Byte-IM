@@ -3,6 +3,10 @@ package com.buyansong.im.chat
 import com.buyansong.im.auth.AuthSession
 import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
+import com.buyansong.im.group.DefaultGroupReadCursorRepository
+import com.buyansong.im.group.GroupCreateResult
+import com.buyansong.im.group.GroupRepository
+import com.buyansong.im.group.GroupResult
 import com.buyansong.im.message.MessageIdGenerator
 import com.buyansong.im.message.MessageRepository
 import com.buyansong.im.message.SeqGenerator
@@ -12,10 +16,12 @@ import com.buyansong.im.profile.ProfileRepository
 import com.buyansong.im.profile.ProfileResult
 import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.ConversationType
+import com.buyansong.im.storage.GroupInfo
 import com.buyansong.im.storage.GroupMember
 import com.buyansong.im.storage.GroupMemberRole
 import com.buyansong.im.storage.GroupReadCursor
 import com.buyansong.im.storage.InMemoryConversationDao
+import com.buyansong.im.storage.InMemoryGroupReadCursorDao
 import com.buyansong.im.storage.InMemoryMessageDao
 import com.buyansong.im.storage.InMemoryPendingMessageDao
 import com.buyansong.im.storage.InMemoryUserProfileDao
@@ -25,10 +31,12 @@ import com.buyansong.im.storage.MessageType
 import com.buyansong.im.storage.TransactionRunner
 import com.buyansong.im.protocol.ImPacket
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -57,6 +65,46 @@ class ChatViewModelGroupReadReceiptTest {
             gender: com.buyansong.im.storage.Gender?,
             signature: String?
         ): ProfileResult = ProfileResult.Failure("unused")
+    }
+
+    private class FakeGroupRepository(
+        private val groupMembers: List<GroupMember>,
+        private val syncMembersGate: CompletableDeferred<Unit>? = null
+    ) : GroupRepository {
+        private val group = GroupInfo(
+            groupId = "g_1",
+            name = "group",
+            avatarUrl = null,
+            ownerId = "u_a",
+            createdAt = 0L,
+            updatedAt = 0L,
+            memberCount = groupMembers.size
+        )
+
+        override suspend fun createGroup(
+            accessToken: String,
+            ownerId: String,
+            name: String,
+            memberUserIds: List<String>,
+            now: Long
+        ): GroupCreateResult = GroupCreateResult.Failure("unused")
+
+        override suspend fun renameGroup(accessToken: String, groupId: String, name: String): GroupResult {
+            return GroupResult.Failure("unused")
+        }
+
+        override suspend fun syncGroups(accessToken: String): List<GroupInfo> = listOf(group)
+
+        override suspend fun syncMembers(accessToken: String, groupId: String): List<GroupMember> {
+            syncMembersGate?.await()
+            return groupMembers
+        }
+
+        override fun localMembers(groupId: String): List<GroupMember> = groupMembers
+
+        override fun localGroup(groupId: String): GroupInfo? = group
+
+        override fun joinedGroups(userId: String): List<GroupInfo> = listOf(group)
     }
 
     private fun session(userId: String = "u_receiver") = AuthSession(
@@ -92,7 +140,10 @@ class ChatViewModelGroupReadReceiptTest {
         conversationType = ConversationType.GROUP
     )
 
-    private fun newRepository(messageDao: InMemoryMessageDao = InMemoryMessageDao()): MessageRepository {
+    private fun newRepository(
+        messageDao: InMemoryMessageDao = InMemoryMessageDao(),
+        cursorDao: InMemoryGroupReadCursorDao? = null
+    ): MessageRepository {
         return MessageRepository(
             messageDao = messageDao,
             conversationDao = InMemoryConversationDao(),
@@ -102,16 +153,23 @@ class ChatViewModelGroupReadReceiptTest {
             seqGenerator = SeqGenerator(),
             transactionRunner = object : TransactionRunner {
                 override fun runInTransaction(block: () -> Unit) = block()
-            }
+            },
+            groupReadCursorRepository = cursorDao?.let(::DefaultGroupReadCursorRepository)
         )
     }
 
-    private fun newViewModel(repository: MessageRepository, initialPeerId: String): ChatViewModel {
+    private fun newViewModel(
+        repository: MessageRepository,
+        initialPeerId: String,
+        userId: String = "u_receiver",
+        groupRepository: GroupRepository? = null
+    ): ChatViewModel {
         return ChatViewModel(
-            session = session(),
+            session = session(userId),
             repository = repository,
             connection = FakeConnection(),
             profileRepository = ProfileRepository(InMemoryUserProfileDao(), FakeProfileApi()),
+            groupRepository = groupRepository,
             initialPeerId = initialPeerId,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
             dispatcher = Dispatchers.Unconfined
@@ -175,6 +233,50 @@ class ChatViewModelGroupReadReceiptTest {
 
         assertEquals(listOf("m1", "m2", "m3"), viewModel.state.value.messages.map { it.messageId })
         viewModel.stop()
+    }
+
+    @Test
+    fun start_groupConversationFirstMessageSnapshotIncludesReadIndicatorContext() = runBlocking {
+        val messageDao = InMemoryMessageDao()
+        val cursorDao = InMemoryGroupReadCursorDao()
+        val repository = newRepository(messageDao, cursorDao)
+        val members = listOf(member("u_a"), member("u_b"))
+        val syncMembersGate = CompletableDeferred<Unit>()
+        val viewModel = newViewModel(
+            repository = repository,
+            initialPeerId = "group:g_1",
+            userId = "u_a",
+            groupRepository = FakeGroupRepository(members, syncMembersGate)
+        )
+        messageDao.insertOrIgnore(msg("m1", "u_a", 1L).copy(createdAt = 1L, updatedAt = 1L))
+        messageDao.insertOrIgnore(
+            msg("m2", "u_b", 2L).copy(
+                createdAt = 2L,
+                updatedAt = 2L,
+                direction = MessageDirection.INCOMING
+            )
+        )
+        cursorDao.upsertIfGreater("g_1", "u_b", 1L, 100L)
+        val messageSnapshots = mutableListOf<ChatUiState>()
+        val collectJob = launch(Dispatchers.Unconfined) {
+            viewModel.state.collect { state ->
+                if (state.messages.isNotEmpty()) {
+                    messageSnapshots += state
+                }
+            }
+        }
+
+        try {
+            viewModel.start()
+
+            assertEquals(listOf("m1", "m2"), messageSnapshots.first().messages.map { it.messageId })
+            assertEquals("m1", messageSnapshots.first().latestOwnSentMessageId)
+            assertEquals(1, messageSnapshots.first().groupReadCountForLatest)
+        } finally {
+            syncMembersGate.complete(Unit)
+            viewModel.stop()
+            collectJob.cancel()
+        }
     }
 
     @Test

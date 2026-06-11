@@ -140,6 +140,50 @@ class ChatDisplayPolicyTest {
         assertEquals("group.png", avatar.avatarUrl)
     }
 
+    @Test
+    fun shouldShowGroupReadIndicator_onlyForLatestOwnGroupMessageWithReaders() {
+        val message = chatMessage(
+            createdAt = 1L,
+            conversationType = ConversationType.GROUP
+        ).copy(
+            messageId = "m1",
+            direction = MessageDirection.OUTGOING
+        )
+
+        assertTrue(
+            ChatDisplayPolicy.shouldShowGroupReadIndicator(
+                peerId = "group:g_1",
+                message = message,
+                latestOwnSentMessageId = "m1",
+                groupReadCountForLatest = 1
+            )
+        )
+        assertFalse(
+            ChatDisplayPolicy.shouldShowGroupReadIndicator(
+                peerId = "u_b",
+                message = message.copy(conversationType = ConversationType.SINGLE),
+                latestOwnSentMessageId = "m1",
+                groupReadCountForLatest = 1
+            )
+        )
+        assertFalse(
+            ChatDisplayPolicy.shouldShowGroupReadIndicator(
+                peerId = "group:g_1",
+                message = message,
+                latestOwnSentMessageId = "m2",
+                groupReadCountForLatest = 1
+            )
+        )
+        assertFalse(
+            ChatDisplayPolicy.shouldShowGroupReadIndicator(
+                peerId = "group:g_1",
+                message = message,
+                latestOwnSentMessageId = "m1",
+                groupReadCountForLatest = 0
+            )
+        )
+    }
+
     private fun chatMessage(
         createdAt: Long,
         conversationType: ConversationType = ConversationType.SINGLE

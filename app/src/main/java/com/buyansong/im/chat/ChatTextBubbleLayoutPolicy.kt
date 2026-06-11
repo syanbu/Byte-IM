@@ -9,4 +9,5 @@ object ChatTextBubbleLayoutPolicy {
         require(availableRowWidthDp > 0) { "availableRowWidthDp must be positive" }
         return (availableRowWidthDp * MaxBubbleWidthFraction).roundToInt()
     }
+
 }

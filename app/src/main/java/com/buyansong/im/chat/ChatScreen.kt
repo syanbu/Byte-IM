@@ -375,6 +375,7 @@ fun ChatScreen(
                             }
                             ChatMessageRow(
                                 message = message,
+                                peerId = state.peerId,
                                 peerName = state.peerName,
                                 peerAvatarUrl = state.peerAvatarUrl,
                                 currentUserAvatarUrl = state.currentUserAvatarUrl,
@@ -382,6 +383,9 @@ fun ChatScreen(
                                 senderProfile = state.senderProfiles[message.senderId],
                                 peerReadUpToServerSeq = state.peerReadUpToServerSeq,
                                 mentionMembers = state.mentionMembers,
+                                latestOwnSentMessageId = state.latestOwnSentMessageId,
+                                groupReadCountForLatest = state.groupReadCountForLatest,
+                                onOpenGroupReadDetail = { showGroupReadSheet = true },
                                 showActions = activeActionMessageId == message.messageId,
                                 onOpenImagePreview = { previewMessage = it },
                                 onOpenActions = { activeActionMessageId = message.messageId },
@@ -401,16 +405,6 @@ fun ChatScreen(
                                 },
                                 onOpenUserProfile = onOpenUserProfile
                             )
-                            if (
-                                state.peerId.startsWith("group:") &&
-                                message.messageId == state.latestOwnSentMessageId &&
-                                state.groupReadCountForLatest > 0
-                            ) {
-                                GroupReadIndicator(
-                                    count = state.groupReadCountForLatest,
-                                    onClick = { showGroupReadSheet = true }
-                                )
-                            }
                         }
                     }
                 }
@@ -683,6 +677,7 @@ private fun ChatComposerBar(
 @Composable
 private fun ChatMessageRow(
     message: ChatMessage,
+    peerId: String,
     peerName: String,
     peerAvatarUrl: String?,
     currentUserAvatarUrl: String?,
@@ -690,6 +685,9 @@ private fun ChatMessageRow(
     senderProfile: com.buyansong.im.storage.UserProfile?,
     peerReadUpToServerSeq: Long?,
     mentionMembers: List<GroupMember>,
+    latestOwnSentMessageId: String?,
+    groupReadCountForLatest: Int,
+    onOpenGroupReadDetail: () -> Unit,
     showActions: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onOpenActions: () -> Unit,
@@ -735,10 +733,14 @@ private fun ChatMessageRow(
         }
         ChatMessageContent(
             message = message,
+            peerId = peerId,
             currentUserId = currentUserId,
             outgoing = outgoing,
             peerReadUpToServerSeq = peerReadUpToServerSeq,
             mentionMembers = mentionMembers,
+            latestOwnSentMessageId = latestOwnSentMessageId,
+            groupReadCountForLatest = groupReadCountForLatest,
+            onOpenGroupReadDetail = onOpenGroupReadDetail,
             showActions = showActions,
             onOpenImagePreview = onOpenImagePreview,
             onOpenActions = onOpenActions,
@@ -766,10 +768,14 @@ private fun ChatMessageRow(
 @OptIn(ExperimentalFoundationApi::class)
 private fun ChatMessageContent(
     message: ChatMessage,
+    peerId: String,
     currentUserId: String,
     outgoing: Boolean,
     peerReadUpToServerSeq: Long?,
     mentionMembers: List<GroupMember>,
+    latestOwnSentMessageId: String?,
+    groupReadCountForLatest: Int,
+    onOpenGroupReadDetail: () -> Unit,
     showActions: Boolean,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onOpenActions: () -> Unit,
@@ -789,9 +795,13 @@ private fun ChatMessageContent(
         val maxBubbleWidth = ChatTextBubbleLayoutPolicy.maxBubbleWidth(maxWidth.value.roundToInt()).dp
         ChatBubbleLine(
             message = message,
+            peerId = peerId,
             outgoing = outgoing,
             peerReadUpToServerSeq = peerReadUpToServerSeq,
             mentionMembers = mentionMembers,
+            latestOwnSentMessageId = latestOwnSentMessageId,
+            groupReadCountForLatest = groupReadCountForLatest,
+            onOpenGroupReadDetail = onOpenGroupReadDetail,
             maxBubbleWidth = maxBubbleWidth,
             onOpenImagePreview = onOpenImagePreview,
             onRetryImage = onRetryImage,
@@ -848,15 +858,25 @@ private fun ChatMessageTimeSeparator(
 @Composable
 private fun ChatBubbleLine(
     message: ChatMessage,
+    peerId: String,
     outgoing: Boolean,
     peerReadUpToServerSeq: Long?,
     mentionMembers: List<GroupMember>,
+    latestOwnSentMessageId: String?,
+    groupReadCountForLatest: Int,
+    onOpenGroupReadDetail: () -> Unit,
     maxBubbleWidth: Dp,
     onOpenImagePreview: (ChatMessage) -> Unit,
     onRetryImage: (ChatMessage) -> Unit,
     onLongPressImage: () -> Unit,
     onLongPressText: () -> Unit
 ) {
+    val showGroupReadIndicator = ChatDisplayPolicy.shouldShowGroupReadIndicator(
+        peerId = peerId,
+        message = message,
+        latestOwnSentMessageId = latestOwnSentMessageId,
+        groupReadCountForLatest = groupReadCountForLatest
+    )
     Row(
         horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically
@@ -866,7 +886,9 @@ private fun ChatBubbleLine(
                 message = message,
                 peerReadUpToServerSeq = peerReadUpToServerSeq,
                 showReadMarker = message.conversationType == ConversationType.SINGLE,
+                groupReadCount = if (showGroupReadIndicator) groupReadCountForLatest else 0,
                 status = message.status,
+                onOpenGroupReadDetail = onOpenGroupReadDetail,
                 onRetry = {
                     if (message.type == MessageType.IMAGE) {
                         onRetryImage(message)
@@ -920,7 +942,7 @@ private fun ChatTextBubble(
                     horizontal = ByteImDimensions.BubbleHorizontalPadding,
                     vertical = ByteImDimensions.BubbleVerticalPadding
                 )
-        )
+            )
     }
 }
 
@@ -1022,11 +1044,15 @@ private fun OutgoingMessageStatus(
     message: ChatMessage,
     peerReadUpToServerSeq: Long?,
     showReadMarker: Boolean,
+    groupReadCount: Int,
     status: MessageStatus,
+    onOpenGroupReadDetail: () -> Unit = {},
     onRetry: () -> Unit = {}
 ) {
     Box(
-        modifier = Modifier.size(18.dp),
+        modifier = Modifier
+            .heightIn(min = 18.dp)
+            .widthIn(min = 18.dp),
         contentAlignment = Alignment.Center
     ) {
         when (status) {
@@ -1044,6 +1070,19 @@ private fun OutgoingMessageStatus(
             )
             MessageStatus.SENT,
             MessageStatus.RECEIVED -> {
+                if (groupReadCount > 0) {
+                    Text(
+                        text = "$groupReadCount 人已读",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = ByteImColors.PrimaryGreen,
+                        modifier = Modifier.clickable(
+                            indication = null,
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            onClick = onOpenGroupReadDetail
+                        )
+                    )
+                    return@Box
+                }
                 if (!showReadMarker) return@Box
                 val isRead = message.serverSeq != null &&
                     peerReadUpToServerSeq != null &&

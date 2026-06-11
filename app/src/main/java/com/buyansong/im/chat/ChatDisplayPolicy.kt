@@ -111,6 +111,19 @@ object ChatDisplayPolicy {
         }
     }
 
+    fun shouldShowGroupReadIndicator(
+        peerId: String,
+        message: ChatMessage,
+        latestOwnSentMessageId: String?,
+        groupReadCountForLatest: Int
+    ): Boolean {
+        return peerId.startsWith("group:") &&
+            message.conversationType == ConversationType.GROUP &&
+            message.direction == MessageDirection.OUTGOING &&
+            message.messageId == latestOwnSentMessageId &&
+            groupReadCountForLatest > 0
+    }
+
     fun historyStatusText(state: ChatUiState): String? {
         if (state.messages.isEmpty()) {
             return null

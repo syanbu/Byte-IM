@@ -30,6 +30,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -232,6 +233,7 @@ class ChatViewModel(
     private val jobs = mutableListOf<Job>()
     private var groupReadObservationJob: Job? = null
     private var latestGroupReadCursors: List<com.buyansong.im.storage.GroupReadCursor> = emptyList()
+    private var groupReadContextPeerId: String? = null
     private val thumbnailRetryCounts = mutableMapOf<String, Int>()
     private val thumbnailRetryJobs = mutableMapOf<String, Job>()
 
@@ -247,9 +249,17 @@ class ChatViewModel(
         if (mutableState.value.peerId.isNotBlank()) {
             openCurrentConversation()
         }
-        startGroupReadObservation()
         connectIfNeeded()
+        val initialRefreshJob = scope.launch(dispatcher) {
+            prepareGroupReadContextForFirstRender()
+            refreshInitialPage()
+            refreshProfiles()
+            recomputeGroupReadIndicator()
+            scheduleMissingThumbnailRetries(immediate = true)
+        }
+        jobs += initialRefreshJob
         jobs += scope.launch(dispatcher) {
+            initialRefreshJob.join()
             repository.conversationUpdates.collect {
                 refreshKeepingHistory()
                 sendGroupReadAckIfNeeded()
@@ -263,12 +273,6 @@ class ChatViewModel(
                 mutableState.value = mutableState.value.copy(errorMessage = message)
             }
         }
-        jobs += scope.launch(dispatcher) {
-            refreshInitialPage()
-            refreshProfiles()
-            recomputeGroupReadIndicator()
-            scheduleMissingThumbnailRetries(immediate = true)
-        }
     }
 
     fun stop() {
@@ -278,6 +282,7 @@ class ChatViewModel(
         jobs.forEach { it.cancel() }
         jobs.clear()
         groupReadObservationJob = null
+        groupReadContextPeerId = null
         thumbnailRetryJobs.values.forEach { it.cancel() }
         thumbnailRetryJobs.clear()
         thumbnailRetryCounts.clear()
@@ -302,15 +307,16 @@ class ChatViewModel(
             peerReadUpToServerSeq = null,
             latestOwnSentMessageId = null,
             groupReadCountForLatest = 0,
-            groupReadersForLatest = emptyList()
+            groupReadersForLatest = emptyList(),
+            mentionMembers = emptyList()
         )
         scope.launch(dispatcher) {
             if (trimmedPeerId.isNotEmpty()) {
                 openCurrentConversation()
             }
-            startGroupReadObservation()
-            refreshProfiles()
+            prepareGroupReadContextForFirstRender()
             refreshInitialPage()
+            refreshProfiles()
             recomputeGroupReadIndicator()
             scheduleMissingThumbnailRetries(immediate = true)
         }
@@ -697,6 +703,9 @@ class ChatViewModel(
         if (peerId.isEmpty()) {
             return
         }
+        if (peerId.isGroupConversationId() && groupReadContextPeerId != peerId) {
+            return
+        }
         val currentMessages = mutableState.value.messages
         val limit = maxOf(HISTORY_PAGE_SIZE, currentMessages.size)
         val latestMessages = historyPage(peerId, beforeTime = null, limit = limit)
@@ -713,6 +722,9 @@ class ChatViewModel(
         if (peerId.isEmpty()) {
             return
         }
+        if (peerId.isGroupConversationId() && groupReadContextPeerId != peerId) {
+            return
+        }
         val current = mutableState.value
         val limit = maxOf(HISTORY_PAGE_SIZE, current.messages.size)
         val latestMessages = historyPage(peerId, beforeTime = null, limit = limit)
@@ -723,17 +735,54 @@ class ChatViewModel(
         recomputeGroupReadIndicator()
     }
 
-    private fun startGroupReadObservation() {
+    private suspend fun prepareGroupReadContextForFirstRender() {
+        val targetId = mutableState.value.peerId
+        startGroupReadObservation()
+        if (!targetId.isGroupConversationId() || mutableState.value.peerId != targetId) {
+            return
+        }
+        applyLocalGroupReadMembers(targetId)
+        groupReadContextPeerId = targetId
+        recomputeGroupReadIndicator()
+    }
+
+    private fun applyLocalGroupReadMembers(peerId: String) {
+        if (!peerId.isGroupConversationId()) {
+            mutableState.value = mutableState.value.copy(mentionMembers = emptyList())
+            return
+        }
+        val groupRepo = groupRepository ?: return
+        val groupId = peerId.removePrefix("group:")
+        val localMembers = groupRepo.localMembers(groupId)
+        if (localMembers.isEmpty()) {
+            return
+        }
+        val profilesById = localMembers
+            .mapNotNull { profileRepository.localProfile(it.userId) }
+            .associateBy { it.userId }
+        mutableState.value = mutableState.value.copy(
+            mentionMembers = profileRepository.backfillFromProfiles(localMembers, profilesById)
+        )
+    }
+
+    private suspend fun startGroupReadObservation() {
         groupReadObservationJob?.cancel()
         groupReadObservationJob = null
         val targetId = mutableState.value.peerId
         if (!targetId.isGroupConversationId()) {
             latestGroupReadCursors = emptyList()
+            groupReadContextPeerId = null
             recomputeGroupReadIndicator(emptyList())
             return
         }
         val groupId = targetId.removePrefix("group:")
         latestGroupReadCursors = emptyList()
+        groupReadContextPeerId = null
+        val initialCursors = repository.observeGroupReadCursors(groupId).first()
+        if (mutableState.value.peerId != targetId) {
+            return
+        }
+        latestGroupReadCursors = initialCursors
         groupReadObservationJob = scope.launch(dispatcher) {
             repository.observeGroupReadCursors(groupId).collect { cursors ->
                 if (mutableState.value.peerId == targetId) {
