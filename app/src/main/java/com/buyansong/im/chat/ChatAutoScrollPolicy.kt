@@ -75,6 +75,17 @@ object ChatAutoScrollPolicy {
         return currentImeBottomPx - previousImeBottomPx
     }
 
+    fun moreActionsExpansionScrollDeltaPx(
+        panelHeightPx: Int,
+        messageCount: Int,
+        lastVisibleIndexBeforeExpansion: Int
+    ): Int {
+        if (panelHeightPx <= 0 || messageCount <= 0) return 0
+        val latestIndex = scrollToLatestIndex(messageCount)
+        if (lastVisibleIndexBeforeExpansion < latestIndex) return 0
+        return panelHeightPx
+    }
+
     fun shouldLoadEarlierHistory(
         visibleMaxIndex: Int,
         messageCount: Int,

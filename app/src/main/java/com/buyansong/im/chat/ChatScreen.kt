@@ -60,6 +60,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
@@ -153,12 +154,15 @@ fun ChatScreen(
     val density = LocalDensity.current
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     var previousImeBottomPx by remember { mutableStateOf(imeBottomPx) }
+    var moreActionsPanelHeightPx by remember { mutableStateOf(0) }
     val lastVisibleMessageIndex by remember(listState) {
         derivedStateOf {
             listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
         }
     }
     var lastVisibleIndexBeforeImeExpansion by remember { mutableStateOf(lastVisibleMessageIndex) }
+    var lastVisibleIndexBeforeMoreActionsExpansion by remember { mutableStateOf(lastVisibleMessageIndex) }
+    var didScrollForMoreActionsExpansion by remember { mutableStateOf(false) }
     val albumViewModel = remember(albumSessionId) {
         AlbumPickerViewModel(AndroidAlbumImageRepository(context.contentResolver))
     }
@@ -243,6 +247,31 @@ fun ChatScreen(
             listState.animateScrollBy(imeScrollDeltaPx.toFloat())
         }
         previousImeBottomPx = imeBottomPx
+    }
+
+    LaunchedEffect(showMoreActions, lastVisibleMessageIndex) {
+        if (!showMoreActions) {
+            lastVisibleIndexBeforeMoreActionsExpansion = lastVisibleMessageIndex
+        }
+    }
+
+    LaunchedEffect(showMoreActions, moreActionsPanelHeightPx, state.messages.size) {
+        if (!showMoreActions) {
+            didScrollForMoreActionsExpansion = false
+            return@LaunchedEffect
+        }
+        if (didScrollForMoreActionsExpansion) return@LaunchedEffect
+        if (moreActionsPanelHeightPx <= 0) return@LaunchedEffect
+
+        val moreActionsScrollDeltaPx = ChatAutoScrollPolicy.moreActionsExpansionScrollDeltaPx(
+            panelHeightPx = moreActionsPanelHeightPx,
+            messageCount = state.messages.size,
+            lastVisibleIndexBeforeExpansion = lastVisibleIndexBeforeMoreActionsExpansion
+        )
+        if (moreActionsScrollDeltaPx > 0) {
+            listState.animateScrollBy(moreActionsScrollDeltaPx.toFloat())
+        }
+        didScrollForMoreActionsExpansion = true
     }
 
     LaunchedEffect(shouldLoadEarlierHistory) {
@@ -409,6 +438,7 @@ fun ChatScreen(
                     showMoreActions = !showMoreActions
                 },
                 onDismissMoreActions = { showMoreActions = false },
+                onMoreActionsPanelHeightChanged = { moreActionsPanelHeightPx = it },
                 onPickMoreActionImage = {
                     showMoreActions = false
                     if (ContextCompat.checkSelfPermission(context, albumPermission) == PackageManager.PERMISSION_GRANTED) {
@@ -543,6 +573,7 @@ private fun ChatComposerBar(
     showMoreActions: Boolean,
     onMoreActionsClick: () -> Unit,
     onDismissMoreActions: () -> Unit,
+    onMoreActionsPanelHeightChanged: (Int) -> Unit,
     onPickMoreActionImage: () -> Unit,
     mentionFocusRequester: androidx.compose.ui.focus.FocusRequester,
     onEmojiClick: () -> Unit = {}
@@ -639,6 +670,7 @@ private fun ChatComposerBar(
         }
         if (showMoreActions && !hasText) {
             ChatMoreActionsPanel(
+                modifier = Modifier.onSizeChanged { onMoreActionsPanelHeightChanged(it.height) },
                 onPickImage = {
                     onDismissMoreActions()
                     onPickMoreActionImage()

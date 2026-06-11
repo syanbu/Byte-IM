@@ -183,4 +183,40 @@ class ChatAutoScrollPolicyTest {
             )
         )
     }
+
+    @Test
+    fun moreActionsExpansionScrollDelta_whenPanelExpandsAndUserWasAtBottom_returnsPanelHeight() {
+        assertEquals(
+            240,
+            ChatAutoScrollPolicy.moreActionsExpansionScrollDeltaPx(
+                panelHeightPx = 240,
+                messageCount = 12,
+                lastVisibleIndexBeforeExpansion = 11
+            )
+        )
+    }
+
+    @Test
+    fun moreActionsExpansionScrollDelta_whenUserReadsHistory_returnsZero() {
+        assertEquals(
+            0,
+            ChatAutoScrollPolicy.moreActionsExpansionScrollDeltaPx(
+                panelHeightPx = 240,
+                messageCount = 12,
+                lastVisibleIndexBeforeExpansion = 6
+            )
+        )
+    }
+
+    @Test
+    fun moreActionsExpansionScrollDelta_whenPanelHasNoMeasuredHeight_returnsZero() {
+        assertEquals(
+            0,
+            ChatAutoScrollPolicy.moreActionsExpansionScrollDeltaPx(
+                panelHeightPx = 0,
+                messageCount = 12,
+                lastVisibleIndexBeforeExpansion = 11
+            )
+        )
+    }
 }

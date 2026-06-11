@@ -25,10 +25,11 @@ import com.buyansong.im.ui.ByteImColors
 
 @Composable
 fun ChatMoreActionsPanel(
+    modifier: Modifier = Modifier,
     onPickImage: () -> Unit
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(ByteImColors.AppBackground)
     ) {
