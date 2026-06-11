@@ -1,5 +1,10 @@
 package com.buyansong.imserver.tools;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.LongSupplier;
+
 import com.buyansong.imserver.auth.AuthService;
 import com.buyansong.imserver.auth.PasswordHasher;
 import com.buyansong.imserver.auth.SecureSaltGenerator;
@@ -9,13 +14,8 @@ import com.buyansong.imserver.friend.FriendStore;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.LongSupplier;
-
 public final class MockFriendSeeder {
-    public static final int ACCOUNT_COUNT = 1000;
+    public static final int ACCOUNT_COUNT = 500;
     public static final int HUB_ACCOUNT_COUNT = 3;
     public static final String PASSWORD = "123456";
     private static final long FIRST_PHONE = 15_000_000_000L;

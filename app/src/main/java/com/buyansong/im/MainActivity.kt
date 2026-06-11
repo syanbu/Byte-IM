@@ -206,6 +206,16 @@ class MainActivity : ComponentActivity() {
                     connection.notifyNetworkAvailable()
                 }
             }
+
+            override fun onLost(network: Network) {
+                if (!manager.hasInternetCapableNetwork()) {
+                    connection.notifyNetworkUnavailable()
+                }
+            }
+
+            override fun onUnavailable() {
+                connection.notifyNetworkUnavailable()
+            }
         }
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -222,6 +232,14 @@ class MainActivity : ComponentActivity() {
         connectivityManager = null
     }
 
+}
+
+@Suppress("DEPRECATION")
+private fun ConnectivityManager.hasInternetCapableNetwork(): Boolean {
+    return allNetworks.any { network ->
+        getNetworkCapabilities(network)
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }
 }
 
 private val ByteImColorScheme = lightColorScheme(

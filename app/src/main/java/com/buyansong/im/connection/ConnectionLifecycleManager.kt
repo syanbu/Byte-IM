@@ -107,6 +107,24 @@ class ConnectionLifecycleManager(
         }
     }
 
+    fun notifyNetworkUnavailable() {
+        if (!started) {
+            return
+        }
+        when (connection.states.value) {
+            ConnectionState.Authenticated,
+            ConnectionState.Connecting,
+            ConnectionState.Connected -> {
+                heartbeatJob?.cancel()
+                heartbeatJob = null
+                scheduleReconnect(reason = "network unavailable", disconnectBeforeDelay = true)
+            }
+            ConnectionState.Disconnected,
+            is ConnectionState.Failed -> scheduleReconnect("network unavailable")
+            is ConnectionState.Reconnecting -> Unit
+        }
+    }
+
     override fun send(packet: ImPacket): Boolean {
         return sendPacket(packet)
     }
