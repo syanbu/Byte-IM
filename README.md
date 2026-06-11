@@ -6,7 +6,7 @@ ByteIM 是一个本地自研 IM 项目，包含 Android 客户端和 Java/Netty 
 
 ## 项目目标
 
-原始目标见 [docs/bg/ProjectTarget.md](docs/bg/ProjectTarget.md)。它定义了 13 个功能方向：
+原始目标见 [docs/bg/PROJECT_TARGET.md](docs/bg/PROJECT_TARGET.md)。它定义了 13 个功能方向：
 
 | 编号 | 功能 | 当前状态 |
 | --- | --- | --- |
@@ -172,10 +172,9 @@ cd mock-server
 ## 文档导航
 
 - 文档总索引：[docs/readme.md](docs/readme.md)
-- 原始项目目标：[docs/bg/ProjectTarget.md](docs/bg/ProjectTarget.md)
-- 当前项目背景：[docs/bg/ProjectBg.md](docs/bg/ProjectBg.md)
+- 原始项目目标：[docs/bg/PROJECT_TARGET.md](docs/bg/PROJECT_TARGET.md)
+- 当前项目背景：[docs/bg/PROJECT_BACKGROUND.md](docs/bg/PROJECT_BACKGROUND.md)
 - 开发状态索引：[docs/bg/DEVELOPMENT_STATUS.md](docs/bg/DEVELOPMENT_STATUS.md)
-- 开发约束：[docs/bg/DEVELOPMENT-CONSTRAINTS.md](docs/bg/DEVELOPMENT-CONSTRAINTS.md)
 - 协议说明：[docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md](docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md)
 - 模块状态：[docs/status/](docs/status/)
 - 功能设计说明：[docs/feature-notes/](docs/feature-notes/)
