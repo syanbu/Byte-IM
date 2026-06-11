@@ -199,9 +199,8 @@ fun ChatScreen(
         state.isLoadingMore
     ) {
         derivedStateOf {
-            val visibleMaxIndex = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
             ChatAutoScrollPolicy.shouldLoadEarlierHistory(
-                visibleMaxIndex = visibleMaxIndex,
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 messageCount = state.messages.size,
                 hasMoreLocal = state.hasMoreLocal,
                 isLoadingMore = state.isLoadingMore

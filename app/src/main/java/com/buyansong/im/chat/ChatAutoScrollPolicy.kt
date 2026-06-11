@@ -1,7 +1,7 @@
 package com.buyansong.im.chat
 
 object ChatAutoScrollPolicy {
-    private const val LOAD_EARLIER_THRESHOLD_ITEMS = 6
+    private const val LOAD_EARLIER_THRESHOLD_ITEMS = 10
     private const val MAX_RETAINED_MESSAGES = 2_000
 
     enum class ScrollAction {
@@ -87,7 +87,7 @@ object ChatAutoScrollPolicy {
     }
 
     fun shouldLoadEarlierHistory(
-        visibleMaxIndex: Int,
+        firstVisibleItemIndex: Int,
         messageCount: Int,
         hasMoreLocal: Boolean,
         isLoadingMore: Boolean
@@ -95,7 +95,6 @@ object ChatAutoScrollPolicy {
         if (messageCount == 0 || messageCount >= MAX_RETAINED_MESSAGES || !hasMoreLocal || isLoadingMore) {
             return false
         }
-        val triggerIndex = maxOf(0, messageCount - LOAD_EARLIER_THRESHOLD_ITEMS)
-        return visibleMaxIndex >= triggerIndex
+        return firstVisibleItemIndex <= LOAD_EARLIER_THRESHOLD_ITEMS
     }
 }

@@ -220,4 +220,28 @@ class ChatAutoScrollPolicyTest {
         )
     }
 
+    @Test
+    fun shouldLoadEarlierHistory_whenFirstVisibleItemIsNearTop_returnsTrue() {
+        assertTrue(
+            ChatAutoScrollPolicy.shouldLoadEarlierHistory(
+                10,
+                100,
+                true,
+                false
+            )
+        )
+    }
+
+    @Test
+    fun shouldLoadEarlierHistory_whenOnlyBottomItemsAreVisible_returnsFalse() {
+        assertFalse(
+            ChatAutoScrollPolicy.shouldLoadEarlierHistory(
+                95,
+                100,
+                true,
+                false
+            )
+        )
+    }
+
 }

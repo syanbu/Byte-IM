@@ -33,7 +33,7 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             null,
             null,
             "created_at DESC, server_seq DESC, client_seq DESC, message_id DESC",
-            null
+            limit.toString()
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
