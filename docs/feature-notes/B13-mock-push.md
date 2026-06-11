@@ -132,6 +132,7 @@ ensureValidSession()
   -> POST /push/ack
   -> ack 成功：保存 latestPushId
 ```
+pending：当前用户还没被客户端拉取并 ack 的 mock push 通知记录
 
 网络或 ack 失败时返回 `Result.retry()`，交给 WorkManager 退避重试。
 
@@ -155,7 +156,7 @@ pendingPushDeepLink
   -> navigate("chat/{conversationId}")
   -> 清空 pending deep-link
 ```
-
+系统通知是 App 调用 Android 的 NotificationManager 发出去的；PendingIntent 是通知点击后的动作；extras 是这张动作票据里携带的参数，用来告诉 MainActivity 点击后应该跳到哪个 ChatScreen。
 ### 消息如何真正落库
 
 push payload 首版只承载通知预览和 deep-link 必需字段，不伪造完整 `RECEIVE_MESSAGE`。

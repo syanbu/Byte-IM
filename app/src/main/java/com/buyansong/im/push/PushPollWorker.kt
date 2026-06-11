@@ -76,7 +76,7 @@ class PushPollWorker(
         return Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
-
+    // 发送系统级通知
     private fun postNotification(context: Context, item: PushPendingItem) {
         val notification = NotificationCompat.Builder(context, PushNotifications.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_nav_message)
@@ -84,6 +84,7 @@ class PushPollWorker(
             .setContentText(item.preview)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // 用户点击通知后，打开对应的聊天界面
             .setContentIntent(
                 PushDeepLink.buildPendingIntent(
                     context = context,
