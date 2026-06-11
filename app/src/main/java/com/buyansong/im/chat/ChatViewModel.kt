@@ -292,6 +292,8 @@ class ChatViewModel(
             peerId = trimmedPeerId,
             peerName = peerName,
             peerAvatarUrl = peerAvatarUrl,
+            currentUserAvatarUrl = cachedCurrentUserAvatarUrl(),
+            senderProfiles = emptyMap(),
             messages = emptyList(),
             isLoadingMore = false,
             hasMoreLocal = true,
@@ -598,7 +600,8 @@ class ChatViewModel(
             hasMoreLocal = messages.size == HISTORY_PAGE_SIZE,
             isHistoryMemoryLimitReached = false,
             errorMessage = null,
-            peerReadUpToServerSeq = peerReadCursor(peerId)
+            peerReadUpToServerSeq = peerReadCursor(peerId),
+            senderProfiles = cachedSenderProfiles(messages)
         )
         recomputeGroupReadIndicator()
     }
@@ -829,16 +832,31 @@ class ChatViewModel(
             hasMoreLocal = orderedMessages.size == HISTORY_PAGE_SIZE,
             isHistoryMemoryLimitReached = false,
             errorMessage = null,
-            peerReadUpToServerSeq = repository.conversationPeerReadCursorByConversationId(conversationId)
+            peerReadUpToServerSeq = repository.conversationPeerReadCursorByConversationId(conversationId),
+            senderProfiles = cachedSenderProfiles(orderedMessages)
         )
         recomputeGroupReadIndicator()
     }
 
     private fun applyCachedCurrentUserDisplay() {
-        val currentUserProfile = profileRepository.localProfile(session.userId)
         mutableState.value = mutableState.value.copy(
-            currentUserAvatarUrl = currentUserProfile?.avatarUrl
+            currentUserAvatarUrl = cachedCurrentUserAvatarUrl()
         )
+    }
+
+    private fun cachedCurrentUserAvatarUrl(): String? {
+        return profileRepository.localProfile(session.userId)?.avatarUrl
+    }
+
+    private fun cachedSenderProfiles(messages: List<ChatMessage>): Map<String, UserProfile> {
+        val senderIds = messages
+            .map { it.senderId }
+            .filter { it.isNotBlank() }
+            .distinct()
+        if (senderIds.isEmpty()) {
+            return emptyMap()
+        }
+        return profileRepository.localProfiles(senderIds).associateBy { it.userId }
     }
 
     private fun applyCachedPeerDisplay(peerId: String) {

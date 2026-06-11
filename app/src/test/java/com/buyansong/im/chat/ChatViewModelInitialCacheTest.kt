@@ -17,6 +17,7 @@ import com.buyansong.im.storage.InMemoryMessageDao
 import com.buyansong.im.storage.InMemoryPendingMessageDao
 import com.buyansong.im.storage.InMemoryUserProfileDao
 import com.buyansong.im.storage.UserProfile
+import com.buyansong.im.storage.ConversationType
 import com.buyansong.im.storage.MessageDirection
 import com.buyansong.im.storage.MessageStatus
 import kotlinx.coroutines.CoroutineScope
@@ -82,6 +83,25 @@ class ChatViewModelInitialCacheTest {
             createdAt = createdAt,
             updatedAt = createdAt,
             senderProfileVersion = senderProfileVersion
+        )
+    }
+
+    private fun groupMessage(id: String, createdAt: Long, senderId: String = "u_b"): ChatMessage {
+        return ChatMessage(
+            messageId = id,
+            conversationId = "group:g1",
+            senderId = senderId,
+            receiverId = "g1",
+            clientSeq = createdAt,
+            serverSeq = createdAt,
+            content = id,
+            status = MessageStatus.RECEIVED,
+            direction = MessageDirection.INCOMING,
+            createdAt = createdAt,
+            updatedAt = createdAt,
+            conversationType = ConversationType.GROUP,
+            groupId = "g1",
+            groupName = "Group"
         )
     }
 
@@ -169,6 +189,37 @@ class ChatViewModelInitialCacheTest {
     }
 
     @Test
+    fun constructor_usesCachedGroupSenderProfilesBeforeNetworkRefresh() {
+        val profileDao = InMemoryUserProfileDao()
+        profileDao.upsert(profile("u_b", nickname = "Bee", avatarUrl = "https://avatar.example/u_b.png"))
+        val messageDao = InMemoryMessageDao()
+        val repository = MessageRepository(
+            messageDao = messageDao,
+            conversationDao = InMemoryConversationDao(),
+            pendingMessageDao = InMemoryPendingMessageDao(),
+            connection = FakeConnection(),
+            messageIdGenerator = MessageIdGenerator(),
+            seqGenerator = SeqGenerator()
+        )
+        messageDao.insertOrIgnore(groupMessage("m1", 1L))
+        repository.preloadInitialPageSync("group:g1")
+
+        val viewModel = ChatViewModel(
+            session = session(),
+            repository = repository,
+            connection = FakeConnection(),
+            profileRepository = ProfileRepository(profileDao, FakeProfileApi()),
+            initialPeerId = "group:g1",
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            dispatcher = Dispatchers.Unconfined
+        )
+
+        assertEquals("Bee", viewModel.state.value.senderProfiles["u_b"]?.nickname)
+        assertEquals("https://avatar.example/u_b.png", viewModel.state.value.senderProfiles["u_b"]?.avatarUrl)
+        viewModel.stop()
+    }
+
+    @Test
     fun selectPeer_usesCachedPeerProfileInsteadOfFlashingPeerId() {
         val profileDao = InMemoryUserProfileDao()
         profileDao.upsert(profile("u_c", nickname = "Cee", avatarUrl = "https://avatar.example/u_c.png"))
@@ -193,6 +244,33 @@ class ChatViewModelInitialCacheTest {
 
         assertEquals("Cee", viewModel.state.value.peerName)
         assertEquals("https://avatar.example/u_c.png", viewModel.state.value.peerAvatarUrl)
+        viewModel.stop()
+    }
+
+    @Test
+    fun selectPeer_usesCachedCurrentUserProfileBeforeNetworkRefresh() {
+        val profileDao = InMemoryUserProfileDao()
+        profileDao.upsert(profile("u_a", nickname = "Alice", avatarUrl = "https://avatar.example/u_a.png"))
+        val repository = MessageRepository(
+            messageDao = InMemoryMessageDao(),
+            conversationDao = InMemoryConversationDao(),
+            pendingMessageDao = InMemoryPendingMessageDao(),
+            connection = FakeConnection(),
+            messageIdGenerator = MessageIdGenerator(),
+            seqGenerator = SeqGenerator()
+        )
+        val viewModel = ChatViewModel(
+            session = session(),
+            repository = repository,
+            connection = FakeConnection(),
+            profileRepository = ProfileRepository(profileDao, FakeProfileApi()),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            dispatcher = Dispatchers.Unconfined
+        )
+
+        viewModel.selectPeer("u_b")
+
+        assertEquals("https://avatar.example/u_a.png", viewModel.state.value.currentUserAvatarUrl)
         viewModel.stop()
     }
 
