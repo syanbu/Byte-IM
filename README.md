@@ -1,4 +1,4 @@
-# ByteIM / SelfHostedIM
+# ByteIM
 
 ByteIM 是一个本地自研 IM 项目，包含 Android 客户端和 Java/Netty mock server。项目目标不是接入成熟 IM 云服务，而是在 Android 端完整实现一套即时通讯客户端的核心链路：登录鉴权、长连接、自定义协议、心跳重连、消息可靠性、本地持久化、会话列表、历史分页、群聊、图片消息、撤回、已读回执和 mock 推送。
 
