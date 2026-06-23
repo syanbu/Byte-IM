@@ -19,7 +19,8 @@ interface ThumbnailDownloadScheduler {
 }
 
 class ImmediateThumbnailDownloadScheduler(
-    private val thumbnailCache: ChatThumbnailCache
+    private val thumbnailCache: ChatThumbnailCache,
+    private val prewarmLocalThumbnail: suspend (String) -> Unit = {}
 ) : ThumbnailDownloadScheduler {
     override fun enqueue(
         message: ChatMessage,
@@ -28,6 +29,9 @@ class ImmediateThumbnailDownloadScheduler(
     ): Boolean {
         val thumbnailUrl = message.thumbnailUrl?.takeIf { it.isNotBlank() } ?: return false
         val localPath = thumbnailCache.cacheThumbnail(message.messageId, thumbnailUrl) ?: return false
+        kotlinx.coroutines.runBlocking {
+            prewarmLocalThumbnail(localPath)
+        }
         onCached(message.messageId, localPath)
         return true
     }
@@ -35,7 +39,8 @@ class ImmediateThumbnailDownloadScheduler(
 
 class CoroutineThumbnailDownloadScheduler(
     private val thumbnailCache: ChatThumbnailCache,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val prewarmLocalThumbnail: suspend (String) -> Unit = {}
 ) : ThumbnailDownloadScheduler {
     private val lock = Any()
     private val pendingRequests = mutableListOf<PendingThumbnailDownload>()
@@ -66,7 +71,7 @@ class CoroutineThumbnailDownloadScheduler(
         return true
     }
 
-    private fun drainQueue() {
+    private suspend fun drainQueue() {
         while (true) {
             val request = synchronized(lock) {
                 val next = pendingRequests
@@ -82,6 +87,7 @@ class CoroutineThumbnailDownloadScheduler(
                 next
             }
             val localPath = thumbnailCache.cacheThumbnail(request.messageId, request.thumbnailUrl) ?: continue
+            prewarmLocalThumbnail(localPath)
             request.onCached(request.messageId, localPath)
         }
     }

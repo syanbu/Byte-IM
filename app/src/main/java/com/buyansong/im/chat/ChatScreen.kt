@@ -50,10 +50,12 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -151,6 +153,7 @@ fun ChatScreen(
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    val prefetchedThumbnailPaths = remember(state.peerId) { mutableStateListOf<String>() }
     val density = LocalDensity.current
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     var previousImeBottomPx by remember { mutableStateOf(imeBottomPx) }
@@ -207,7 +210,6 @@ fun ChatScreen(
             )
         }
     }
-
     LaunchedEffect(viewModel) {
         viewModel.start()
     }
@@ -277,6 +279,33 @@ fun ChatScreen(
         if (shouldLoadEarlierHistory) {
             viewModel.loadMoreHistory()
         }
+    }
+
+    LaunchedEffect(listState, state.messages, prefetchedThumbnailPaths) {
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { isScrollInProgress ->
+                if (isScrollInProgress) return@collect
+                delay(CHAT_THUMBNAIL_PREFETCH_IDLE_DELAY_MS) // 不马上预热，先等 160ms
+                val visibleMinIndex = listState.layoutInfo.visibleItemsInfo.minOfOrNull { it.index } ?: -1
+                val visibleMaxIndex = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
+                val paths = ChatThumbnailPrefetchPolicy.pathsForIdleViewport(
+                    messages = state.messages,
+                    visibleMinIndex = visibleMinIndex,
+                    visibleMaxIndex = visibleMaxIndex,
+                    isScrollInProgress = listState.isScrollInProgress,
+                    alreadyPrefetchedPaths = prefetchedThumbnailPaths.toSet(),
+                    margin = CHAT_THUMBNAIL_PREFETCH_MARGIN,
+                    maxImages = CHAT_THUMBNAIL_PREFETCH_MAX_IMAGES
+                )
+                if (paths.isEmpty()) return@collect
+                prefetchedThumbnailPaths += paths
+                ChatInitialImagePrewarmer.prewarmLocalThumbnails(
+                    context = context,
+                    localThumbnailPaths = paths,
+                    timeoutMs = CHAT_THUMBNAIL_PREFETCH_TIMEOUT_MS,
+                    maxConcurrency = CHAT_THUMBNAIL_PREFETCH_CONCURRENCY
+                )
+            }
     }
 
     LaunchedEffect(draft.text, isGroupChat, mentionableMembers) {
@@ -1037,6 +1066,11 @@ private fun ChatMessageActionBar(
 }
 
 private const val CHAT_ERROR_TOAST_DURATION_MS = 2_000L
+private const val CHAT_THUMBNAIL_PREFETCH_MARGIN = 4
+private const val CHAT_THUMBNAIL_PREFETCH_MAX_IMAGES = 10
+private const val CHAT_THUMBNAIL_PREFETCH_TIMEOUT_MS = 250L
+private const val CHAT_THUMBNAIL_PREFETCH_CONCURRENCY = 1
+private const val CHAT_THUMBNAIL_PREFETCH_IDLE_DELAY_MS = 160L
 
 @Composable
 private fun OutgoingMessageStatus(

@@ -397,7 +397,10 @@ private class AccountScopedRepositories private constructor(
                 thumbnailCache = thumbnailCache,
                 thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
                     thumbnailCache = thumbnailCache,
-                    scope = thumbnailDownloadScope
+                    scope = thumbnailDownloadScope,
+                    prewarmLocalThumbnail = { localPath ->
+                        ChatInitialImagePrewarmer.prewarmLocalThumbnail(context, localPath)
+                    }
                 ),
                 groupReadCursorRepository = groupReadCursorRepository
             )
