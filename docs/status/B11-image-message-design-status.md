@@ -161,7 +161,7 @@ Thumbnail preload strategy:
 - `ChatLocalThumbnailRequest` is the single local-thumbnail Coil request builder and cache-key source.
 - `ChatImageBubble` is presentation-only and no longer starts its own `LaunchedEffect` preload.
 - Sender-side local thumbnails are prewarmed in `ChatScreen` after image compression and before `ChatViewModel.sendImages(...)` creates local outgoing rows.
-- Receiver-side downloaded thumbnails are prewarmed after `ThumbnailDownloadScheduler` caches the file and before `localThumbnailPath` is written to the message row.
+- Receiver-side downloaded thumbnails are prewarmed after cache write and before `localThumbnailPath` emission only for the currently active conversation; background conversations write `localThumbnailPath` without Coil prewarm and rely on navigation-time prewarm when opened.
 - Conversation entry waits briefly on `ChatInitialImagePrewarmer.prewarmBeforeNavigation(...)` for the initial local thumbnail set.
 - `ChatScreen` prefetches local thumbnails only after `LazyListState` becomes idle, using a small viewport margin, so fling gestures do not decode large numbers of pass-through thumbnails.
 - Chat-list image requests use the thumbnail resource (`localThumbnailPath ?: thumbnailUrl`); original images remain on-demand in `ChatImagePreviewScreen`.
@@ -646,6 +646,7 @@ Likely new mock-server tests:
   - The UI intentionally keeps one visual affordance while the repository/ViewModel preserve distinct internal states.
 - Multi-image send order no longer relies on Android system Photo Picker URI order. The chat composer now opens a self-built album selection flow backed by `MediaStore.Images`, records an explicit `selectionOrder` on each `SelectedChatImage`, and has `ChatViewModel.sendImages(...)` sort by that order before assigning `createdAt`. The album page sends directly; tap-to-preview and drag reorder remain future UX optimizations.
 - Fast-scroll image smoothness and memory behavior still need emulator or device verification with a conversation containing 50-200 cached image thumbnails. Unit tests cover path/window selection and idle-only prefetch policy, but frame timing and Coil memory-cache churn must be observed on Android.
+- Background-conversation image receive no longer spends Coil memory immediately; opening that conversation depends on bounded navigation prewarm plus idle viewport prefetch. Device testing should confirm the 700 ms navigation prewarm cap is still enough for common recent-image conversations.
 
 ## Bug Fix Log
 

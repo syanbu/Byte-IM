@@ -4,7 +4,7 @@
 
 **Goal:** Reduce receiver-side Coil decode and memory-cache churn by prewarming downloaded thumbnails only when the receiving conversation is currently active, while keeping background conversations ready for navigation-time prewarm.
 
-**Architecture:** Move receiver thumbnail prewarm from an unconditional scheduler callback to a small policy-driven decision. `MessageRepository` already tracks `activeConversationId`; use that as the source of truth. `ThumbnailDownloadScheduler` keeps owning download/cache order, but receives a callback that can inspect `ChatMessage`, priority, local path, and an active-conversation budget before deciding whether to call Coil prewarm.
+**Architecture:** Move receiver thumbnail prewarm from an unconditional scheduler callback to a small policy-driven decision. `MessageRepository` already tracks `activeConversationId`; use that as the source of truth. `ThumbnailDownloadScheduler` keeps owning download/cache order, but receives a callback that can inspect `ChatMessage`, priority, local path, and the current per-drain budget before deciding whether to call Coil prewarm.
 
 **Tech Stack:** Kotlin, Coroutines, Coil Compose 2.7.0, SQLite-backed chat models, JUnit4.
 
@@ -18,6 +18,7 @@
 - `MainActivity` wires that callback as `ChatInitialImagePrewarmer.prewarmLocalThumbnail(context, localPath)`.
 - Background conversations already work with navigation prewarm: opening a chat calls `messageRepository.preloadInitialPageSync(conversationId)`, then `ChatInitialImagePrewarmer.prewarmBeforeNavigation(context, messages)`, then navigates.
 - `prewarmBeforeNavigation(...)` is bounded to 700 ms, 12 images, concurrency 3. `preloadInitialPageSync(...)` is bounded to 100 ms and caches 20 display-ready messages.
+- Viewport thumbnail prefetch is already idle-only through `ChatThumbnailPrefetchPolicy`; this plan should not change that path.
 
 ## Design Decision
 
@@ -37,7 +38,7 @@ This keeps the current-chat first-display behavior, avoids wasting Coil memory o
 | `app/src/test/java/com/buyansong/im/message/ReceivedThumbnailPrewarmPolicyTest.kt` | Create | Unit tests for active/background/null-active and budget behavior. |
 | `app/src/main/java/com/buyansong/im/message/ThumbnailDownloadScheduler.kt` | Modify | Pass `ChatMessage`, priority, and local path to the prewarm callback; enforce per-worker budget. |
 | `app/src/test/java/com/buyansong/im/message/ThumbnailDownloadSchedulerTest.kt` | Create | Verify active messages prewarm before `onCached`, background messages skip prewarm, and active prewarm budget is capped. |
-| `app/src/main/java/com/buyansong/im/message/MessageRepository.kt` | Modify | Provide active-conversation-aware prewarm decision to the scheduler default construction path. |
+| `app/src/main/java/com/buyansong/im/message/MessageRepository.kt` | Modify | Provide active-conversation-aware prewarm decision for scheduler wiring. |
 | `app/src/main/java/com/buyansong/im/MainActivity.kt` | Modify | Update scheduler wiring to the new callback shape. |
 | `docs/status/B11-image-message-design-status.md` | Modify | Document conditional receiver prewarm and background conversation handoff to navigation prewarm. |
 
@@ -207,7 +208,7 @@ class ThumbnailDownloadSchedulerTest {
         val events = mutableListOf<String>()
         val scheduler = ImmediateThumbnailDownloadScheduler(
             thumbnailCache = FakeThumbnailCache(),
-            prewarmLocalThumbnail = { message, _, localPath ->
+            prewarmLocalThumbnail = { message, _, localPath, _, _ ->
                 events += "prewarm:${message.messageId}:$localPath"
                 true
             }
@@ -228,7 +229,7 @@ class ThumbnailDownloadSchedulerTest {
         val events = mutableListOf<String>()
         val scheduler = ImmediateThumbnailDownloadScheduler(
             thumbnailCache = FakeThumbnailCache(),
-            prewarmLocalThumbnail = { _, _, _ -> false }
+            prewarmLocalThumbnail = { _, _, _, _, _ -> false }
         )
 
         scheduler.enqueue(message("m1"), ThumbnailDownloadPriority.NORMAL) { messageId, localPath ->
@@ -246,7 +247,7 @@ class ThumbnailDownloadSchedulerTest {
             thumbnailCache = FakeThumbnailCache(),
             scope = CoroutineScope(scopeJob + Dispatchers.Unconfined),
             maxPrewarmPerDrain = 1,
-            prewarmLocalThumbnail = { message, _, localPath ->
+            prewarmLocalThumbnail = { message, _, localPath, _, _ ->
                 events += "prewarm:${message.messageId}:$localPath"
                 true
             }
@@ -308,8 +309,10 @@ In `app/src/main/java/com/buyansong/im/message/ThumbnailDownloadScheduler.kt`, c
 private val prewarmLocalThumbnail: suspend (
     message: ChatMessage,
     priority: ThumbnailDownloadPriority,
-    localThumbnailPath: String
-) -> Boolean = { _, _, _ -> false }
+    localThumbnailPath: String,
+    alreadyPrewarmedInDrain: Int,
+    maxPrewarmPerDrain: Int
+) -> Boolean = { _, _, _, _, _ -> false }
 ```
 
 For `CoroutineThumbnailDownloadScheduler`, also add:
@@ -338,7 +341,13 @@ Update immediate scheduler order to:
 ```kotlin
 val localPath = thumbnailCache.cacheThumbnail(message.messageId, thumbnailUrl) ?: return false
 kotlinx.coroutines.runBlocking {
-    prewarmLocalThumbnail(message, priority, localPath)
+    prewarmLocalThumbnail(
+        message,
+        priority,
+        localPath,
+        alreadyPrewarmedInDrain = 0,
+        maxPrewarmPerDrain = 1
+    )
 }
 onCached(message.messageId, localPath)
 return true
@@ -367,11 +376,15 @@ private suspend fun drainQueue() {
             request.message.messageId,
             request.thumbnailUrl
         ) ?: continue
-        if (prewarmedInDrain < maxPrewarmPerDrain.coerceAtLeast(0)) {
-            val didPrewarm = prewarmLocalThumbnail(request.message, request.priority, localPath)
-            if (didPrewarm) {
-                prewarmedInDrain += 1
-            }
+        val didPrewarm = prewarmLocalThumbnail(
+            request.message,
+            request.priority,
+            localPath,
+            prewarmedInDrain,
+            maxPrewarmPerDrain
+        )
+        if (didPrewarm) {
+            prewarmedInDrain += 1
         }
         request.onCached(request.message.messageId, localPath)
     }
@@ -397,7 +410,7 @@ Expected: PASS.
 - Modify: `app/src/main/java/com/buyansong/im/MainActivity.kt`
 - Modify existing tests or add focused tests in `app/src/test/java/com/buyansong/im/message/MessageRepositoryCacheTest.kt`
 
-- [ ] **Step 1: Add focused repository tests for active/background decision**
+- [ ] **Step 1: Add focused repository tests for thumbnail callback persistence**
 
 In `MessageRepositoryCacheTest`, add a scheduler fake:
 
@@ -491,7 +504,7 @@ Run:
 ./gradlew :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryCacheTest
 ```
 
-Expected: PASS if the helper compiles; these tests protect callback update behavior while scheduler prewarm logic changes.
+Expected: PASS if the helper compiles; these tests protect callback update behavior while scheduler prewarm logic changes. Active/background prewarm decisions are covered by `ReceivedThumbnailPrewarmPolicyTest` and the scheduler callback tests.
 
 - [ ] **Step 3: Add repository prewarm decision API**
 
@@ -510,7 +523,7 @@ fun shouldPrewarmReceivedThumbnail(message: ChatMessage, alreadyPrewarmedInDrain
 
 Keep this method package-visible/public so `MainActivity` can wire the scheduler callback without reflection or extra state holders.
 
-- [ ] **Step 4: Wire `MainActivity` callback to check active conversation**
+- [ ] **Step 4: Wire `MainActivity` callback to check active conversation and budget**
 
 Change `CoroutineThumbnailDownloadScheduler` construction in `AccountScopedRepositories.create(...)` to:
 
@@ -519,13 +532,8 @@ thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
     thumbnailCache = thumbnailCache,
     scope = thumbnailDownloadScope,
     maxPrewarmPerDrain = 5,
-    prewarmLocalThumbnail = { message, _, localPath ->
-        if (!messageRepository.shouldPrewarmReceivedThumbnail(
-                message = message,
-                alreadyPrewarmedInDrain = 0,
-                maxPrewarmPerDrain = 1
-            )
-        ) {
+    prewarmLocalThumbnail = { message, _, localPath, alreadyPrewarmedInDrain, maxPrewarmPerDrain ->
+        if (!messageRepository.shouldPrewarmReceivedThumbnail(message, alreadyPrewarmedInDrain, maxPrewarmPerDrain)) {
             false
         } else {
             ChatInitialImagePrewarmer.prewarmLocalThumbnail(context, localPath)
@@ -534,32 +542,9 @@ thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
 )
 ```
 
-Then simplify this wiring if Task 2 chooses to pass `alreadyPrewarmedInDrain` into the callback directly. The final callback should make exactly one decision: active conversation plus budget means prewarm; background conversation means return false.
+Use this one callback shape consistently across `ImmediateThumbnailDownloadScheduler`, `CoroutineThumbnailDownloadScheduler`, tests, and `MainActivity`.
 
-- [ ] **Step 5: Reconcile callback budget shape**
-
-If Task 2 keeps budget internal to the scheduler, update the callback signature to include:
-
-```kotlin
-alreadyPrewarmedInDrain: Int,
-maxPrewarmPerDrain: Int
-```
-
-and wire:
-
-```kotlin
-prewarmLocalThumbnail = { message, _, localPath, alreadyPrewarmedInDrain, maxPrewarmPerDrain ->
-    if (!messageRepository.shouldPrewarmReceivedThumbnail(message, alreadyPrewarmedInDrain, maxPrewarmPerDrain)) {
-        false
-    } else {
-        ChatInitialImagePrewarmer.prewarmLocalThumbnail(context, localPath)
-    }
-}
-```
-
-Use one callback shape consistently across `ImmediateThumbnailDownloadScheduler`, `CoroutineThumbnailDownloadScheduler`, tests, and `MainActivity`.
-
-- [ ] **Step 6: Run focused tests**
+- [ ] **Step 5: Run focused tests**
 
 Run:
 
@@ -590,9 +575,9 @@ with:
 - Receiver-side downloaded thumbnails are prewarmed after cache write and before `localThumbnailPath` emission only for the currently active conversation; background conversations write `localThumbnailPath` without Coil prewarm and rely on navigation-time prewarm when opened.
 ```
 
-- [ ] **Step 2: Update risks**
+- [ ] **Step 2: Add receiver-side risk note**
 
-Add under `Current Risks`:
+Add a small risks or device-verification note near the current receiver-side strategy section:
 
 ```markdown
 - Background-conversation image receive no longer spends Coil memory immediately; opening that conversation depends on bounded navigation prewarm plus idle viewport prefetch. Device testing should confirm the 700 ms navigation prewarm cap is still enough for common recent-image conversations.
@@ -629,4 +614,4 @@ Expected: PASS.
 
 - This plan intentionally preserves current-chat first-display quality while reducing background-conversation memory churn.
 - Navigation prewarm and idle viewport prefetch are the fallback path for background conversations.
-- The exact callback shape must be consistent; if the implementer chooses the budget-in-callback version, update all test snippets in Task 2 and Task 3 together.
+- Keep the callback shape from Task 2 consistent across `ImmediateThumbnailDownloadScheduler`, `CoroutineThumbnailDownloadScheduler`, tests, and `MainActivity`.
