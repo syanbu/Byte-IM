@@ -10,6 +10,12 @@ object ChatAutoScrollPolicy {
         ANIMATE_TO_LATEST
     }
 
+    sealed interface ImeExpansionAction {
+        data object None : ImeExpansionAction
+        data class ScrollByImeDelta(val deltaPx: Int) : ImeExpansionAction
+        data object ScrollToLatest : ImeExpansionAction
+    }
+
     fun scrollAction(previousLatestMessageId: String?, latestMessageId: String?): ScrollAction {
         return when {
             latestMessageId == null -> ScrollAction.NONE
@@ -56,23 +62,52 @@ object ChatAutoScrollPolicy {
         return lastVisibleIndexBeforeImeChange >= latestIndex
     }
 
+    fun imeExpansionAction(
+        previousImeBottomPx: Int,
+        currentImeBottomPx: Int,
+        messageCount: Int,
+        lastVisibleIndexBeforeImeChange: Int,
+        didScrollToLatestDuringImeExpansion: Boolean = false
+    ): ImeExpansionAction {
+        if (messageCount <= 0) return ImeExpansionAction.None
+        if (currentImeBottomPx <= previousImeBottomPx) return ImeExpansionAction.None
+
+        val latestIndex = scrollToLatestIndex(messageCount)
+        return if (lastVisibleIndexBeforeImeChange >= latestIndex || didScrollToLatestDuringImeExpansion) {
+            ImeExpansionAction.ScrollByImeDelta(currentImeBottomPx - previousImeBottomPx)
+        } else if (previousImeBottomPx == 0) {
+            ImeExpansionAction.ScrollToLatest
+        } else {
+            ImeExpansionAction.None
+        }
+    }
+
     fun imeExpansionScrollDeltaPx(
         previousImeBottomPx: Int,
         currentImeBottomPx: Int,
         messageCount: Int,
         lastVisibleIndexBeforeImeChange: Int
     ): Int {
-        if (
-            !shouldAnchorLatestAfterImeExpansion(
+        return when (
+            val action = imeExpansionAction(
                 previousImeBottomPx = previousImeBottomPx,
                 currentImeBottomPx = currentImeBottomPx,
                 messageCount = messageCount,
                 lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeChange
             )
         ) {
-            return 0
+            ImeExpansionAction.None -> 0
+            is ImeExpansionAction.ScrollByImeDelta -> action.deltaPx
+            ImeExpansionAction.ScrollToLatest -> 0
         }
-        return currentImeBottomPx - previousImeBottomPx
+    }
+
+    fun bottomAlignmentScrollDeltaPx(
+        itemOffsetPx: Int,
+        itemSizePx: Int,
+        viewportEndOffsetPx: Int
+    ): Int {
+        return (itemOffsetPx + itemSizePx - viewportEndOffsetPx).coerceAtLeast(0)
     }
 
     fun moreActionsExpansionScrollDeltaPx(

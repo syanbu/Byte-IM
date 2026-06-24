@@ -185,6 +185,109 @@ class ChatAutoScrollPolicyTest {
     }
 
     @Test
+    fun imeExpansionAction_whenKeyboardExpandsAndUserWasAtBottom_returnsScrollByImeDelta() {
+        assertEquals(
+            ChatAutoScrollPolicy.ImeExpansionAction.ScrollByImeDelta(deltaPx = 720),
+            ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = 0,
+                currentImeBottomPx = 720,
+                messageCount = 12,
+                lastVisibleIndexBeforeImeChange = 11
+            )
+        )
+    }
+
+    @Test
+    fun imeExpansionAction_whenKeyboardExpandsAndUserReadsHistory_returnsScrollToLatest() {
+        assertEquals(
+            ChatAutoScrollPolicy.ImeExpansionAction.ScrollToLatest,
+            ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = 0,
+                currentImeBottomPx = 720,
+                messageCount = 12,
+                lastVisibleIndexBeforeImeChange = 6
+            )
+        )
+    }
+
+    @Test
+    fun imeExpansionAction_whenKeyboardContinuesExpandingAndUserReadsHistory_returnsNone() {
+        assertEquals(
+            ChatAutoScrollPolicy.ImeExpansionAction.None,
+            ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = 120,
+                currentImeBottomPx = 240,
+                messageCount = 12,
+                lastVisibleIndexBeforeImeChange = 6
+            )
+        )
+    }
+
+    @Test
+    fun imeExpansionAction_whenKeyboardContinuesExpandingAfterScrollToLatest_returnsScrollByImeDelta() {
+        assertEquals(
+            ChatAutoScrollPolicy.ImeExpansionAction.ScrollByImeDelta(deltaPx = 120),
+            ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = 120,
+                currentImeBottomPx = 240,
+                messageCount = 12,
+                lastVisibleIndexBeforeImeChange = 6,
+                didScrollToLatestDuringImeExpansion = true
+            )
+        )
+    }
+
+    @Test
+    fun imeExpansionAction_whenKeyboardCollapses_returnsNone() {
+        assertEquals(
+            ChatAutoScrollPolicy.ImeExpansionAction.None,
+            ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = 720,
+                currentImeBottomPx = 0,
+                messageCount = 12,
+                lastVisibleIndexBeforeImeChange = 11
+            )
+        )
+    }
+
+    @Test
+    fun imeExpansionAction_whenNoMessages_returnsNone() {
+        assertEquals(
+            ChatAutoScrollPolicy.ImeExpansionAction.None,
+            ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = 0,
+                currentImeBottomPx = 720,
+                messageCount = 0,
+                lastVisibleIndexBeforeImeChange = -1
+            )
+        )
+    }
+
+    @Test
+    fun bottomAlignmentScrollDelta_whenItemBottomExceedsViewport_returnsOverflow() {
+        assertEquals(
+            120,
+            ChatAutoScrollPolicy.bottomAlignmentScrollDeltaPx(
+                itemOffsetPx = 460,
+                itemSizePx = 360,
+                viewportEndOffsetPx = 700
+            )
+        )
+    }
+
+    @Test
+    fun bottomAlignmentScrollDelta_whenItemFitsViewport_returnsZero() {
+        assertEquals(
+            0,
+            ChatAutoScrollPolicy.bottomAlignmentScrollDeltaPx(
+                itemOffsetPx = 280,
+                itemSizePx = 120,
+                viewportEndOffsetPx = 700
+            )
+        )
+    }
+
+    @Test
     fun moreActionsExpansionScrollDelta_whenPanelExpandsAndUserWasAtBottom_returnsPanelHeight() {
         assertEquals(
             240,

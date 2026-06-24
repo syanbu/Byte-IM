@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -56,6 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -157,10 +159,27 @@ fun ChatScreen(
     val density = LocalDensity.current
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     var previousImeBottomPx by remember { mutableStateOf(imeBottomPx) }
+    var didScrollToLatestDuringImeExpansion by remember { mutableStateOf(false) }
     var moreActionsPanelHeightPx by remember { mutableStateOf(0) }
-    val lastVisibleMessageIndex by remember(listState) {
+    // The LazyColumn renders a leading "history-loader" header item before the
+    // first message whenever the conversation has messages. That shifts every
+    // message's LazyColumn index up by one, so the latest message lives at
+    // LazyColumn index `messages.size` (not `messages.size - 1`).
+    //
+    // ChatAutoScrollPolicy operates in *message-space* (index 0 = first
+    // message, last index = `messages.size - 1`). We translate to/from
+    // LazyColumn-space at this boundary by subtracting/adding
+    // [leadingHeaderItemCount]: the visible index fed to the policy is
+    // converted to message-space, and the scroll target is converted back to
+    // LazyColumn-space. Without this, "scroll to latest" lands on the
+    // second-to-last message and a tall last image bubble stays obscured
+    // behind the composer — the visible index and the target index were in
+    // different spaces, so the semantic was never actually synced.
+    val leadingHeaderItemCount = if (state.messages.isNotEmpty()) 1 else 0
+    val lastVisibleMessageIndex by remember(listState, leadingHeaderItemCount) {
         derivedStateOf {
-            listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
+            (listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1) -
+                leadingHeaderItemCount
         }
     }
     var lastVisibleIndexBeforeImeExpansion by remember { mutableStateOf(lastVisibleMessageIndex) }
@@ -188,7 +207,10 @@ fun ChatScreen(
     }
     var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
     val latestMessageId = state.messages.lastOrNull()?.messageId
-    val latestMessageIndex = ChatAutoScrollPolicy.scrollToLatestIndex(state.messages.size)
+    // LazyColumn-space target index of the latest message: message-space last
+    // index from the policy plus the leading header offset.
+    val latestMessageIndex = ChatAutoScrollPolicy.scrollToLatestIndex(state.messages.size) +
+        leadingHeaderItemCount
     val autoScrollAction = ChatAutoScrollPolicy.scrollAction(previousLatestMessageId, latestMessageId)
     SideEffect {
         if (autoScrollAction == ChatAutoScrollPolicy.ScrollAction.PRE_MEASURE_ANCHOR_TO_LATEST) {
@@ -238,14 +260,27 @@ fun ChatScreen(
     }
 
     LaunchedEffect(imeBottomPx, state.messages.size) {
-        val imeScrollDeltaPx = ChatAutoScrollPolicy.imeExpansionScrollDeltaPx(
-            previousImeBottomPx = previousImeBottomPx,
-            currentImeBottomPx = imeBottomPx,
-            messageCount = state.messages.size,
-            lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeExpansion
-        )
-        if (imeScrollDeltaPx > 0) {
-            listState.animateScrollBy(imeScrollDeltaPx.toFloat())
+        when (
+            val imeExpansionAction = ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = previousImeBottomPx,
+                currentImeBottomPx = imeBottomPx,
+                messageCount = state.messages.size,
+                lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeExpansion,
+                didScrollToLatestDuringImeExpansion = didScrollToLatestDuringImeExpansion
+            )
+        ) {
+            ChatAutoScrollPolicy.ImeExpansionAction.None -> {
+                if (imeBottomPx == 0) {
+                    didScrollToLatestDuringImeExpansion = false
+                }
+            }
+            is ChatAutoScrollPolicy.ImeExpansionAction.ScrollByImeDelta -> {
+                listState.animateScrollBy(imeExpansionAction.deltaPx.toFloat())
+            }
+            ChatAutoScrollPolicy.ImeExpansionAction.ScrollToLatest -> {
+                listState.animateScrollToLatestBottomAligned(latestMessageIndex)
+                didScrollToLatestDuringImeExpansion = true
+            }
         }
         previousImeBottomPx = imeBottomPx
     }
@@ -1062,6 +1097,21 @@ private fun ChatMessageActionBar(
                     .padding(horizontal = 10.dp, vertical = 8.dp)
             )
         }
+    }
+}
+
+private suspend fun LazyListState.animateScrollToLatestBottomAligned(index: Int) {
+    animateScrollToItem(index)
+    withFrameNanos { }
+
+    val latestItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val bottomAlignmentDeltaPx = ChatAutoScrollPolicy.bottomAlignmentScrollDeltaPx(
+        itemOffsetPx = latestItem.offset,
+        itemSizePx = latestItem.size,
+        viewportEndOffsetPx = layoutInfo.viewportEndOffset
+    )
+    if (bottomAlignmentDeltaPx > 0) {
+        animateScrollBy(bottomAlignmentDeltaPx.toFloat())
     }
 }
 

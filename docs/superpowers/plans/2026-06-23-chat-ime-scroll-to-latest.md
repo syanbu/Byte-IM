@@ -22,7 +22,8 @@ That preserves history-reading position, but it conflicts with the intended comp
 
 - If keyboard height grows and there are no messages, do nothing.
 - If keyboard height grows while the latest message was visible before IME expansion, keep the current bottom-anchoring behavior by scrolling by the IME height delta.
-- If keyboard height grows while the user was reading older history, animate to the latest message.
+- If keyboard height first grows from closed while the user was reading older history, animate to the latest message once and bottom-align it with the message list viewport so tall image bubbles are not hidden behind the composer.
+- If keyboard height continues growing during the same IME expansion after the history-to-latest scroll has run, keep bottom anchoring by scrolling by the IME height delta instead of restarting the scroll-to-latest animation.
 - If keyboard height is unchanged or collapsing, do nothing.
 - Keep the existing first-load and new-message auto-scroll behavior unchanged.
 - Keep the more-actions panel behavior unchanged.
@@ -33,14 +34,16 @@ That preserves history-reading position, but it conflicts with the intended comp
   - Add a typed IME action enum.
   - Add a policy function that returns the action for the current IME transition.
   - Keep `imeExpansionScrollDeltaPx(...)` as a compatibility helper if existing tests or callers still use it.
+  - Add a pure helper that calculates the extra scroll delta needed to align the latest item bottom with the viewport bottom after a scroll-to-latest action.
 
 - Modify: `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
   - Replace the current `imeExpansionScrollDeltaPx(...)` call with action-based branching.
   - Execute `animateScrollBy(...)` for bottom anchoring.
-  - Execute `animateScrollToItem(latestMessageIndex)` when keyboard expansion starts from history.
+  - Execute a scroll-to-latest helper when keyboard expansion starts from history; the helper first scrolls to the latest item, waits for layout, then applies any remaining bottom-alignment delta.
 
 - Modify: `app/src/test/java/com/buyansong/im/chat/ChatAutoScrollPolicyTest.kt`
   - Add failing tests for the new action policy.
+  - Add tests for the bottom-alignment delta calculation.
   - Update the old history-reading IME delta test only if it conflicts with the new desired behavior.
 
 ---
@@ -77,6 +80,33 @@ Insert these tests after `imeExpansionScrollDelta_whenUserReadsHistory_returnsZe
                 currentImeBottomPx = 720,
                 messageCount = 12,
                 lastVisibleIndexBeforeImeChange = 6
+            )
+        )
+    }
+
+    @Test
+    fun imeExpansionAction_whenKeyboardContinuesExpandingAndUserReadsHistory_returnsNone() {
+        assertEquals(
+            ChatAutoScrollPolicy.ImeExpansionAction.None,
+            ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = 120,
+                currentImeBottomPx = 240,
+                messageCount = 12,
+                lastVisibleIndexBeforeImeChange = 6
+            )
+        )
+    }
+
+    @Test
+    fun imeExpansionAction_whenKeyboardContinuesExpandingAfterScrollToLatest_returnsScrollByImeDelta() {
+        assertEquals(
+            ChatAutoScrollPolicy.ImeExpansionAction.ScrollByImeDelta(deltaPx = 120),
+            ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = 120,
+                currentImeBottomPx = 240,
+                messageCount = 12,
+                lastVisibleIndexBeforeImeChange = 6,
+                didScrollToLatestDuringImeExpansion = true
             )
         )
     }
@@ -154,16 +184,19 @@ Add this function before `imeExpansionScrollDeltaPx(...)`:
         previousImeBottomPx: Int,
         currentImeBottomPx: Int,
         messageCount: Int,
-        lastVisibleIndexBeforeImeChange: Int
+        lastVisibleIndexBeforeImeChange: Int,
+        didScrollToLatestDuringImeExpansion: Boolean = false
     ): ImeExpansionAction {
         if (messageCount <= 0) return ImeExpansionAction.None
         if (currentImeBottomPx <= previousImeBottomPx) return ImeExpansionAction.None
 
         val latestIndex = scrollToLatestIndex(messageCount)
-        return if (lastVisibleIndexBeforeImeChange >= latestIndex) {
+        return if (lastVisibleIndexBeforeImeChange >= latestIndex || didScrollToLatestDuringImeExpansion) {
             ImeExpansionAction.ScrollByImeDelta(currentImeBottomPx - previousImeBottomPx)
-        } else {
+        } else if (previousImeBottomPx == 0) {
             ImeExpansionAction.ScrollToLatest
+        } else {
+            ImeExpansionAction.None
         }
     }
 ```
@@ -254,15 +287,21 @@ Replace it with:
                 previousImeBottomPx = previousImeBottomPx,
                 currentImeBottomPx = imeBottomPx,
                 messageCount = state.messages.size,
-                lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeExpansion
+                lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeExpansion,
+                didScrollToLatestDuringImeExpansion = didScrollToLatestDuringImeExpansion
             )
         ) {
-            ChatAutoScrollPolicy.ImeExpansionAction.None -> Unit
+            ChatAutoScrollPolicy.ImeExpansionAction.None -> {
+                if (imeBottomPx == 0) {
+                    didScrollToLatestDuringImeExpansion = false
+                }
+            }
             is ChatAutoScrollPolicy.ImeExpansionAction.ScrollByImeDelta -> {
                 listState.animateScrollBy(imeExpansionAction.deltaPx.toFloat())
             }
             ChatAutoScrollPolicy.ImeExpansionAction.ScrollToLatest -> {
-                listState.animateScrollToItem(latestMessageIndex)
+                listState.animateScrollToLatestBottomAligned(latestMessageIndex)
+                didScrollToLatestDuringImeExpansion = true
             }
         }
         previousImeBottomPx = imeBottomPx
@@ -304,6 +343,104 @@ Run:
 ```bash
 git add app/src/main/java/com/buyansong/im/chat/ChatScreen.kt
 git commit -m "feat: scroll chat to latest on keyboard open"
+```
+
+---
+
+### Task 3.5: Bottom-Align Tall Latest Items After ScrollToLatest
+
+**Files:**
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatAutoScrollPolicy.kt`
+- Modify: `app/src/main/java/com/buyansong/im/chat/ChatScreen.kt`
+- Modify: `app/src/test/java/com/buyansong/im/chat/ChatAutoScrollPolicyTest.kt`
+
+- [ ] **Step 1: Add failing tests for bottom-alignment delta**
+
+Add pure policy tests for the extra delta needed after the latest item is visible:
+
+```kotlin
+    @Test
+    fun bottomAlignmentScrollDelta_whenItemBottomExceedsViewport_returnsOverflow() {
+        assertEquals(
+            120,
+            ChatAutoScrollPolicy.bottomAlignmentScrollDeltaPx(
+                itemOffsetPx = 460,
+                itemSizePx = 360,
+                viewportEndOffsetPx = 700
+            )
+        )
+    }
+
+    @Test
+    fun bottomAlignmentScrollDelta_whenItemFitsViewport_returnsZero() {
+        assertEquals(
+            0,
+            ChatAutoScrollPolicy.bottomAlignmentScrollDeltaPx(
+                itemOffsetPx = 280,
+                itemSizePx = 120,
+                viewportEndOffsetPx = 700
+            )
+        )
+    }
+```
+
+- [ ] **Step 2: Add the bottom-alignment policy helper**
+
+Add this helper to `ChatAutoScrollPolicy`:
+
+```kotlin
+    fun bottomAlignmentScrollDeltaPx(
+        itemOffsetPx: Int,
+        itemSizePx: Int,
+        viewportEndOffsetPx: Int
+    ): Int {
+        return (itemOffsetPx + itemSizePx - viewportEndOffsetPx).coerceAtLeast(0)
+    }
+```
+
+- [ ] **Step 3: Add a ChatScreen LazyListState helper**
+
+Add a private suspend helper near `ChatScreen`:
+
+```kotlin
+private suspend fun LazyListState.animateScrollToLatestBottomAligned(index: Int) {
+    animateScrollToItem(index)
+    withFrameNanos { }
+
+    val layoutInfo = layoutInfo
+    val latestItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val bottomAlignmentDeltaPx = ChatAutoScrollPolicy.bottomAlignmentScrollDeltaPx(
+        itemOffsetPx = latestItem.offset,
+        itemSizePx = latestItem.size,
+        viewportEndOffsetPx = layoutInfo.viewportEndOffset
+    )
+    if (bottomAlignmentDeltaPx > 0) {
+        animateScrollBy(bottomAlignmentDeltaPx.toFloat())
+    }
+}
+```
+
+Then replace the `ScrollToLatest` branch with:
+
+```kotlin
+            ChatAutoScrollPolicy.ImeExpansionAction.ScrollToLatest -> {
+                listState.animateScrollToLatestBottomAligned(latestMessageIndex)
+            }
+```
+
+- [ ] **Step 4: Verify focused tests and build**
+
+Run:
+
+```bash
+./gradlew :app:testDebugUnitTest --tests com.buyansong.im.chat.ChatAutoScrollPolicyTest --console=plain
+./gradlew :app:assembleDebug --console=plain
+```
+
+Expected result for both:
+
+```text
+BUILD SUCCESSFUL
 ```
 
 ---
@@ -356,6 +493,7 @@ Expected result:
 ```text
 The keyboard opens.
 The chat animates to the latest message.
+If the latest message is a tall image bubble, its bottom edge remains visible above the composer.
 The composer remains above the keyboard.
 The user is ready to type a new message at the bottom of the conversation.
 ```
@@ -393,9 +531,27 @@ No invalid list index scroll is attempted.
 
 ## Regression Risks
 
-- `animateScrollToItem(latestMessageIndex)` may conflict visually with initial-load `requestScrollToItem(...)` only if IME opens before messages finish loading. The policy returns `None` when `messageCount <= 0`, so this should be safe.
+- `animateScrollToLatestBottomAligned(latestMessageIndex)` may conflict visually with initial-load `requestScrollToItem(...)` only if IME opens before messages finish loading. The policy returns `None` when `messageCount <= 0`, so this should be safe.
+- The bottom-alignment helper depends on `LazyListState.layoutInfo` after the IME-applied layout pass. The `withFrameNanos { }` wait is included so the latest viewport dimensions are used before computing the extra delta.
+- `ScrollToLatest` is intentionally one-shot for the closed-to-opening IME transition (`previousImeBottomPx == 0`). After it runs, continuing IME expansion frames use `ScrollByImeDelta` so the latest item remains bottom-anchored as the viewport keeps shrinking.
 - Programmatic keyboard opens, such as after selecting a group mention, will also use this policy. That is acceptable because the composer is active and the user is composing a message.
 - More-actions panel expansion is intentionally unchanged; it already uses `moreActionsExpansionScrollDeltaPx(...)`.
+
+## Index Space Alignment (Leading Header Offset)
+
+**Problem found after the initial wiring:** the `ScrollToLatest` action landed on the *second-to-last* message, not the latest, so a tall last image bubble stayed obscured behind the composer even though the `didScrollToLatestDuringImeExpansion` follow-up logic was correct.
+
+**Root cause:** the chat `LazyColumn` renders a leading `history-loader` header item (a top timeline + history status) before the first message whenever the conversation has messages. That shifts every message's real LazyColumn index up by one, so the latest message lives at LazyColumn index `messages.size` (not `messages.size - 1`). `ChatAutoScrollPolicy` is defined in *message-space* (index 0 = first message, last index = `messages.size - 1`), so:
+
+- The scroll target `ChatAutoScrollPolicy.scrollToLatestIndex(messages.size)` returned the message-space last index (`size - 1`). `ChatScreen` passed it straight to `animateScrollToItem(...)` / `requestScrollToItem(...)`, landing one item short of the latest.
+- `lastVisibleMessageIndex` was the *real* LazyColumn index (header included), but it was fed into a policy that compares against message-space indices. The two spaces never agreed, so "is the latest already visible?" / "should we scroll to latest?" were answered against mismatched indices — the semantic was never actually synced.
+
+**Fix (boundary translation, policy stays pure):** keep `ChatAutoScrollPolicy` in message-space (all 30 unit tests are message-space) and translate at the `ChatScreen` boundary using `leadingHeaderItemCount` (`1` when the list has messages, else `0`):
+
+- `lastVisibleMessageIndex = maxVisibleLazyColumnIndex - leadingHeaderItemCount` → message-space before feeding the policy.
+- `latestMessageIndex = scrollToLatestIndex(messages.size) + leadingHeaderItemCount` → LazyColumn-space before passing to scroll APIs.
+
+This corrects all three scroll entry points — initial-load `requestScrollToItem`, new-message `animateScrollToItem`, and IME `animateScrollToLatestBottomAligned` — and also fixes the "exactly one item short of the bottom" edge case in the at-bottom detection.
 
 ## Final Verification
 
@@ -416,6 +572,7 @@ Then complete the manual runtime checks in Task 4 before claiming the behavior i
 
 ## Self-Review
 
-- Spec coverage: The plan covers keyboard expansion at bottom, keyboard expansion from history, keyboard collapse, empty message lists, existing bottom anchoring, and the non-goal of changing more-actions behavior.
+- Spec coverage: The plan covers keyboard expansion at bottom, one-shot keyboard expansion from history, tall latest image bubbles, keyboard collapse, empty message lists, existing bottom anchoring, and the non-goal of changing more-actions behavior.
+- Index-space alignment: `ChatAutoScrollPolicy` is message-space; `ChatScreen` translates to/from LazyColumn-space via `leadingHeaderItemCount` (see "Index Space Alignment"). The visible index fed to the policy and the scroll target index are now in the same space, which is what made the tall-last-image fix actually take effect.
 - Placeholder scan: No placeholder tasks are left; all code edits and commands are explicit.
-- Type consistency: `ImeExpansionAction`, `imeExpansionAction(...)`, `ScrollByImeDelta`, `ScrollToLatest`, and `None` are consistently named across test, policy, and `ChatScreen` wiring.
+- Type consistency: `ImeExpansionAction`, `imeExpansionAction(...)`, `ScrollByImeDelta`, `ScrollToLatest`, `None`, `bottomAlignmentScrollDeltaPx(...)`, and `animateScrollToLatestBottomAligned(...)` are consistently named across test, policy, and `ChatScreen` wiring.
