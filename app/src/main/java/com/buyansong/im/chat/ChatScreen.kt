@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -50,10 +51,13 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -151,13 +155,31 @@ fun ChatScreen(
 
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    val prefetchedThumbnailPaths = remember(state.peerId) { mutableStateListOf<String>() }
     val density = LocalDensity.current
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     var previousImeBottomPx by remember { mutableStateOf(imeBottomPx) }
+    var didScrollToLatestDuringImeExpansion by remember { mutableStateOf(false) }
     var moreActionsPanelHeightPx by remember { mutableStateOf(0) }
-    val lastVisibleMessageIndex by remember(listState) {
+    // The LazyColumn renders a leading "history-loader" header item before the
+    // first message whenever the conversation has messages. That shifts every
+    // message's LazyColumn index up by one, so the latest message lives at
+    // LazyColumn index `messages.size` (not `messages.size - 1`).
+    //
+    // ChatAutoScrollPolicy operates in *message-space* (index 0 = first
+    // message, last index = `messages.size - 1`). We translate to/from
+    // LazyColumn-space at this boundary by subtracting/adding
+    // [leadingHeaderItemCount]: the visible index fed to the policy is
+    // converted to message-space, and the scroll target is converted back to
+    // LazyColumn-space. Without this, "scroll to latest" lands on the
+    // second-to-last message and a tall last image bubble stays obscured
+    // behind the composer — the visible index and the target index were in
+    // different spaces, so the semantic was never actually synced.
+    val leadingHeaderItemCount = if (state.messages.isNotEmpty()) 1 else 0
+    val lastVisibleMessageIndex by remember(listState, leadingHeaderItemCount) {
         derivedStateOf {
-            listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
+            (listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1) -
+                leadingHeaderItemCount
         }
     }
     var lastVisibleIndexBeforeImeExpansion by remember { mutableStateOf(lastVisibleMessageIndex) }
@@ -185,7 +207,10 @@ fun ChatScreen(
     }
     var previousLatestMessageId by remember { mutableStateOf<String?>(null) }
     val latestMessageId = state.messages.lastOrNull()?.messageId
-    val latestMessageIndex = ChatAutoScrollPolicy.scrollToLatestIndex(state.messages.size)
+    // LazyColumn-space target index of the latest message: message-space last
+    // index from the policy plus the leading header offset.
+    val latestMessageIndex = ChatAutoScrollPolicy.scrollToLatestIndex(state.messages.size) +
+        leadingHeaderItemCount
     val autoScrollAction = ChatAutoScrollPolicy.scrollAction(previousLatestMessageId, latestMessageId)
     SideEffect {
         if (autoScrollAction == ChatAutoScrollPolicy.ScrollAction.PRE_MEASURE_ANCHOR_TO_LATEST) {
@@ -207,7 +232,6 @@ fun ChatScreen(
             )
         }
     }
-
     LaunchedEffect(viewModel) {
         viewModel.start()
     }
@@ -236,14 +260,27 @@ fun ChatScreen(
     }
 
     LaunchedEffect(imeBottomPx, state.messages.size) {
-        val imeScrollDeltaPx = ChatAutoScrollPolicy.imeExpansionScrollDeltaPx(
-            previousImeBottomPx = previousImeBottomPx,
-            currentImeBottomPx = imeBottomPx,
-            messageCount = state.messages.size,
-            lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeExpansion
-        )
-        if (imeScrollDeltaPx > 0) {
-            listState.animateScrollBy(imeScrollDeltaPx.toFloat())
+        when (
+            val imeExpansionAction = ChatAutoScrollPolicy.imeExpansionAction(
+                previousImeBottomPx = previousImeBottomPx,
+                currentImeBottomPx = imeBottomPx,
+                messageCount = state.messages.size,
+                lastVisibleIndexBeforeImeChange = lastVisibleIndexBeforeImeExpansion,
+                didScrollToLatestDuringImeExpansion = didScrollToLatestDuringImeExpansion
+            )
+        ) {
+            ChatAutoScrollPolicy.ImeExpansionAction.None -> {
+                if (imeBottomPx == 0) {
+                    didScrollToLatestDuringImeExpansion = false
+                }
+            }
+            is ChatAutoScrollPolicy.ImeExpansionAction.ScrollByImeDelta -> {
+                listState.animateScrollBy(imeExpansionAction.deltaPx.toFloat())
+            }
+            ChatAutoScrollPolicy.ImeExpansionAction.ScrollToLatest -> {
+                listState.animateScrollToLatestBottomAligned(latestMessageIndex)
+                didScrollToLatestDuringImeExpansion = true
+            }
         }
         previousImeBottomPx = imeBottomPx
     }
@@ -277,6 +314,33 @@ fun ChatScreen(
         if (shouldLoadEarlierHistory) {
             viewModel.loadMoreHistory()
         }
+    }
+
+    LaunchedEffect(listState, state.messages, prefetchedThumbnailPaths) {
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { isScrollInProgress ->
+                if (isScrollInProgress) return@collect
+                delay(CHAT_THUMBNAIL_PREFETCH_IDLE_DELAY_MS) // 不马上预热，先等 160ms
+                val visibleMinIndex = listState.layoutInfo.visibleItemsInfo.minOfOrNull { it.index } ?: -1
+                val visibleMaxIndex = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: -1
+                val paths = ChatThumbnailPrefetchPolicy.pathsForIdleViewport(
+                    messages = state.messages,
+                    visibleMinIndex = visibleMinIndex,
+                    visibleMaxIndex = visibleMaxIndex,
+                    isScrollInProgress = listState.isScrollInProgress,
+                    alreadyPrefetchedPaths = prefetchedThumbnailPaths.toSet(),
+                    margin = CHAT_THUMBNAIL_PREFETCH_MARGIN,
+                    maxImages = CHAT_THUMBNAIL_PREFETCH_MAX_IMAGES
+                )
+                if (paths.isEmpty()) return@collect
+                prefetchedThumbnailPaths += paths
+                ChatInitialImagePrewarmer.prewarmLocalThumbnails(
+                    context = context,
+                    localThumbnailPaths = paths,
+                    timeoutMs = CHAT_THUMBNAIL_PREFETCH_TIMEOUT_MS,
+                    maxConcurrency = CHAT_THUMBNAIL_PREFETCH_CONCURRENCY
+                )
+            }
     }
 
     LaunchedEffect(draft.text, isGroupChat, mentionableMembers) {
@@ -1036,7 +1100,27 @@ private fun ChatMessageActionBar(
     }
 }
 
+private suspend fun LazyListState.animateScrollToLatestBottomAligned(index: Int) {
+    animateScrollToItem(index)
+    withFrameNanos { }
+
+    val latestItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val bottomAlignmentDeltaPx = ChatAutoScrollPolicy.bottomAlignmentScrollDeltaPx(
+        itemOffsetPx = latestItem.offset,
+        itemSizePx = latestItem.size,
+        viewportEndOffsetPx = layoutInfo.viewportEndOffset
+    )
+    if (bottomAlignmentDeltaPx > 0) {
+        animateScrollBy(bottomAlignmentDeltaPx.toFloat())
+    }
+}
+
 private const val CHAT_ERROR_TOAST_DURATION_MS = 2_000L
+private const val CHAT_THUMBNAIL_PREFETCH_MARGIN = 4
+private const val CHAT_THUMBNAIL_PREFETCH_MAX_IMAGES = 10
+private const val CHAT_THUMBNAIL_PREFETCH_TIMEOUT_MS = 250L
+private const val CHAT_THUMBNAIL_PREFETCH_CONCURRENCY = 1
+private const val CHAT_THUMBNAIL_PREFETCH_IDLE_DELAY_MS = 160L
 
 @Composable
 private fun OutgoingMessageStatus(

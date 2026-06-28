@@ -385,7 +385,8 @@ private class AccountScopedRepositories private constructor(
             val groupReadCursorRepository = DefaultGroupReadCursorRepository(
                 dao = AndroidGroupReadCursorDao(database)
             )
-            val messageRepository = MessageRepository(
+            lateinit var messageRepository: MessageRepository
+            messageRepository = MessageRepository(
                 messageDao = AndroidMessageDao(database),
                 conversationDao = conversationDao,
                 pendingMessageDao = AndroidPendingMessageDao(database),
@@ -397,7 +398,20 @@ private class AccountScopedRepositories private constructor(
                 thumbnailCache = thumbnailCache,
                 thumbnailDownloadScheduler = CoroutineThumbnailDownloadScheduler(
                     thumbnailCache = thumbnailCache,
-                    scope = thumbnailDownloadScope
+                    scope = thumbnailDownloadScope,
+                    maxPrewarmPerDrain = 5,
+                    prewarmLocalThumbnail = { message, _, localPath, alreadyPrewarmedInDrain, maxPrewarmPerDrain ->
+                        if (!messageRepository.shouldPrewarmReceivedThumbnail(
+                                message = message,
+                                alreadyPrewarmedInDrain = alreadyPrewarmedInDrain,
+                                maxPrewarmPerDrain = maxPrewarmPerDrain
+                            )
+                        ) {
+                            false
+                        } else {
+                            ChatInitialImagePrewarmer.prewarmLocalThumbnail(context, localPath)
+                        }
+                    }
                 ),
                 groupReadCursorRepository = groupReadCursorRepository
             )

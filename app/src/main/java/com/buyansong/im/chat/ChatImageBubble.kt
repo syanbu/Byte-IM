@@ -11,7 +11,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,8 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.Coil
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.ui.ByteImColors
@@ -44,21 +42,11 @@ fun ChatImageBubble(
         imageWidth = message.imageWidth,
         imageHeight = message.imageHeight
     )
-    // Self-managed preload: warm Coil's memory cache for this bubble's
-    // local thumbnail before SubcomposeAsyncImage triggers the same decode.
-    // Only local files are preloaded; never fetched from network here, since
-    // visible bubbles always have localThumbnailPath set under the strict
-    // receiver-side caching policy.
-    LaunchedEffect(message.localThumbnailPath) {
-        val path = message.localThumbnailPath ?: return@LaunchedEffect
-        val request = ChatLocalThumbnailRequest.build(context, path) ?: return@LaunchedEffect
-        Coil.imageLoader(context).execute(request)
-    }
     Box(
         modifier = modifier
             .size(width = bubbleSize.widthDp.dp, height = bubbleSize.heightDp.dp)
             .clip(bubbleShape)
-            .background(Color(0xFFE5E2E1))
+            .background(if (model == null) Color(0xFFE5E2E1) else Color.Transparent)
             .combinedClickable(
                 onClick = {
                     if (message.localOriginalPath != null || message.imageUrl != null) {
@@ -70,23 +58,11 @@ fun ChatImageBubble(
         contentAlignment = Alignment.Center
     ) {
         if (model != null) {
-            SubcomposeAsyncImage(
+            AsyncImage(
                 model = model,
                 contentDescription = message.content,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                loading = {
-                    if (ChatImageBubbleLoadingPolicy.showInlineProgress()) {
-                        CircularProgressIndicator()
-                    }
-                },
-                error = {
-                    Text(
-                        text = "加载失败",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
+                modifier = Modifier.fillMaxSize()
             )
         }
         when (message.status) {

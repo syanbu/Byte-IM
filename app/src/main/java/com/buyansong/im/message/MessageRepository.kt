@@ -489,6 +489,19 @@ class MessageRepository(
         )
     }
 
+    fun shouldPrewarmReceivedThumbnail(
+        message: ChatMessage,
+        alreadyPrewarmedInDrain: Int,
+        maxPrewarmPerDrain: Int
+    ): Boolean {
+        return ReceivedThumbnailPrewarmPolicy.shouldPrewarm(
+            messageConversationId = message.conversationId,
+            activeConversationId = activeConversationId,
+            alreadyPrewarmedInDrain = alreadyPrewarmedInDrain,
+            maxPrewarmPerDrain = maxPrewarmPerDrain
+        )
+    }
+
     fun conversations(limit: Int = 50) = conversationPage(
         beforeLastMessageTime = null,
         beforeConversationId = null,
