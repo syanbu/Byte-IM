@@ -74,7 +74,7 @@ class PushPollWorker(
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
             return false
         }
-        return Build.VERSION.SDK_INT < 33 ||
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
     // 发送系统级通知
@@ -96,6 +96,14 @@ class PushPollWorker(
                 )
             )
             .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.d(TAG, "notification skipped: POST_NOTIFICATIONS not granted")
+            return
+        }
+
         NotificationManagerCompat.from(context).notify((item.pushId and Int.MAX_VALUE.toLong()).toInt(), notification)
     }
 
