@@ -11,14 +11,16 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 object ChatInitialImagePrewarmer {
     private const val PREWARM_TIMEOUT_MS = 300L
-    private const val PREWARM_BEFORE_NAVIGATION_TIMEOUT_MS = 700L
-    private const val MAX_PREWARM_BEFORE_NAVIGATION_IMAGES = 12
-    private const val MAX_PREWARM_CONCURRENCY = 3
+    internal const val PREWARM_BEFORE_NAVIGATION_TIMEOUT_MS = 300L
+    internal const val MAX_PREWARM_BEFORE_NAVIGATION_IMAGES = 6
+    internal const val MAX_PREWARM_CONCURRENCY = 3
 
     fun thumbnailPathsToPrewarm(messages: List<ChatMessage>): List<String> {
         return messages
@@ -114,6 +116,26 @@ object ChatInitialImagePrewarmer {
         }
     }
 
+    internal suspend fun <T> forEachWithConcurrency(
+        items: List<T>,
+        maxConcurrency: Int,
+        operation: suspend (T) -> Unit
+    ) {
+        if (items.isEmpty()) {
+            return
+        }
+        val semaphore = Semaphore(maxConcurrency.coerceAtLeast(1))
+        coroutineScope {
+            items.map { item ->
+                async {
+                    semaphore.withPermit {
+                        operation(item)
+                    }
+                }
+            }.awaitAll()
+        }
+    }
+
     suspend fun prewarmLocalThumbnails(
         context: Context,
         localThumbnailPaths: List<String>,
@@ -130,17 +152,12 @@ object ChatInitialImagePrewarmer {
         val appContext = context.applicationContext
         withTimeoutOrNull(timeoutMs) {
             withContext(Dispatchers.IO) {
-                thumbnailPaths
-                    .chunked(maxConcurrency.coerceAtLeast(1))
-                    .forEach { batch ->
-                        coroutineScope {
-                            batch.map { path ->
-                                async {
-                                    prewarmLocalThumbnail(appContext, path)
-                                }
-                            }.awaitAll()
-                        }
-                    }
+                forEachWithConcurrency(
+                    items = thumbnailPaths,
+                    maxConcurrency = maxConcurrency
+                ) { path ->
+                    prewarmLocalThumbnail(appContext, path)
+                }
             }
         }
     }

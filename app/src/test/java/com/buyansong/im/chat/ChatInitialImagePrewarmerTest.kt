@@ -4,7 +4,11 @@ import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.MessageDirection
 import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.storage.MessageType
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatInitialImagePrewarmerTest {
@@ -40,6 +44,76 @@ class ChatInitialImagePrewarmerTest {
             listOf("/cache/a.jpg", "/cache/b.jpg"),
             ChatInitialImagePrewarmer.thumbnailPathsToPrewarm(messages, maxImages = 2)
         )
+    }
+
+    @Test
+    fun entryWarmupSelectsAtMostSixDistinctLocalThumbnails() {
+        val messages = (1..8).map { index ->
+            message(
+                id = "image-$index",
+                type = MessageType.IMAGE,
+                localThumbnailPath = "/cache/$index.jpg"
+            )
+        }
+
+        assertEquals(
+            (1..6).map { "/cache/$it.jpg" },
+            ChatInitialImagePrewarmer.thumbnailPathsToPrewarm(
+                messages = messages,
+                maxImages = ChatInitialImagePrewarmer.MAX_PREWARM_BEFORE_NAVIGATION_IMAGES
+            )
+        )
+    }
+
+    @Test
+    fun forEachWithConcurrencyStartsNextItemWhenOneSlotBecomesAvailable() = runTest {
+        val releaseThird = CompletableDeferred<Unit>()
+        val fourthStarted = CompletableDeferred<Unit>()
+
+        val job = launch {
+            ChatInitialImagePrewarmer.forEachWithConcurrency(
+                items = listOf(1, 2, 3, 4),
+                maxConcurrency = 3
+            ) { item ->
+                when (item) {
+                    3 -> releaseThird.await()
+                    4 -> fourthStarted.complete(Unit)
+                }
+            }
+        }
+
+        testScheduler.runCurrent()
+
+        assertTrue(
+            "Item 4 must start while item 3 is still running",
+            fourthStarted.isCompleted
+        )
+
+        releaseThird.complete(Unit)
+        job.join()
+    }
+
+    @Test
+    fun forEachWithConcurrencyNeverExceedsConfiguredLimit() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val started = mutableListOf<Int>()
+
+        val job = launch {
+            ChatInitialImagePrewarmer.forEachWithConcurrency(
+                items = listOf(1, 2, 3, 4),
+                maxConcurrency = 3
+            ) { item ->
+                started += item
+                release.await()
+            }
+        }
+
+        testScheduler.runCurrent()
+
+        assertEquals(listOf(1, 2, 3), started)
+
+        release.complete(Unit)
+        job.join()
     }
 
     @Test
