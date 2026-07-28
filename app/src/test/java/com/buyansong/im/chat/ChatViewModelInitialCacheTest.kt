@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -106,7 +107,7 @@ class ChatViewModelInitialCacheTest {
     }
 
     @Test
-    fun constructor_populatesMessagesFromCachedInitialPageBeforeStart() {
+    fun constructor_populatesMessagesFromCachedInitialPageBeforeStart() = runBlocking {
         val messageDao = InMemoryMessageDao()
         val repository = MessageRepository(
             messageDao = messageDao,
@@ -116,8 +117,15 @@ class ChatViewModelInitialCacheTest {
             messageIdGenerator = MessageIdGenerator(),
             seqGenerator = SeqGenerator()
         )
-        listOf(message("m1", 1L), message("m2", 2L)).forEach(messageDao::insertOrIgnore)
-        repository.preloadInitialPageSync("single:u_a:u_b")
+        (1L..25L).forEach { createdAt ->
+            messageDao.insertOrIgnore(
+                message(
+                    id = "m$createdAt",
+                    createdAt = createdAt
+                )
+            )
+        }
+        repository.preloadInitialPage("single:u_a:u_b")
 
         val viewModel = ChatViewModel(
             session = session(),
@@ -129,7 +137,11 @@ class ChatViewModelInitialCacheTest {
             dispatcher = Dispatchers.Unconfined
         )
 
-        assertEquals(listOf("m1", "m2"), viewModel.state.value.messages.map { it.messageId })
+        assertEquals(20, viewModel.state.value.messages.size)
+        assertEquals(
+            (6L..25L).map { "m$it" },
+            viewModel.state.value.messages.map { it.messageId }
+        )
         viewModel.stop()
     }
 
@@ -189,7 +201,7 @@ class ChatViewModelInitialCacheTest {
     }
 
     @Test
-    fun constructor_usesCachedGroupSenderProfilesBeforeNetworkRefresh() {
+    fun constructor_usesCachedGroupSenderProfilesBeforeNetworkRefresh() = runBlocking {
         val profileDao = InMemoryUserProfileDao()
         profileDao.upsert(profile("u_b", nickname = "Bee", avatarUrl = "https://avatar.example/u_b.png"))
         val messageDao = InMemoryMessageDao()
@@ -202,7 +214,7 @@ class ChatViewModelInitialCacheTest {
             seqGenerator = SeqGenerator()
         )
         messageDao.insertOrIgnore(groupMessage("m1", 1L))
-        repository.preloadInitialPageSync("group:g1")
+        repository.preloadInitialPage("group:g1")
 
         val viewModel = ChatViewModel(
             session = session(),

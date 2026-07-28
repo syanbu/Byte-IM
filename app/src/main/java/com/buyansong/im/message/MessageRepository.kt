@@ -440,17 +440,16 @@ class MessageRepository(
         return initialPageCache[conversationId]
     }
 
-    fun preloadInitialPageSync(conversationId: String): List<ChatMessage> {
+    suspend fun preloadInitialPage(conversationId: String): List<ChatMessage> {
         initialPageCache[conversationId]?.let { return it }
-        return runBlocking {
-            withTimeoutOrNull(INITIAL_PAGE_SYNC_TIMEOUT_MS) {
-                withContext(Dispatchers.IO) {
-                    loadInitialPageFromDao(conversationId).also { messages ->
+        return withTimeoutOrNull(INITIAL_PAGE_PRELOAD_TIMEOUT_MS) {
+            withContext(Dispatchers.IO) {
+                initialPageCache[conversationId]
+                    ?: loadInitialPageFromDao(conversationId).also { messages ->
                         initialPageCache[conversationId] = messages
                     }
-                }
-            } ?: emptyList()
-        }
+            }
+        } ?: emptyList()
     }
 
     fun preloadInitialPageAsync(conversationId: String, scope: CoroutineScope) {
@@ -1194,7 +1193,7 @@ class MessageRepository(
         const val DEFAULT_RETRY_BATCH_SIZE = 50
         const val INITIAL_PAGE_SIZE = 20
         const val INITIAL_PAGE_CACHE_SIZE = 10
-        const val INITIAL_PAGE_SYNC_TIMEOUT_MS = 100L
+        const val INITIAL_PAGE_PRELOAD_TIMEOUT_MS = 100L
         const val IMAGE_PLACEHOLDER_CONTENT = "[图片]"
         const val RECALL_FAILURE_MESSAGE = "撤回失败，请重试"
     }

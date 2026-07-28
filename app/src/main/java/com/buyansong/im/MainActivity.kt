@@ -498,7 +498,7 @@ private fun AuthenticatedImNavHost(
         remember(context, uiScope, messageRepository, navController) {
             { conversationId ->
                 uiScope.launch {
-                    val messages = messageRepository.preloadInitialPageSync(conversationId)
+                    val messages = messageRepository.preloadInitialPage(conversationId)
                     ChatInitialImagePrewarmer.prewarmBeforeNavigation(context, messages)
                     SelfHostedImRoute.Chat.createRoute(conversationId)
                         ?.let(navController::navigateToChat)

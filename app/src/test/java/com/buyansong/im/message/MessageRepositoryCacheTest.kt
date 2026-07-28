@@ -14,6 +14,7 @@ import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.storage.MessageType
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -25,9 +26,11 @@ class MessageRepositoryCacheTest {
         private val delegate: InMemoryMessageDao = InMemoryMessageDao()
     ) : MessageDao {
         var queryPageCount = 0
+        val queryPageLimits = mutableListOf<Int>()
 
         override fun queryPage(conversationId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
             queryPageCount += 1
+            queryPageLimits += limit
             return delegate.queryPage(conversationId, beforeTime, limit)
         }
 
@@ -160,6 +163,22 @@ class MessageRepositoryCacheTest {
         )
     }
 
+    private fun insertMessages(
+        messageDao: CountingMessageDao,
+        count: Int,
+        conversationId: String = "single:u_a:u_b"
+    ) {
+        (1..count).forEach { index ->
+            messageDao.insertOrIgnore(
+                message(
+                    id = "m$index",
+                    conversationId = conversationId,
+                    createdAt = index.toLong()
+                )
+            )
+        }
+    }
+
     @Test
     fun historyPageByConversationId_reusesCachedInitialPage() {
         val messageDao = CountingMessageDao()
@@ -189,17 +208,20 @@ class MessageRepositoryCacheTest {
     }
 
     @Test
-    fun getCachedInitialPage_returnsCachedPageWithoutQueryingAgain() {
+    fun preloadInitialPage_queriesTwentyOnceAndReturnsCachedInitialPage() = runBlocking {
         val messageDao = CountingMessageDao()
         val repository = repository(messageDao)
-        messageDao.insertOrIgnore(message("m1"))
+        insertMessages(messageDao, count = 25)
 
-        repository.preloadInitialPageSync("single:u_a:u_b")
+        val first = repository.preloadInitialPage("single:u_a:u_b")
+        val second = repository.preloadInitialPage("single:u_a:u_b")
         val cached = repository.getCachedInitialPage("single:u_a:u_b")
 
-        assertNotNull(cached)
-        assertEquals(listOf("m1"), cached!!.map { it.messageId })
+        assertEquals((25 downTo 6).map { "m$it" }, first.map { it.messageId })
+        assertEquals(first, second)
+        assertEquals(first, cached)
         assertEquals(1, messageDao.queryPageCount)
+        assertEquals(listOf(20), messageDao.queryPageLimits)
     }
 
     @Test
