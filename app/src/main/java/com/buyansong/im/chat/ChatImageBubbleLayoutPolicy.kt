@@ -7,9 +7,14 @@ data class ChatImageBubbleSize(
     val heightDp: Int
 )
 
+data class ChatImageDecodeSize(
+    val widthPx: Int,
+    val heightPx: Int
+)
+
 object ChatImageBubbleLayoutPolicy {
-    private const val MaxWidthDp = 220
-    private const val MaxHeightDp = 270
+    internal const val MAX_WIDTH_DP = 220
+    internal const val MAX_HEIGHT_DP = 270
     private const val MinEdgeDp = 96
     private const val FallbackWidthDp = 180
     private const val FallbackHeightDp = 120
@@ -19,11 +24,19 @@ object ChatImageBubbleLayoutPolicy {
             return ChatImageBubbleSize(FallbackWidthDp, FallbackHeightDp)
         }
 
-        val widthScale = MaxWidthDp.toFloat() / imageWidth.toFloat()
-        val heightScale = MaxHeightDp.toFloat() / imageHeight.toFloat()
+        val widthScale = MAX_WIDTH_DP.toFloat() / imageWidth.toFloat()
+        val heightScale = MAX_HEIGHT_DP.toFloat() / imageHeight.toFloat()
         val scale = minOf(widthScale, heightScale, 1f)
-        val width = (imageWidth * scale).roundToInt().coerceIn(MinEdgeDp, MaxWidthDp)
-        val height = (imageHeight * scale).roundToInt().coerceIn(MinEdgeDp, MaxHeightDp)
+        val width = (imageWidth * scale).roundToInt().coerceIn(MinEdgeDp, MAX_WIDTH_DP)
+        val height = (imageHeight * scale).roundToInt().coerceIn(MinEdgeDp, MAX_HEIGHT_DP)
         return ChatImageBubbleSize(width, height)
+    }
+
+    fun decodeSizePx(density: Float): ChatImageDecodeSize {
+        val safeDensity = density.takeIf { it > 0f } ?: 1f
+        return ChatImageDecodeSize(
+            widthPx = (MAX_WIDTH_DP * safeDensity).roundToInt().coerceAtLeast(1),
+            heightPx = (MAX_HEIGHT_DP * safeDensity).roundToInt().coerceAtLeast(1)
+        )
     }
 }
