@@ -1,10 +1,10 @@
 # B11 Image Message Design Status
 
-> **Last modified:** 2026-06-23 — Made viewport thumbnail prefetch idle-only and conservative. Fast flings now rely on normal `AsyncImage` loading for pass-through rows; `ChatScreen` waits until `LazyListState` becomes idle before prewarming a small nearby local-thumbnail set.
+> **Last modified:** 2026-07-28 — Defined thumbnail cache ownership and bounded entry warmup: the initial 20-message page contributes at most six local thumbnails, with at most three Coil requests active and a 300 ms upper bound.
 >
 > **Earlier (2026-06-22):** Updated chat thumbnail preload strategy. `ChatImageBubble` is presentation-only and no longer starts its own `LaunchedEffect` preload. Receiver thumbnail downloads now warm the local thumbnail through `ChatInitialImagePrewarmer` before `localThumbnailPath` is emitted, `ChatScreen` prefetches local thumbnails around the current viewport, and sender-side hot-send prewarm still runs before `ChatViewModel.sendImages(...)`.
 >
-> **Earlier (2026-06-10):** Fixed sender-side hot image send thumbnail flash. Outgoing images now prewarm their generated local thumbnail files into Coil memory cache before `ChatViewModel.sendImages(...)` creates and emits the local `UPLOADING` rows. `ChatImageBubble` renders local thumbnails through the same explicit `ImageRequest` (`memoryCacheKey`, `diskCacheKey`, `Size.ORIGINAL`) used by prewarm, so the first bubble composition can hit memory instead of briefly showing the gray placeholder while Coil decodes the local file.
+> **Earlier (2026-06-10):** Fixed sender-side hot image send thumbnail flash. Outgoing images now prewarm their generated local thumbnail files into Coil memory cache before `ChatViewModel.sendImages(...)` creates and emits the local `UPLOADING` rows. The original request details from that change have since been superseded by the shared bubble-bound `ChatLocalThumbnailRequest` contract below.
 >
 > **Earlier (2026-06-08):** Fixed in-screen overlay back-stack semantics. `ChatImagePreviewScreen` and `AlbumPickerScreen` are rendered as in-screen overlays inside `ChatScreen` (not as NavHost destinations), so without an explicit `BackHandler` the system back press propagated to the NavController and popped the entire `Chat` destination, returning the user straight to `Conversations`. Added two `BackHandler` blocks in `ChatScreen` — one for `showAlbumPicker`, one for `previewMessage` — registered before their respective overlays so back now dismisses the overlay first and the user lands back on the chat, not the messages list.
 >
@@ -22,6 +22,12 @@ Support single-chat image messages with:
 ## Status
 
 Implemented for gallery image send with multi-select expansion into independent image messages.
+
+## Verification
+
+| Date | Area | Command | Result |
+|---|---|---|---|
+| 2026-07-28 | Bounded dynamic Coil entry warmup | `./gradlew :app:testDebugUnitTest --console=plain`; `./gradlew :app:assembleDebug --console=plain` | Passed (automated): entry selects at most six local thumbnails, waits at most 300 ms at the coroutine boundary, keeps at most three operations active with immediate slot refill, uses bubble-bound decoding and one shared memory-cache request, and preserves active-receive plus idle-viewport policies. Device timing and Coil data-source checks remain pending. |
 
 ## Agreed Scope
 
@@ -156,15 +162,20 @@ Sender-side original storage is a cache, not the authoritative copy after upload
 - if the local original cache is later cleared, preview must fall back to `imageUrl`
 - this pass does not require a local original cleanup policy
 
-Thumbnail preload strategy:
+Thumbnail cache and warmup strategy:
 
-- `ChatLocalThumbnailRequest` is the single local-thumbnail Coil request builder and cache-key source.
-- `ChatImageBubble` is presentation-only and no longer starts its own `LaunchedEffect` preload.
-- Sender-side local thumbnails are prewarmed in `ChatScreen` after image compression and before `ChatViewModel.sendImages(...)` creates local outgoing rows.
-- Receiver-side downloaded thumbnails are prewarmed after cache write and before `localThumbnailPath` emission only for the currently active conversation; background conversations write `localThumbnailPath` without Coil prewarm and rely on navigation-time prewarm when opened.
-- Conversation entry waits briefly on `ChatInitialImagePrewarmer.prewarmBeforeNavigation(...)` for the initial local thumbnail set.
-- `ChatScreen` prefetches local thumbnails only after `LazyListState` becomes idle, using a small viewport margin, so fling gestures do not decode large numbers of pass-through thumbnails.
-- Chat-list image requests use the thumbnail resource (`localThumbnailPath ?: thumbnailUrl`); original images remain on-demand in `ChatImagePreviewScreen`.
+- SQLite stores message metadata, URLs, and `localThumbnailPath`; it does not store image bytes or Bitmap objects.
+- `MessageRepository` caches only the latest 20 display-ready message metadata records for up to 10 conversations.
+- `ChatThumbnailCache` owns encoded local thumbnail files under Android `cacheDir`.
+- The singleton Coil `ImageLoader` owns decoded Bitmap memory. Repository eviction and Coil eviction are intentionally independent.
+- `ChatLocalThumbnailRequest` is the only local-thumbnail request builder. It uses the local file as data, a path-based memory key, and a 220dp × 270dp maximum decode bound; it does not assign a Coil disk-cache key for an already-local file.
+- Conversation entry selects at most six distinct local thumbnails from the initial 20 messages. It keeps at most three Coil requests active, refills a slot as soon as one request completes, and navigates when all selected requests finish or the 300 ms image budget expires.
+- The 300 ms value is an upper bound, not a fixed delay. All memory-cache hits return immediately; if only two requests miss, entry waits only for those two decodes.
+- Entry selection is a bounded recent-message warmup window, not an exact Compose viewport calculation.
+- After navigation, `ChatScreen` performs actual visible-window prefetch only after `LazyListState` is idle for 160 ms, using a four-item margin, at most 10 images, a 250 ms timeout, and concurrency one.
+- Receiver-side downloaded thumbnails are warmed before `localThumbnailPath` emission only for the active conversation, with at most five successful prewarms per scheduler drain. Background conversations retain local files but do not spend Coil Bitmap memory.
+- Sender-side generated thumbnails are warmed before outgoing image rows enter chat state.
+- Original images remain on demand in `ChatImagePreviewScreen`.
 
 Sender-side hot-send prewarm (2026-06-10):
 
@@ -172,7 +183,7 @@ Sender-side hot-send prewarm (2026-06-10):
 - The fix keeps the existing message and upload pipeline unchanged. `ChatImageCompressor.prepareSelectedImage(...)` still generates local original/thumbnail files first. `ChatScreen` then executes Coil requests for every prepared `localThumbnailPath` before calling `ChatViewModel.sendImages(preparedImages)`.
 - `sendImages(...)` is not only the server-send step. In this codebase it is the orchestration method for outgoing image messages: sort selected images, create local `UPLOADING` rows, refresh chat state, upload thumbnail/original to OSS, and queue/send the final IM packet after upload success.
 - Prewarming before `sendImages(...)` matters because `sendImages(...)` creates the local rows and `refreshKeepingHistory()` emits them to Compose. If prewarm happens after this point, the first bubble frame can already have painted the gray placeholder.
-- `ChatLocalThumbnailRequest` centralizes the local thumbnail Coil request and uses `memoryCacheKey(path)`, `diskCacheKey(path)`, and `Size.ORIGINAL`. Sender prewarm, receiver prewarm, viewport prefetch, navigation prewarm, and bubble rendering target the same cache entry.
+- `ChatLocalThumbnailRequest` centralizes the local thumbnail Coil request. Sender prewarm, receiver prewarm, viewport prefetch, navigation prewarm, and bubble rendering all use the same local `File`, path-based memory key, and bubble-bound decode size.
 - Incoming images still wait for `ThumbnailDownloadScheduler` to cache `thumbnailUrl` into a local file and write `localThumbnailPath`; missing incoming local thumbnails remain hidden from chat history under the strict receiver-side policy.
 
 Current optimized receiver-side strategy:
@@ -633,6 +644,7 @@ Likely new mock-server tests:
 
 - The main new complexity is not OSS signing itself; it is the split between upload-phase reliability and send-phase reliability.
 - Local file cleanup is not addressed in this pass.
+- Recovery for a stale `localThumbnailPath` after Android removes its `cacheDir` file remains a separate follow-up because it changes persistence and retry behavior.
 - Without careful status handling, image messages can incorrectly enter `pending_messages` before upload is complete.
 - Chat bubble and preview rendering should avoid loading original images directly in the message list.
 - Manual emulator verification is still recommended for:
@@ -646,7 +658,7 @@ Likely new mock-server tests:
   - The UI intentionally keeps one visual affordance while the repository/ViewModel preserve distinct internal states.
 - Multi-image send order no longer relies on Android system Photo Picker URI order. The chat composer now opens a self-built album selection flow backed by `MediaStore.Images`, records an explicit `selectionOrder` on each `SelectedChatImage`, and has `ChatViewModel.sendImages(...)` sort by that order before assigning `createdAt`. The album page sends directly; tap-to-preview and drag reorder remain future UX optimizations.
 - Fast-scroll image smoothness and memory behavior still need emulator or device verification with a conversation containing 50-200 cached image thumbnails. Unit tests cover path/window selection and idle-only prefetch policy, but frame timing and Coil memory-cache churn must be observed on Android.
-- Background-conversation image receive no longer spends Coil memory immediately; opening that conversation depends on bounded navigation prewarm plus idle viewport prefetch. Device testing should confirm the 700 ms navigation prewarm cap is still enough for common recent-image conversations.
+- Background-conversation image receive no longer spends Coil memory immediately; opening that conversation depends on bounded navigation prewarm plus idle viewport prefetch. Device testing should confirm the 300 ms navigation warmup cap is sufficient for common recent-image conversations.
 
 ## Bug Fix Log
 

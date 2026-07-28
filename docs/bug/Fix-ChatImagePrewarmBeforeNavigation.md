@@ -1,5 +1,7 @@
 # Fix: 聊天入口等待图片预热后再导航
 
+> Historical implementation record. Its embedded “current code” snapshots are superseded by `docs/status/B11-image-message-design-status.md` and `docs/superpowers/plans/2026-07-28-chat-entry-preload-and-thumbnail-warmup.md`. Do not use the old `prewarmAsync`, `Size.ORIGINAL`, 12-image, 700 ms, fixed-batch, or `ChatImageBubble.LaunchedEffect` descriptions as the current contract.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 从会话列表、消息弹窗、已加入群、联系人资料等入口进入已有图片消息的单聊/群聊时，尽量让首帧直接命中 Coil 内存缓存，避免图片先显示灰色占位再渲染。

@@ -1,5 +1,7 @@
 # Fix: 接收方进入聊天时图片灰色占位符闪烁
 
+> Historical implementation record. Its embedded “current code” snapshots are superseded by `docs/status/B11-image-message-design-status.md` and `docs/superpowers/plans/2026-07-28-chat-entry-preload-and-thumbnail-warmup.md`. Do not use the old `prewarmAsync`, `Size.ORIGINAL`, 12-image, 700 ms, fixed-batch, or `ChatImageBubble.LaunchedEffect` descriptions as the current contract.
+
 - Created on: 2026-06-11
 - Branch: rename-redesign-ui
 - Scope: `ChatImageBubble` 自预热竞态、`openPreloadedChat` 缺少 Coil 预热
