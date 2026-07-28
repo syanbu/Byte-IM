@@ -201,7 +201,10 @@ class MainActivity : ComponentActivity() {
                 connection.notifyNetworkAvailable()
             }
 
-            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities
+            ) {
                 if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
                     connection.notifyNetworkAvailable()
                 }
@@ -273,70 +276,70 @@ fun SelfHostedImApp(
                 .systemBarsPadding()
         ) {
             if (loginViewModel == null) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(text = AppInfo.name, style = MaterialTheme.typography.headlineMedium)
-                Text(text = "项目骨架已就绪", style = MaterialTheme.typography.bodyLarge)
-            }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(text = AppInfo.name, style = MaterialTheme.typography.headlineMedium)
+                    Text(text = "项目骨架已就绪", style = MaterialTheme.typography.bodyLarge)
+                }
             } else {
-            val state by loginViewModel.state.collectAsState()
-            LaunchedEffect(loginViewModel) {
-                loginViewModel.restoreSession()
-            }
-            val session = state.session
-            if (state.isAuthenticated && session != null && validSessionProvider != null && connection != null && httpBaseUrl != null && thumbnailCache != null) {
-                val context = LocalContext.current
-                val accountRepositories = remember(session.userId) {
-                    AccountScopedRepositories.create(
-                        context = context.applicationContext,
-                        userId = session.userId,
-                        httpBaseUrl = httpBaseUrl,
+                val state by loginViewModel.state.collectAsState()
+                LaunchedEffect(loginViewModel) {
+                    loginViewModel.restoreSession()
+                }
+                val session = state.session
+                if (state.isAuthenticated && session != null && validSessionProvider != null && connection != null && httpBaseUrl != null && thumbnailCache != null) {
+                    val context = LocalContext.current
+                    val accountRepositories = remember(session.userId) {
+                        AccountScopedRepositories.create(
+                            context = context.applicationContext,
+                            userId = session.userId,
+                            httpBaseUrl = httpBaseUrl,
+                            connection = connection,
+                            thumbnailCache = thumbnailCache
+                        )
+                    }
+                    DisposableEffect(accountRepositories) {
+                        onDispose {
+                            accountRepositories.close()
+                        }
+                    }
+                    AuthenticatedImNavHost(
+                        session = session,
+                        validSessionProvider = validSessionProvider,
+                        messageRepository = accountRepositories.messageRepository,
                         connection = connection,
-                        thumbnailCache = thumbnailCache
+                        profileRepository = accountRepositories.profileRepository,
+                        contactRepository = accountRepositories.contactRepository,
+                        groupRepository = accountRepositories.groupRepository,
+                        pushTokenRepository = accountRepositories.pushTokenRepository,
+                        avatarUploadApi = accountRepositories.avatarUploadApi,
+                        imageUploadApi = accountRepositories.imageUploadApi,
+                        pendingPushDeepLink = pendingPushDeepLink,
+                        onPushDeepLinkConsumed = onPushDeepLinkConsumed,
+                        onLogout = {
+                            accountRepositories.messageRepository.closeConversation()
+                            val validSession = validSessionProvider()
+                            accountRepositories.pushTokenRepository.unregister(
+                                accessToken = validSession?.accessToken ?: session.accessToken,
+                                userId = session.userId
+                            )
+                            PushPollScheduler.cancel(context.applicationContext, session.userId)
+                            connection.disconnect()
+                            loginViewModel.logout()
+                        }
+                    )
+                } else {
+                    LoginScreen(
+                        state = state,
+                        onLogin = loginViewModel::login,
+                        onRegister = loginViewModel::register
                     )
                 }
-                DisposableEffect(accountRepositories) {
-                    onDispose {
-                        accountRepositories.close()
-                    }
-                }
-                AuthenticatedImNavHost(
-                    session = session,
-                    validSessionProvider = validSessionProvider,
-                    messageRepository = accountRepositories.messageRepository,
-                    connection = connection,
-                    profileRepository = accountRepositories.profileRepository,
-                    contactRepository = accountRepositories.contactRepository,
-                    groupRepository = accountRepositories.groupRepository,
-                    pushTokenRepository = accountRepositories.pushTokenRepository,
-                    avatarUploadApi = accountRepositories.avatarUploadApi,
-                    imageUploadApi = accountRepositories.imageUploadApi,
-                    pendingPushDeepLink = pendingPushDeepLink,
-                    onPushDeepLinkConsumed = onPushDeepLinkConsumed,
-                    onLogout = {
-                        accountRepositories.messageRepository.closeConversation()
-                        val validSession = validSessionProvider()
-                        accountRepositories.pushTokenRepository.unregister(
-                            accessToken = validSession?.accessToken ?: session.accessToken,
-                            userId = session.userId
-                        )
-                        PushPollScheduler.cancel(context.applicationContext, session.userId)
-                        connection.disconnect()
-                        loginViewModel.logout()
-                    }
-                )
-            } else {
-                LoginScreen(
-                    state = state,
-                    onLogin = loginViewModel::login,
-                    onRegister = loginViewModel::register
-                )
             }
-        }
         }
     }
 }
@@ -424,7 +427,8 @@ private class AccountScopedRepositories private constructor(
                 api = OkHttpPushApi(baseUrl = httpBaseUrl),
                 tokenStore = MockPushTokenStore(context),
                 deviceIdProvider = {
-                    Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID).orEmpty()
+                    Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+                        .orEmpty()
                 }
             )
             return AccountScopedRepositories(
@@ -490,15 +494,17 @@ private fun AuthenticatedImNavHost(
             connection = connection
         )
     }
-    val openPreloadedChat: (String) -> Unit = remember(context, uiScope, messageRepository, navController) {
-        { conversationId ->
-            uiScope.launch {
-                val messages = messageRepository.preloadInitialPageSync(conversationId)
-                ChatInitialImagePrewarmer.prewarmBeforeNavigation(context, messages)
-                SelfHostedImRoute.Chat.createRoute(conversationId)?.let(navController::navigateToChat)
+    val openPreloadedChat: (String) -> Unit =
+        remember(context, uiScope, messageRepository, navController) {
+            { conversationId ->
+                uiScope.launch {
+                    val messages = messageRepository.preloadInitialPageSync(conversationId)
+                    ChatInitialImagePrewarmer.prewarmBeforeNavigation(context, messages)
+                    SelfHostedImRoute.Chat.createRoute(conversationId)
+                        ?.let(navController::navigateToChat)
+                }
             }
         }
-    }
     val contactListViewModel = remember(session.userId) {
         ContactListViewModel(
             session = session,
@@ -582,239 +588,245 @@ private fun AuthenticatedImNavHost(
                     .background(MaterialTheme.colorScheme.background)
                     .padding(innerPadding)
             ) {
-            composable(SelfHostedImRoute.Conversations.route) {
-                val conversationState by conversationListViewModel.state.collectAsState()
-                Column(modifier = Modifier.fillMaxSize()) {
-                    ConversationListScreen(
-                        viewModel = conversationListViewModel,
-                        state = conversationState,
-                        unreadCount = unreadMessagesCount,
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                        onStartGroupChat = {
-                            navController.navigate(SelfHostedImRoute.GroupCreate.route) {
-                                launchSingleTop = true
+                composable(SelfHostedImRoute.Conversations.route) {
+                    val conversationState by conversationListViewModel.state.collectAsState()
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        ConversationListScreen(
+                            viewModel = conversationListViewModel,
+                            state = conversationState,
+                            unreadCount = unreadMessagesCount,
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            onStartGroupChat = {
+                                navController.navigate(SelfHostedImRoute.GroupCreate.route) {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onOpenConversation = { conversationId ->
+                                openPreloadedChat(conversationId)
                             }
-                        },
-                        onOpenConversation = { conversationId ->
-                            openPreloadedChat(conversationId)
-                        }
-                    )
-                    TopLevelBottomBar(
-                        currentRoute = currentRoute,
-                        unreadMessagesCount = unreadMessagesCount,
-                        onNavigateToTab = { tabRoute ->
-                            navController.navigateToTopLevelTab(tabRoute)
-                        }
-                    )
-                }
-                TopLevelRouteBackHandler(
-                    route = SelfHostedImRoute.Conversations.route,
-                    currentRoute = currentRoute,
-                    activity = activity
-                )
-            }
-
-            composable(SelfHostedImRoute.Contacts.route) {
-                val contactState by contactListViewModel.state.collectAsState()
-                Column(modifier = Modifier.fillMaxSize()) {
-                    ContactListScreen(
-                        viewModel = contactListViewModel,
-                        state = contactState,
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                        onStartGroupChat = {
-                            navController.navigate(SelfHostedImRoute.GroupCreate.route) {
-                                launchSingleTop = true
+                        )
+                        TopLevelBottomBar(
+                            currentRoute = currentRoute,
+                            unreadMessagesCount = unreadMessagesCount,
+                            onNavigateToTab = { tabRoute ->
+                                navController.navigateToTopLevelTab(tabRoute)
                             }
-                        },
-                        onOpenContact = { peerUserId ->
-                            SelfHostedImRoute.ContactProfile.createRoute(peerUserId)?.let { navController.navigate(it) }
-                        },
-                        onOpenJoinedGroups = {
-                            navController.navigate(SelfHostedImRoute.JoinedGroups.route) {
-                                launchSingleTop = true
+                        )
+                    }
+                    TopLevelRouteBackHandler(
+                        route = SelfHostedImRoute.Conversations.route,
+                        currentRoute = currentRoute,
+                        activity = activity
+                    )
+                }
+
+                composable(SelfHostedImRoute.Contacts.route) {
+                    val contactState by contactListViewModel.state.collectAsState()
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        ContactListScreen(
+                            viewModel = contactListViewModel,
+                            state = contactState,
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            onStartGroupChat = {
+                                navController.navigate(SelfHostedImRoute.GroupCreate.route) {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onOpenContact = { peerUserId ->
+                                SelfHostedImRoute.ContactProfile.createRoute(peerUserId)
+                                    ?.let { navController.navigate(it) }
+                            },
+                            onOpenJoinedGroups = {
+                                navController.navigate(SelfHostedImRoute.JoinedGroups.route) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        )
+                        TopLevelBottomBar(
+                            currentRoute = currentRoute,
+                            unreadMessagesCount = unreadMessagesCount,
+                            onNavigateToTab = { tabRoute ->
+                                navController.navigateToTopLevelTab(tabRoute)
+                            }
+                        )
+                    }
+                    TopLevelRouteBackHandler(
+                        route = SelfHostedImRoute.Contacts.route,
+                        currentRoute = currentRoute,
+                        activity = activity
+                    )
+                }
+
+                composable(SelfHostedImRoute.GroupCreate.route) {
+                    val groupCreateViewModel = remember(session.userId) {
+                        GroupCreateViewModel(
+                            session = session,
+                            profileRepository = profileRepository,
+                            groupRepository = groupRepository,
+                            contactRepository = contactRepository,
+                            validSessionProvider = validSessionProvider
+                        )
+                    }
+                    val groupCreateState by groupCreateViewModel.state.collectAsState()
+                    GroupCreateScreen(
+                        viewModel = groupCreateViewModel,
+                        state = groupCreateState,
+                        onBack = { navController.popBackStack() },
+                        onCreated = { conversationId ->
+                            GroupCreateNavigationPolicy.destinationAfterCreated(conversationId)
+                                ?.let(navController::navigateToChat)
+                        }
+                    )
+                }
+
+                composable(SelfHostedImRoute.JoinedGroups.route) {
+                    val joinedGroupsViewModel = remember(session.userId) {
+                        JoinedGroupsViewModel(
+                            session = session,
+                            groupRepository = groupRepository,
+                            validSessionProvider = validSessionProvider
+                        )
+                    }
+                    val joinedGroupsState by joinedGroupsViewModel.state.collectAsState()
+                    JoinedGroupsScreen(
+                        viewModel = joinedGroupsViewModel,
+                        state = joinedGroupsState,
+                        onBack = { navController.popBackStack() },
+                        onOpenGroup = { groupId ->
+                            openPreloadedChat("group:$groupId")
+                        }
+                    )
+                }
+
+                composable(SelfHostedImRoute.Me.route) {
+                    val meViewModel = remember(session.userId) {
+                        MeViewModel(
+                            session = session,
+                            profileRepository = profileRepository,
+                            avatarUploadApi = avatarUploadApi,
+                            validSessionProvider = validSessionProvider
+                        )
+                    }
+                    val meState by meViewModel.state.collectAsState()
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        MeScreen(
+                            viewModel = meViewModel,
+                            state = meState,
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            onMoveTaskToBack = {
+                                activity?.moveTaskToBack(true)
+                            },
+                            onLogout = onLogout
+                        )
+                        TopLevelBottomBar(
+                            currentRoute = currentRoute,
+                            unreadMessagesCount = unreadMessagesCount,
+                            onNavigateToTab = { tabRoute ->
+                                navController.navigateToTopLevelTab(tabRoute)
+                            }
+                        )
+                    }
+                }
+
+                composable(route = SelfHostedImRoute.ContactProfile.pattern) { entry ->
+                    val userId = entry.arguments
+                        ?.getString(SelfHostedImRoute.ContactProfile.USER_ID_ARG)
+                        .orEmpty()
+                    if (userId.isBlank()) {
+                        LaunchedEffect(Unit) { navController.popBackStack() }
+                        return@composable
+                    }
+                    val contactProfileViewModel = remember(session.userId, userId) {
+                        ContactProfileViewModel(
+                            userId = userId,
+                            session = session,
+                            profileRepository = profileRepository,
+                            validSessionProvider = validSessionProvider
+                        )
+                    }
+                    val contactProfileState by contactProfileViewModel.state.collectAsState()
+                    ContactProfileScreen(
+                        viewModel = contactProfileViewModel,
+                        state = contactProfileState,
+                        onBack = { navController.popBackStack() },
+                        onSendMessage = { peerUserId ->
+                            // self-to-self 是占位:目前不实现"自己给自己发消息",按钮先放着。
+                            if (peerUserId != session.userId) {
+                                openPreloadedChat(
+                                    messageRepository.conversationIdFor(
+                                        session.userId,
+                                        peerUserId
+                                    )
+                                )
                             }
                         }
                     )
-                    TopLevelBottomBar(
-                        currentRoute = currentRoute,
-                        unreadMessagesCount = unreadMessagesCount,
-                        onNavigateToTab = { tabRoute ->
-                            navController.navigateToTopLevelTab(tabRoute)
-                        }
-                    )
                 }
-                TopLevelRouteBackHandler(
-                    route = SelfHostedImRoute.Contacts.route,
-                    currentRoute = currentRoute,
-                    activity = activity
-                )
-            }
 
-            composable(SelfHostedImRoute.GroupCreate.route) {
-                val groupCreateViewModel = remember(session.userId) {
-                    GroupCreateViewModel(
-                        session = session,
-                        profileRepository = profileRepository,
-                        groupRepository = groupRepository,
-                        contactRepository = contactRepository,
-                        validSessionProvider = validSessionProvider
-                    )
-                }
-                val groupCreateState by groupCreateViewModel.state.collectAsState()
-                GroupCreateScreen(
-                    viewModel = groupCreateViewModel,
-                    state = groupCreateState,
-                    onBack = { navController.popBackStack() },
-                    onCreated = { conversationId ->
-                        GroupCreateNavigationPolicy.destinationAfterCreated(conversationId)
-                            ?.let(navController::navigateToChat)
+                composable(route = SelfHostedImRoute.Chat.pattern) { chatBackStackEntry ->
+                    val conversationId = chatBackStackEntry.arguments
+                        ?.getString(SelfHostedImRoute.Chat.CONVERSATION_ID_ARG)
+                        .orEmpty()
+                    val peerUserId = conversationId.peerIdForCurrentSession(session.userId)
+                    val chatViewModel = remember(session.userId, conversationId) {
+                        ChatViewModel(
+                            session = session,
+                            repository = messageRepository,
+                            connection = connection,
+                            profileRepository = profileRepository,
+                            groupRepository = groupRepository,
+                            initialPeerId = peerUserId,
+                            imageUploadApi = imageUploadApi,
+                            validSessionProvider = validSessionProvider
+                        )
                     }
-                )
-            }
-
-            composable(SelfHostedImRoute.JoinedGroups.route) {
-                val joinedGroupsViewModel = remember(session.userId) {
-                    JoinedGroupsViewModel(
-                        session = session,
-                        groupRepository = groupRepository,
-                        validSessionProvider = validSessionProvider
-                    )
-                }
-                val joinedGroupsState by joinedGroupsViewModel.state.collectAsState()
-                JoinedGroupsScreen(
-                    viewModel = joinedGroupsViewModel,
-                    state = joinedGroupsState,
-                    onBack = { navController.popBackStack() },
-                    onOpenGroup = { groupId ->
-                        openPreloadedChat("group:$groupId")
-                    }
-                )
-            }
-
-            composable(SelfHostedImRoute.Me.route) {
-                val meViewModel = remember(session.userId) {
-                    MeViewModel(
-                        session = session,
-                        profileRepository = profileRepository,
-                        avatarUploadApi = avatarUploadApi,
-                        validSessionProvider = validSessionProvider
-                    )
-                }
-                val meState by meViewModel.state.collectAsState()
-                Column(modifier = Modifier.fillMaxSize()) {
-                    MeScreen(
-                        viewModel = meViewModel,
-                        state = meState,
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                        onMoveTaskToBack = {
-                            activity?.moveTaskToBack(true)
+                    val chatState by chatViewModel.state.collectAsState()
+                    ChatScreen(
+                        viewModel = chatViewModel,
+                        state = chatState,
+                        onBack = {
+                            ChatBackPolicy.run(navigateBack = { navController.popBackStack() })
                         },
-                        onLogout = onLogout
-                    )
-                    TopLevelBottomBar(
-                        currentRoute = currentRoute,
-                        unreadMessagesCount = unreadMessagesCount,
-                        onNavigateToTab = { tabRoute ->
-                            navController.navigateToTopLevelTab(tabRoute)
+                        onOpenUserProfile = { userId ->
+                            SelfHostedImRoute.ContactProfile.createRoute(userId)
+                                ?.let(navController::navigate)
+                        },
+                        onOpenGroupInfo = {
+                            SelfHostedImRoute.GroupInfo.createRoute(
+                                conversationId.removePrefix("group:")
+                            )?.let(navController::navigate)
                         }
                     )
                 }
-            }
 
-            composable(route = SelfHostedImRoute.ContactProfile.pattern) { entry ->
-                val userId = entry.arguments
-                    ?.getString(SelfHostedImRoute.ContactProfile.USER_ID_ARG)
-                    .orEmpty()
-                if (userId.isBlank()) {
-                    LaunchedEffect(Unit) { navController.popBackStack() }
-                    return@composable
-                }
-                val contactProfileViewModel = remember(session.userId, userId) {
-                    ContactProfileViewModel(
-                        userId = userId,
-                        session = session,
-                        profileRepository = profileRepository,
-                        validSessionProvider = validSessionProvider
-                    )
-                }
-                val contactProfileState by contactProfileViewModel.state.collectAsState()
-                ContactProfileScreen(
-                    viewModel = contactProfileViewModel,
-                    state = contactProfileState,
-                    onBack = { navController.popBackStack() },
-                    onSendMessage = { peerUserId ->
-                        // self-to-self 是占位:目前不实现"自己给自己发消息",按钮先放着。
-                        if (peerUserId != session.userId) {
-                            openPreloadedChat(messageRepository.conversationIdFor(session.userId, peerUserId))
+                composable(route = SelfHostedImRoute.GroupInfo.pattern) { entry ->
+                    val groupId = entry.arguments
+                        ?.getString(SelfHostedImRoute.GroupInfo.GROUP_ID_ARG)
+                        .orEmpty()
+                    if (groupId.isBlank()) {
+                        LaunchedEffect(Unit) { navController.popBackStack() }
+                        return@composable
+                    }
+                    val groupInfoViewModel = remember(session.userId, groupId) {
+                        GroupInfoViewModel(
+                            groupId = groupId,
+                            session = session,
+                            groupRepository = groupRepository,
+                            profileRepository = profileRepository,
+                            validSessionProvider = validSessionProvider
+                        )
+                    }
+                    val groupInfoState by groupInfoViewModel.state.collectAsState()
+                    GroupInfoScreen(
+                        viewModel = groupInfoViewModel,
+                        state = groupInfoState,
+                        onBack = { navController.popBackStack() },
+                        onOpenUserProfile = { userId ->
+                            SelfHostedImRoute.ContactProfile.createRoute(userId)
+                                ?.let(navController::navigate)
                         }
-                    }
-                )
-            }
-
-            composable(route = SelfHostedImRoute.Chat.pattern) { chatBackStackEntry ->
-                val conversationId = chatBackStackEntry.arguments
-                    ?.getString(SelfHostedImRoute.Chat.CONVERSATION_ID_ARG)
-                    .orEmpty()
-                val peerUserId = conversationId.peerIdForCurrentSession(session.userId)
-                val chatViewModel = remember(session.userId, conversationId) {
-                    ChatViewModel(
-                        session = session,
-                        repository = messageRepository,
-                        connection = connection,
-                        profileRepository = profileRepository,
-                        groupRepository = groupRepository,
-                        initialPeerId = peerUserId,
-                        imageUploadApi = imageUploadApi,
-                        validSessionProvider = validSessionProvider
                     )
                 }
-                val chatState by chatViewModel.state.collectAsState()
-                ChatScreen(
-                    viewModel = chatViewModel,
-                    state = chatState,
-                    onBack = {
-                        ChatBackPolicy.run(navigateBack = { navController.popBackStack() })
-                    },
-                    onOpenUserProfile = { userId ->
-                        SelfHostedImRoute.ContactProfile.createRoute(userId)
-                            ?.let(navController::navigate)
-                    },
-                    onOpenGroupInfo = {
-                        SelfHostedImRoute.GroupInfo.createRoute(
-                            conversationId.removePrefix("group:")
-                        )?.let(navController::navigate)
-                    }
-                )
-            }
-
-            composable(route = SelfHostedImRoute.GroupInfo.pattern) { entry ->
-                val groupId = entry.arguments
-                    ?.getString(SelfHostedImRoute.GroupInfo.GROUP_ID_ARG)
-                    .orEmpty()
-                if (groupId.isBlank()) {
-                    LaunchedEffect(Unit) { navController.popBackStack() }
-                    return@composable
-                }
-                val groupInfoViewModel = remember(session.userId, groupId) {
-                    GroupInfoViewModel(
-                        groupId = groupId,
-                        session = session,
-                        groupRepository = groupRepository,
-                        profileRepository = profileRepository,
-                        validSessionProvider = validSessionProvider
-                    )
-                }
-                val groupInfoState by groupInfoViewModel.state.collectAsState()
-                GroupInfoScreen(
-                    viewModel = groupInfoViewModel,
-                    state = groupInfoState,
-                    onBack = { navController.popBackStack() },
-                    onOpenUserProfile = { userId ->
-                        SelfHostedImRoute.ContactProfile.createRoute(userId)
-                            ?.let(navController::navigate)
-                    }
-                )
-            }
             }
             MessageAlertHost(
                 controller = messageAlertController,

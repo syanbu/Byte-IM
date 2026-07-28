@@ -7,7 +7,14 @@ class SeqGenerator {
     private val nextSeqByConversation = ConcurrentHashMap<String, AtomicLong>()
 
     fun next(conversationId: String): Long {
-        val counter = nextSeqByConversation.computeIfAbsent(conversationId) { AtomicLong(0L) }
+        val existing = nextSeqByConversation[conversationId]
+        val counter = if (existing != null) {
+            existing
+        } else {
+            val newCounter = AtomicLong(0L)
+            val raced = nextSeqByConversation.putIfAbsent(conversationId, newCounter)
+            raced ?: newCounter
+        }
         return counter.incrementAndGet()
     }
 }
