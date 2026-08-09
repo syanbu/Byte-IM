@@ -1,43 +1,46 @@
 package com.buyansong.im.message
 
 import android.content.Context
-import java.io.File
-import java.net.URL
+import coil.Coil
+import coil.ImageLoader
+import coil.annotation.ExperimentalCoilApi
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import java.security.MessageDigest
 
 interface ChatThumbnailCache {
-    fun cacheThumbnail(messageId: String, thumbnailUrl: String): String?
+    suspend fun cacheThumbnail(messageId: String, thumbnailUrl: String): String?
 }
 
 object NoopChatThumbnailCache : ChatThumbnailCache {
-    override fun cacheThumbnail(messageId: String, thumbnailUrl: String): String? = null
+    override suspend fun cacheThumbnail(messageId: String, thumbnailUrl: String): String? = null
 }
 
-class AndroidChatThumbnailCache(
-    private val cacheDir: File,
-    private val downloader: (String) -> ByteArray?
+class CoilChatThumbnailCache(
+    context: Context,
+    private val imageLoader: ImageLoader = Coil.imageLoader(context.applicationContext)
 ) : ChatThumbnailCache {
-    constructor(context: Context) : this(
-        cacheDir = File(context.applicationContext.cacheDir, "chat-image-thumbnails"),
-        downloader = { url -> URL(url).openStream().use { stream -> stream.readBytes() } }
-    )
+    private val appContext = context.applicationContext
 
-    override fun cacheThumbnail(messageId: String, thumbnailUrl: String): String? {
+    @OptIn(ExperimentalCoilApi::class)
+    override suspend fun cacheThumbnail(messageId: String, thumbnailUrl: String): String? {
         val normalizedUrl = thumbnailUrl.trim().takeIf { it.isNotEmpty() } ?: return null
-        val file = File(cacheDir, "${messageId.sanitizeFileName()}-${sha256Hex(normalizedUrl)}.jpg")
-        if (file.isFile && file.length() > 0L) {
-            return file.absolutePath
-        }
-
-        val bytes = runCatching { downloader(normalizedUrl) }
-            .getOrNull()
-            ?.takeIf { it.isNotEmpty() }
-            ?: return null
-
+        val key = "chat-thumb-${messageId.sanitizeFileName()}-${sha256Hex(normalizedUrl)}"
         return runCatching {
-            cacheDir.mkdirs()
-            file.writeBytes(bytes)
-            file.absolutePath
+            val request = ImageRequest.Builder(appContext)
+                .data(normalizedUrl)
+                .diskCacheKey(key)
+                .memoryCachePolicy(CachePolicy.DISABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .build()
+            if (imageLoader.execute(request) !is SuccessResult) {
+                return@runCatching null
+            }
+            val file = imageLoader.diskCache?.openSnapshot(key)?.use { snapshot ->
+                snapshot.data.toFile()
+            } ?: return@runCatching null
+            if (file.isFile && file.length() > 0L) file.absolutePath else null
         }.getOrNull()
     }
 

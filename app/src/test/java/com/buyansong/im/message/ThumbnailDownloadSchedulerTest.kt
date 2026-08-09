@@ -15,7 +15,7 @@ import org.junit.Test
 class ThumbnailDownloadSchedulerTest {
 
     private class FakeThumbnailCache : ChatThumbnailCache {
-        override fun cacheThumbnail(messageId: String, thumbnailUrl: String): String {
+        override suspend fun cacheThumbnail(messageId: String, thumbnailUrl: String): String {
             return "/cache/$messageId.jpg"
         }
     }

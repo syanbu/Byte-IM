@@ -34,8 +34,9 @@ class ImmediateThumbnailDownloadScheduler(
         onCached: (messageId: String, localThumbnailPath: String) -> Unit
     ): Boolean {
         val thumbnailUrl = message.thumbnailUrl?.takeIf { it.isNotBlank() } ?: return false
-        val localPath = thumbnailCache.cacheThumbnail(message.messageId, thumbnailUrl) ?: return false
-        kotlinx.coroutines.runBlocking {
+        return kotlinx.coroutines.runBlocking {
+            val localPath = thumbnailCache.cacheThumbnail(message.messageId, thumbnailUrl)
+                ?: return@runBlocking false
             prewarmLocalThumbnail(
                 message,
                 priority,
@@ -43,9 +44,9 @@ class ImmediateThumbnailDownloadScheduler(
                 0,
                 1
             )
+            onCached(message.messageId, localPath)
+            true
         }
-        onCached(message.messageId, localPath)
-        return true
     }
 }
 

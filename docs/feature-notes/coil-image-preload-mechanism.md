@@ -110,18 +110,23 @@ LaunchedEffect(message.localThumbnailPath) {
 
 ### 核心参数
 
+> 2026-07-28 起按气泡边界解码（`c1f8796`），不再设 `diskCacheKey`、不再用 `Size.ORIGINAL`：
+
 ```kotlin
 object ChatLocalThumbnailRequest {
-    fun build(context: Context, localPath: String): ImageRequest {
+    fun build(context: Context, localThumbnailPath: String): ImageRequest? {
+        val key = cacheKey(localThumbnailPath) ?: return null
+        val decodeSize = ChatImageBubbleLayoutPolicy.decodeSizePx(density)  // 220dp x 270dp 上限转像素
         return ImageRequest.Builder(context)
-            .data(localPath)
-            .memoryCacheKey(localPath)       // 显式指定内存缓存键
-            .diskCacheKey(localPath)         // 显式指定磁盘缓存键
-            .size(Size.ORIGINAL)             // 使用原始尺寸，避免缩放
+            .data(File(key))             // 显式 File，避免字符串路径走 Uri 映射的不确定性
+            .memoryCacheKey(key)         // 显式指定内存缓存键（路径即 key）
+            .size(decodeSize.widthPx, decodeSize.heightPx)  // 按气泡边界降采样解码
             .build()
     }
 }
 ```
+
+本地文件本身已在磁盘（接收侧由 Coil 磁盘缓存承载，见第四节），渲染请求只需让 Coil 缓存解码后的位图，因此**故意不设 `diskCacheKey`**。
 
 ### 为什么需要显式指定 CacheKey
 
@@ -139,9 +144,21 @@ Coil 默认会根据 `data`、`size`、`transformations` 等参数自动计算�
 
 接收方采用**严格的缩略图缓存策略**：
 - 收到图片消息时，先持久化 URL 和元数据，`localThumbnailPath = null`
-- 通过 `ThumbnailDownloadScheduler` 异步下载缩略图到本地文件
+- 通过 `ThumbnailDownloadScheduler` 异步获取缩略图本地文件
 - 只有在 `localThumbnailPath` 写入后，消息才会出现在聊天历史中
 - 在此之前，图片消息对用户完全不可见
+
+### 缩略图下载的承载方式（2026-08-09 起改为 Coil 磁盘缓存）
+
+下载层不再使用 `URL.openStream()` 手工下载，而是由 Coil 全权负责网络获取与磁盘缓存：
+
+- `ImApp` 实现 `ImageLoaderFactory`，把 Coil 单例的磁盘缓存目录固定为 `cacheDir/chat-image-thumbnails`，容量上限显式指定
+- `CoilChatThumbnailCache`（实现 `ChatThumbnailCache`）用 `messageId + sha256(thumbnailUrl)` 生成稳定的 `diskCacheKey`，通过 `ImageLoader.execute()` 触发下载
+- 成功后经 `DiskCache.get(key)` 快照解析出真实文件路径，写入消息行的 `localThumbnailPath`
+- 下载请求关闭内存缓存策略（`memoryCachePolicy = DISABLED`），位图内存仍只由气泡渲染/预热路径经 `ChatLocalThumbnailRequest` 产生，避免双份内存条目
+- 消除双重缓存：Coil 磁盘缓存文件即业务缓存文件，同一份文件两种身份
+
+**已知取舍**：Coil 磁盘缓存是 LRU 池，极端情况下文件可能被淘汰而 DB 里的 `localThumbnailPath` 变为悬空路径（与系统清理 `cacheDir` 的历史风险同类），补偿重试目前只扫描 `localThumbnailPath IS NULL`，悬空恢复仍属遗留跟进项。
 
 ### 预加载机制的边界
 
@@ -149,7 +166,7 @@ Coil 默认会根据 `data`、`size`、`transformations` 等参数自动计算�
 
 因为在严格的策略下，能够进入聊天历史的图片消息，必然已经有了 `localThumbnailPath`，所以：
 - 气泡的自预加载只需要解码本地文件
-- 网络下载的责任完全在 `ThumbnailDownloadScheduler`
+- 网络下载由 `ThumbnailDownloadScheduler` 编排（优先级、补偿重试），实际网络获取自 2026-08-09 起委托给 Coil（见上文「缩略图下载的承载方式」）
 - 预加载机制不承担任何网络获取的职责
 
 ---
@@ -178,6 +195,8 @@ Coil 默认会根据 `data`、`size`、`transformations` 等参数自动计算�
 | `ChatImageBubble.kt` | 气泡自预加载的实现位置 |
 | `ChatImageCompressor.kt` | 本地缩略图文件生成逻辑 |
 | `ChatViewModel.kt` | `sendImages()` 方法，预暖必须在其调用之前 |
+| `CoilChatThumbnailCache.kt` | 接收方缩略图下载：Coil 磁盘缓存承载，按 `diskCacheKey` 解析本地路径 |
+| `ImApp.kt` | `ImageLoaderFactory`，统一配置 Coil 单例的磁盘缓存目录与容量 |
 
 ---
 
@@ -185,3 +204,5 @@ Coil 默认会根据 `data`、`size`、`transformations` 等参数自动计算�
 
 - **2026-06-07**：废弃全局预加载器，改为每个气泡自预加载
 - **2026-06-10**：新增发送方热发送预暖，消除发送瞬间的灰色占位符闪烁
+- **2026-07-28**：`ChatLocalThumbnailRequest` 改为按气泡边界（220dp×270dp）解码，`.data(File)` 显式文件，移除 `diskCacheKey` 与 `Size.ORIGINAL`；本文第三节代码示例此前未同步，2026-08-09 已修正
+- **2026-08-09**：接收方缩略图下载从手工 `URL.openStream()` 迁移到 Coil 磁盘缓存（`AndroidChatThumbnailCache` 移除，`CoilChatThumbnailCache` 接管，`ImApp` 实现 `ImageLoaderFactory` 统一磁盘缓存目录），消除双重缓存并获得 Coil 的超时/连接池/LRU 能力
