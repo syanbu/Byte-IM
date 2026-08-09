@@ -48,7 +48,7 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
                     ImServerLogger.log("[IM] HEARTBEAT rejected unauthenticated client");
                     return;
                 }
-                messageRouter.handleHeartbeat(client);
+                messageRouter.handleHeartbeat(client, packet.body());
                 return;
             }
             if (packet.cmd() == ImCommand.SEND_MESSAGE.value()) {

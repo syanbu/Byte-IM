@@ -12,11 +12,21 @@ import com.buyansong.im.storage.MessageDao
 import com.buyansong.im.storage.MessageDirection
 import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.storage.MessageType
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageRepositoryCacheTest {
@@ -89,6 +99,18 @@ class MessageRepositoryCacheTest {
         override fun maxIncomingServerSeq(conversationId: String): Long? = delegate.maxIncomingServerSeq(conversationId)
     }
 
+    private class BlockingQueryMessageDao(
+        private val delegate: CountingMessageDao,
+        private val queryStarted: CountDownLatch,
+        private val releaseQuery: CountDownLatch
+    ) : MessageDao by delegate {
+        override fun queryPage(conversationId: String, beforeTime: Long?, limit: Int): List<ChatMessage> {
+            queryStarted.countDown()
+            releaseQuery.await(5, TimeUnit.SECONDS)
+            return delegate.queryPage(conversationId, beforeTime, limit)
+        }
+    }
+
     private class FakeConnection : ImConnection {
         val sent = mutableListOf<ImPacket>()
         override val states = MutableStateFlow(ConnectionState.Disconnected)
@@ -139,6 +161,21 @@ class MessageRepositoryCacheTest {
             messageIdGenerator = MessageIdGenerator(),
             seqGenerator = SeqGenerator(),
             thumbnailDownloadScheduler = thumbnailDownloadScheduler
+        )
+    }
+
+    private fun repository(
+        messageDao: MessageDao,
+        preloadDispatcher: CoroutineDispatcher
+    ): MessageRepository {
+        return MessageRepository(
+            messageDao = messageDao,
+            conversationDao = InMemoryConversationDao(),
+            pendingMessageDao = InMemoryPendingMessageDao(),
+            connection = FakeConnection(),
+            messageIdGenerator = MessageIdGenerator(),
+            seqGenerator = SeqGenerator(),
+            preloadDispatcher = preloadDispatcher
         )
     }
 
@@ -221,6 +258,44 @@ class MessageRepositoryCacheTest {
         assertEquals(first, cached)
         assertEquals(1, messageDao.queryPageCount)
         assertEquals(listOf(20), messageDao.queryPageLimits)
+    }
+
+    @Test
+    fun preloadInitialPage_timeoutReturnsEmptyListAndBackgroundQueryStillPopulatesCache() = runTest {
+        val queryStarted = CountDownLatch(1)
+        val releaseQuery = CountDownLatch(1)
+        val countingDao = CountingMessageDao()
+        insertMessages(countingDao, count = 1)
+        val messageDao = BlockingQueryMessageDao(countingDao, queryStarted, releaseQuery)
+        val executor = Executors.newSingleThreadExecutor()
+        val preloadDispatcher = executor.asCoroutineDispatcher()
+        try {
+            val repository = repository(messageDao, preloadDispatcher)
+
+            val deferred = async { repository.preloadInitialPage("single:u_a:u_b") }
+            testScheduler.runCurrent()
+            assertTrue("DAO query should start before the timeout fires", queryStarted.await(5, TimeUnit.SECONDS))
+
+            // Fire the 100ms preload timeout while the DAO query is still blocked. The
+            // in-flight query is not cancellable, so withTimeoutOrNull only resumes once
+            // it finishes.
+            testScheduler.advanceTimeBy(101L)
+
+            releaseQuery.countDown()
+            // Single-threaded FIFO barrier: once this marker task runs, the preload block
+            // has finished on the executor thread, including the cache write.
+            executor.submit(Runnable { }).get(5, TimeUnit.SECONDS)
+            testScheduler.advanceUntilIdle()
+
+            assertEquals(emptyList<ChatMessage>(), deferred.await())
+            val cached = repository.getCachedInitialPage("single:u_a:u_b")
+            assertNotNull(cached)
+            assertEquals(listOf("m1"), cached!!.map { it.messageId })
+            assertEquals(listOf("m1"), repository.preloadInitialPage("single:u_a:u_b").map { it.messageId })
+            assertEquals(1, countingDao.queryPageCount)
+        } finally {
+            preloadDispatcher.close()
+        }
     }
 
     @Test

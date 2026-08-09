@@ -33,8 +33,8 @@ Android local state:
 | `MESSAGE_ACK` | server -> sender | 服务端接受消息并分配 `serverSeq` |
 | `RECEIVE_MESSAGE` | server -> receiver | 服务端向接收方转发消息 |
 | `DELIVERY_ACK` | receiver -> server | 接收方已将消息本地持久化 |
-| `HEARTBEAT` | client -> server | 客户端心跳 |
-| `HEARTBEAT_ACK` | server -> client | 服务端心跳响应 |
+| `HEARTBEAT` | client -> server | 客户端心跳；body 为 `{"clientTime":...,"unackedMessageIds":[...]}`，捎带发送方未确认消息 id（上限 100 条）用于对账 |
+| `HEARTBEAT_ACK` | server -> client | 服务端心跳响应；body 为 `{"serverTime":...,"receivedMessageIds":[...]}`，返回服务端已持久化接受的 id 子集（仅当请求携带 `unackedMessageIds` 时返回该字段） |
 | `READ_ACK` | receiver -> server -> sender | 已读回执 |
 | `RECALL_MESSAGE` | client -> server | 请求撤回消息 |
 | `RECALL_ACK` | server -> requester | 撤回结果 |
@@ -84,8 +84,8 @@ B7 在 raw OkHttp connection 外包了一层 Android-side `ConnectionLifecycleMa
 
 - 前台使用较短心跳间隔。
 - 后台使用较长心跳间隔。
-- 发送 `HEARTBEAT`。
-- 等待 `HEARTBEAT_ACK`。
+- 发送 `HEARTBEAT`（捎带未确认消息 id 列表）。
+- 等待 `HEARTBEAT_ACK`（解析 `receivedMessageIds` 并回调给 Outbox 做对账）。
 - 如果心跳 ACK 超时，断开并进入重连。
 - 连接失败后按指数退避重连。
 - 网络恢复时唤醒已有重连等待。

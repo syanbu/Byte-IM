@@ -13,6 +13,8 @@ import com.buyansong.imserver.push.InMemoryPushNotificationStore;
 import com.buyansong.imserver.push.PushNotificationStore;
 import com.buyansong.imserver.protocol.ImCommand;
 import com.buyansong.imserver.protocol.ImPacket;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -483,6 +485,10 @@ public final class MessageRouter {
     }
 
     public void handleHeartbeat(OutboundClient client) {
+        handleHeartbeat(client, null);
+    }
+
+    public void handleHeartbeat(OutboundClient client, byte[] heartbeatBody) {
         String userId = registry.userIdOf(client).orElse(null);
         if (userId == null) {
             ImServerLogger.log("[IM] HEARTBEAT rejected unauthenticated client");
@@ -491,8 +497,48 @@ public final class MessageRouter {
         ImServerLogger.log("[IM] HEARTBEAT received userId=%s", userId);
         JsonObject body = new JsonObject();
         body.addProperty("serverTime", clock.getAsLong());
+        List<String> unackedMessageIds = parseUnackedMessageIds(heartbeatBody);
+        if (unackedMessageIds != null) {
+            JsonArray receivedMessageIds = new JsonArray();
+            for (String messageId : unackedMessageIds) {
+                if (acceptedMessageStore.existsForSender(messageId, userId)) {
+                    receivedMessageIds.add(messageId);
+                }
+            }
+            body.add("receivedMessageIds", receivedMessageIds);
+            ImServerLogger.log(
+                    "[IM] HEARTBEAT reconcile userId=%s unacked=%d received=%d",
+                    userId,
+                    unackedMessageIds.size(),
+                    receivedMessageIds.size()
+            );
+        }
         client.send(packet(ImCommand.HEARTBEAT_ACK, body));
         ImServerLogger.log("[IM] HEARTBEAT_ACK sent userId=%s", userId);
+    }
+
+    private static List<String> parseUnackedMessageIds(byte[] heartbeatBody) {
+        if (heartbeatBody == null || heartbeatBody.length == 0) {
+            return null;
+        }
+        try {
+            JsonObject heartbeat = JsonParser
+                    .parseString(new String(heartbeatBody, StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+            if (!heartbeat.has("unackedMessageIds") || !heartbeat.get("unackedMessageIds").isJsonArray()) {
+                return null;
+            }
+            List<String> messageIds = new ArrayList<>();
+            for (JsonElement element : heartbeat.getAsJsonArray("unackedMessageIds")) {
+                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
+                    messageIds.add(element.getAsString());
+                }
+            }
+            return messageIds;
+        } catch (RuntimeException error) {
+            ImServerLogger.log("[IM] HEARTBEAT body parse failed: %s", error.getMessage());
+            return null;
+        }
     }
 
     public AuthFailureReason handleAuth(String token, OutboundClient client) {
@@ -778,6 +824,8 @@ public final class MessageRouter {
 
         void markRecallNotified(String messageId, String receiverUserId);
 
+        boolean existsForSender(String messageId, String senderUserId);
+
         List<StoredAcceptedMessage> loadAll();
     }
 
@@ -818,6 +866,14 @@ public final class MessageRouter {
                             ? accepted.markRecallNotified()
                             : accepted
             );
+        }
+
+        @Override
+        public boolean existsForSender(String messageId, String senderUserId) {
+            AcceptedMessage accepted = acceptedMessagesById.get(messageId);
+            return accepted != null
+                    && accepted.message().has("senderId")
+                    && senderUserId.equals(accepted.message().get("senderId").getAsString());
         }
 
         @Override
@@ -1033,6 +1089,22 @@ public final class MessageRouter {
                 return restored;
             } catch (SQLException error) {
                 throw new IllegalStateException("Unable to load accepted messages", error);
+            }
+        }
+
+        @Override
+        public synchronized boolean existsForSender(String messageId, String senderUserId) {
+            try (Connection connection = DriverManager.getConnection(jdbcUrl);
+                 PreparedStatement statement = connection.prepareStatement(
+                         "SELECT 1 FROM accepted_messages WHERE message_id = ? AND sender_id = ? LIMIT 1"
+                 )) {
+                statement.setString(1, messageId);
+                statement.setString(2, senderUserId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    return resultSet.next();
+                }
+            } catch (SQLException error) {
+                throw new IllegalStateException("Unable to check accepted message existence", error);
             }
         }
 

@@ -136,11 +136,33 @@ object ChatInitialImagePrewarmer {
         }
     }
 
+    /**
+     * Prewarms local thumbnails, bounded by [timeoutMs]. The budget constrains how long
+     * navigation waits for prewarming, not how many resources prewarming consumes: on
+     * timeout only the coroutine wait is cancelled — Coil disk reads/decodes already in
+     * flight are not cancellable and run to completion, and the decoded bitmaps still land
+     * in the memory cache where the first screen benefits from them.
+     */
     suspend fun prewarmLocalThumbnails(
         context: Context,
         localThumbnailPaths: List<String>,
         timeoutMs: Long,
         maxConcurrency: Int
+    ) {
+        prewarmLocalThumbnails(
+            localThumbnailPaths = localThumbnailPaths,
+            timeoutMs = timeoutMs,
+            maxConcurrency = maxConcurrency
+        ) { path ->
+            prewarmLocalThumbnail(context.applicationContext, path)
+        }
+    }
+
+    internal suspend fun prewarmLocalThumbnails(
+        localThumbnailPaths: List<String>,
+        timeoutMs: Long,
+        maxConcurrency: Int,
+        prewarmOne: suspend (String) -> Unit
     ) {
         val thumbnailPaths = localThumbnailPaths
             .mapNotNull(ChatLocalThumbnailRequest::cacheKey)
@@ -149,14 +171,13 @@ object ChatInitialImagePrewarmer {
             return
         }
 
-        val appContext = context.applicationContext
         withTimeoutOrNull(timeoutMs) {
             withContext(Dispatchers.IO) {
                 forEachWithConcurrency(
                     items = thumbnailPaths,
                     maxConcurrency = maxConcurrency
                 ) { path ->
-                    prewarmLocalThumbnail(appContext, path)
+                    prewarmOne(path)
                 }
             }
         }

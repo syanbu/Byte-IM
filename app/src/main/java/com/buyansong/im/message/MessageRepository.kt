@@ -24,14 +24,13 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.util.Collections
 import java.util.LinkedHashMap
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -48,7 +47,8 @@ class MessageRepository(
     private val profileRepository: ProfileRepository? = null,
     thumbnailCache: ChatThumbnailCache = NoopChatThumbnailCache,
     private val thumbnailDownloadScheduler: ThumbnailDownloadScheduler = ImmediateThumbnailDownloadScheduler(thumbnailCache),
-    private val groupReadCursorRepository: GroupReadCursorRepository? = null
+    private val groupReadCursorRepository: GroupReadCursorRepository? = null,
+    private val preloadDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : MessagesTabUnreadBadgeSource {
     @Volatile
     private var activeConversationId: String? = null
@@ -64,6 +64,7 @@ class MessageRepository(
     val messageAlerts: SharedFlow<IncomingMessageAlert> = mutableMessageAlerts.asSharedFlow()
     private val mutableRecallFailures = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val recallFailures: SharedFlow<String> = mutableRecallFailures.asSharedFlow()
+    val outboxChangeSignal = OutboxChangeSignal()
     private val initialPageCache = Collections.synchronizedMap(
         object : LinkedHashMap<String, List<ChatMessage>>(INITIAL_PAGE_CACHE_SIZE, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<ChatMessage>>?): Boolean {
@@ -102,6 +103,7 @@ class MessageRepository(
                 )
             )
         }
+        outboxChangeSignal.notifyChanged()
         notifyConversationChanged(conversationId)
         connection.send(packet)
         return message
@@ -152,6 +154,7 @@ class MessageRepository(
                 )
             )
         }
+        outboxChangeSignal.notifyChanged()
         notifyConversationChanged(conversationId)
         connection.send(packet)
         return message
@@ -348,6 +351,7 @@ class MessageRepository(
                 )
             )
         }
+        outboxChangeSignal.notifyChanged()
         notifyConversationChanged(message.conversationId)
         connection.send(packet)
     }
@@ -375,6 +379,7 @@ class MessageRepository(
                 )
             )
         }
+        outboxChangeSignal.notifyChanged()
         notifyConversationChanged(message.conversationId)
         connection.send(packet)
         return true
@@ -443,26 +448,13 @@ class MessageRepository(
     suspend fun preloadInitialPage(conversationId: String): List<ChatMessage> {
         initialPageCache[conversationId]?.let { return it }
         return withTimeoutOrNull(INITIAL_PAGE_PRELOAD_TIMEOUT_MS) {
-            withContext(Dispatchers.IO) {
+            withContext(preloadDispatcher) {
                 initialPageCache[conversationId]
                     ?: loadInitialPageFromDao(conversationId).also { messages ->
                         initialPageCache[conversationId] = messages
                     }
             }
         } ?: emptyList()
-    }
-
-    fun preloadInitialPageAsync(conversationId: String, scope: CoroutineScope) {
-        if (initialPageCache.containsKey(conversationId)) {
-            return
-        }
-        scope.launch(Dispatchers.IO) {
-            if (initialPageCache.containsKey(conversationId)) {
-                return@launch
-            }
-            val messages = loadInitialPageFromDao(conversationId)
-            initialPageCache[conversationId] = messages
-        }
     }
 
     fun missingIncomingImageThumbnails(userId: String, peerId: String, limit: Int): List<ChatMessage> {
@@ -658,6 +650,22 @@ class MessageRepository(
         if (changed) {
             changedConversationIds.forEach(initialPageCache::remove)
             notifyConversationChanged()
+            outboxChangeSignal.notifyChanged()
+        }
+    }
+
+    fun pendingOutgoingMessageIds(limit: Int = DEFAULT_UNACKED_HEARTBEAT_LIMIT): List<String> {
+        return pendingMessageDao.pendingMessageIds(limit)
+    }
+
+    fun earliestPendingRetryAt(): Long? {
+        return pendingMessageDao.earliestNextRetryAt()
+    }
+
+    fun reconcileUnackedWithServer(receivedMessageIds: List<String>, now: Long) {
+        val accelerated = pendingMessageDao.accelerateRetryAtExcluding(receivedMessageIds, now)
+        if (accelerated > 0) {
+            outboxChangeSignal.notifyChanged()
         }
     }
 
@@ -741,7 +749,9 @@ class MessageRepository(
         val serverTime = body.optionalLong("serverTime") ?: System.currentTimeMillis()
         val conversationId = messageDao.findByMessageId(messageId)?.conversationId
         messageDao.markAcked(messageId, serverSeq, serverTime)
-        pendingMessageDao.delete(messageId)
+        if (pendingMessageDao.delete(messageId)) {
+            outboxChangeSignal.notifyChanged()
+        }
         notifyConversationChanged(conversationId)
     }
 
@@ -1191,6 +1201,7 @@ class MessageRepository(
     private companion object {
         const val DEFAULT_ACK_TIMEOUT_MS = 5_000L
         const val DEFAULT_RETRY_BATCH_SIZE = 50
+        const val DEFAULT_UNACKED_HEARTBEAT_LIMIT = 100
         const val INITIAL_PAGE_SIZE = 20
         const val INITIAL_PAGE_CACHE_SIZE = 10
         const val INITIAL_PAGE_PRELOAD_TIMEOUT_MS = 100L

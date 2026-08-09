@@ -2,6 +2,7 @@ package com.buyansong.im.connection
 
 import com.buyansong.im.protocol.ImCommand
 import com.buyansong.im.protocol.ImPacket
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -41,6 +42,13 @@ class ConnectionLifecycleManager(
     private var heartbeatJob: Job? = null
     private var reconnectJob: Job? = null
     private var heartbeatAckGeneration = 0L
+
+    // 心跳捎带对账钩子：发心跳时带上本端未确认的消息 id，收到 HEARTBEAT_ACK 时把服务端
+    // 已收到的 id 回传给 outbox。默认空实现，账号级 repository 装配后由 MainActivity 注入。
+    @Volatile
+    var heartbeatUnackedProvider: () -> List<String> = { emptyList() }
+    @Volatile
+    var heartbeatReconcileConsumer: (List<String>) -> Unit = {}
 
     override fun connect(token: String) {
         requestedToken = token
@@ -154,9 +162,23 @@ class ConnectionLifecycleManager(
             connection.incomingPackets.collect { packet ->
                 if (packet.cmd == ImCommand.HEARTBEAT_ACK.value) {
                     heartbeatAckGeneration += 1
+                    heartbeatReconcileConsumer(parseReceivedMessageIds(packet.body))
                 }
             }
         }
+    }
+
+    private fun parseReceivedMessageIds(body: ByteArray): List<String> {
+        return runCatching {
+            val json = JsonParser.parseString(body.decodeToString()).asJsonObject
+            val element = json.get("receivedMessageIds") ?: return emptyList()
+            if (!element.isJsonArray) {
+                return emptyList()
+            }
+            element.asJsonArray.mapNotNull { item ->
+                if (item.isJsonPrimitive && item.asJsonPrimitive.isString) item.asString else null
+            }
+        }.getOrDefault(emptyList())
     }
 
     private fun handleConnectionState(state: ConnectionState) {
@@ -203,7 +225,7 @@ class ConnectionLifecycleManager(
             while (started && connection.states.value == ConnectionState.Authenticated) {
                 val heartbeatIntervalMillis = currentHeartbeatIntervalMillis()
                 val ackBeforeSend = heartbeatAckGeneration
-                if (!sendPacket(HeartbeatPacketFactory.create())) {
+                if (!sendPacket(HeartbeatPacketFactory.create(unackedMessageIds = heartbeatUnackedProvider()))) {
                     break
                 }
                 delay(heartbeatIntervalMillis)

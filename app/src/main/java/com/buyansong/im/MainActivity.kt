@@ -92,7 +92,8 @@ import com.buyansong.im.group.JoinedGroupsScreen
 import com.buyansong.im.group.JoinedGroupsViewModel
 import com.buyansong.im.group.OkHttpGroupApi
 import com.buyansong.im.group.DefaultGroupReadCursorRepository
-import com.buyansong.im.message.AndroidChatThumbnailCache
+import com.buyansong.im.message.ChatThumbnailCache
+import com.buyansong.im.message.CoilChatThumbnailCache
 import com.buyansong.im.message.CoroutineThumbnailDownloadScheduler
 import com.buyansong.im.message.MessageIdGenerator
 import com.buyansong.im.message.MessageOutboxWorker
@@ -154,7 +155,7 @@ class MainActivity : ComponentActivity() {
         )
         connectionLifecycleManager = connection
         registerNetworkRecoveryCallback(connection)
-        val thumbnailCache = AndroidChatThumbnailCache(this)
+        val thumbnailCache = CoilChatThumbnailCache(this)
         setContent {
             val loginViewModel = remember { LoginViewModel(repository) }
             SelfHostedImApp(
@@ -264,7 +265,7 @@ fun SelfHostedImApp(
     validSessionProvider: ValidSessionProvider? = null,
     connection: ImConnection? = null,
     httpBaseUrl: String? = null,
-    thumbnailCache: AndroidChatThumbnailCache? = null,
+    thumbnailCache: ChatThumbnailCache? = null,
     pendingPushDeepLink: StateFlow<String?>? = null,
     onPushDeepLinkConsumed: () -> Unit = {}
 ) {
@@ -303,7 +304,21 @@ fun SelfHostedImApp(
                         )
                     }
                     DisposableEffect(accountRepositories) {
+                        (connection as? ConnectionLifecycleManager)?.let { lifecycleManager ->
+                            lifecycleManager.heartbeatUnackedProvider =
+                                accountRepositories.messageRepository::pendingOutgoingMessageIds
+                            lifecycleManager.heartbeatReconcileConsumer = { receivedMessageIds ->
+                                accountRepositories.messageRepository.reconcileUnackedWithServer(
+                                    receivedMessageIds = receivedMessageIds,
+                                    now = System.currentTimeMillis()
+                                )
+                            }
+                        }
                         onDispose {
+                            (connection as? ConnectionLifecycleManager)?.let { lifecycleManager ->
+                                lifecycleManager.heartbeatUnackedProvider = { emptyList() }
+                                lifecycleManager.heartbeatReconcileConsumer = {}
+                            }
                             accountRepositories.close()
                         }
                     }
@@ -368,7 +383,7 @@ private class AccountScopedRepositories private constructor(
             userId: String,
             httpBaseUrl: String,
             connection: ImConnection,
-            thumbnailCache: AndroidChatThumbnailCache
+            thumbnailCache: ChatThumbnailCache
         ): AccountScopedRepositories {
             val helper = ImDatabaseHelper(
                 context = context,

@@ -4,8 +4,11 @@ import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.MessageDirection
 import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.storage.MessageType
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -113,6 +116,35 @@ class ChatInitialImagePrewarmerTest {
         assertEquals(listOf(1, 2, 3), started)
 
         release.complete(Unit)
+        job.join()
+    }
+
+    @Test
+    fun prewarmLocalThumbnailsReturnsAfterTimeoutWhenPrewarmNeverCompletes() = runTest {
+        val job = launch {
+            ChatInitialImagePrewarmer.prewarmLocalThumbnails(
+                localThumbnailPaths = listOf("/cache/a.jpg", "/cache/b.jpg"),
+                timeoutMs = 300L,
+                maxConcurrency = 3,
+                prewarmOne = { awaitCancellation() }
+            )
+        }
+        testScheduler.runCurrent()
+
+        // Fire the timeout while every prewarm is still in flight. Cancellation unwinds on
+        // Dispatchers.IO in real time, so poll the scheduler until the resume is posted.
+        testScheduler.advanceTimeBy(301L)
+
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (!job.isCompleted && System.nanoTime() < deadline) {
+            Thread.sleep(5)
+            testScheduler.runCurrent()
+        }
+
+        assertTrue(
+            "prewarmLocalThumbnails must return after the timeout instead of hanging",
+            job.isCompleted && !job.isCancelled
+        )
         job.join()
     }
 

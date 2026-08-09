@@ -21,7 +21,7 @@ Done for the B9 first-pass sender reliability scope.
 
 - Android now has a login-session scoped `MessageOutboxWorker`, started beside `MessagePacketProcessor` from the authenticated app root.
 - Sending now writes the local `messages` row, conversation preview, and `pending_messages` row inside one SQLite transaction before any network send attempt.
-- The outbox worker listens for `ConnectionState.Authenticated` and scans due `pending_messages` on a short loop while the session remains authenticated.
+- The outbox worker listens for `ConnectionState.Authenticated` and is event-driven: it wakes on a committed pending-row change (via a process-local `OutboxChangeSignal` revision), on the earliest persisted `nextRetryAt` deadline, or on (re-)authentication, instead of scanning on a fixed 1-second loop.
 - Pending retries resend the original `packetCmd` and `packetBody`, preserving the same `messageId`, `conversationId`, `clientSeq`, content, and timestamp.
 - `MessageRetryPolicy` uses 5s, 10s, 20s, 40s, and 60s capped backoff delays.
 - Retry exhaustion at 5 recorded retry attempts marks the local message `FAILED` and removes its pending record.
@@ -38,6 +38,7 @@ If a user sends messages while offline or before the WebSocket session is authen
 - The initial `connection.send()` may fail, but the pending record remains. A failed WebSocket write now also tells the connection lifecycle manager to reconnect immediately through the B7 backoff path.
 - If the device regains network while the connection is already waiting in a reconnect backoff delay, Android network availability cancels that wait and starts a reconnect immediately.
 - After reconnect and `ConnectionState.Authenticated`, the outbox worker scans due pending rows and resends them with the same original body.
+- Heartbeat frames piggyback sender-side reconciliation: `HEARTBEAT` carries up to 100 `unackedMessageIds` from `pending_messages`; the server answers `HEARTBEAT_ACK` with the `receivedMessageIds` subset it has durably accepted for that sender. The client accelerates rows the server does not have to immediate retry, so a silently lost message recovers within one heartbeat interval even if an in-memory wake signal was missed.
 
 The sender local write path is:
 
@@ -95,3 +96,4 @@ If the mock server receives the same `messageId` more than once in the same proc
 | 2026-05-26 | Sender outbox atomicity | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.message.MessageRepositoryTest --console=plain` | Passed: `connection.send()` occurs only after the local transaction commits. |
 | 2026-05-26 | Android transaction compile check | `.\gradlew.bat :app:assembleDebugAndroidTest --console=plain` | Passed after allowing Gradle to fetch missing wrapper/cache data: instrumented SQLite rollback coverage compiles. |
 | 2026-05-31 | Offline-send reconnect regression | `.\gradlew.bat :app:testDebugUnitTest --tests com.buyansong.im.connection.ConnectionLifecycleManagerTest --console=plain` | Passed: failed WebSocket writes trigger reconnect immediately, and network availability cancels pending reconnect backoff; pending message replay still happens after the session returns to `Authenticated`. |
+| 2026-08-09 | Event-driven outbox + heartbeat reconciliation | `./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain`; `mvn -q test` in `mock-server` | Passed: fixed 1-second outbox polling removed (idle authenticated outbox performs no periodic SQLite reads); retries still fire at persisted 5s/10s/20s/40s/60s deadlines; ACK deletion cancels scheduled retries; re-authentication drains overdue rows immediately; heartbeat `unackedMessageIds`/`receivedMessageIds` reconciliation accelerates server-missing rows (client 143 tests, mock-server 68 tests). Manual device smoke test still pending. |

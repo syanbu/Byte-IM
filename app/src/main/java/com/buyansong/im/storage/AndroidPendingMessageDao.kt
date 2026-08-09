@@ -52,6 +52,48 @@ class AndroidPendingMessageDao(private val database: SQLiteDatabase) : PendingMe
         }
     }
 
+    override fun pendingMessageIds(limit: Int): List<String> {
+        return database.query(
+            "pending_messages",
+            arrayOf("message_id"),
+            null,
+            null,
+            null,
+            null,
+            "created_at ASC",
+            limit.toString()
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    add(cursor.getString(0))
+                }
+            }
+        }
+    }
+
+    override fun earliestNextRetryAt(): Long? {
+        return database.rawQuery("SELECT MIN(next_retry_at) FROM pending_messages", null).use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+        }
+    }
+
+    override fun accelerateRetryAtExcluding(receivedMessageIds: Collection<String>, now: Long): Int {
+        val sql = StringBuilder("UPDATE pending_messages SET next_retry_at = ? WHERE next_retry_at > ?")
+        if (receivedMessageIds.isNotEmpty()) {
+            sql.append(" AND message_id NOT IN (")
+            sql.append(receivedMessageIds.joinToString(",") { "?" })
+            sql.append(")")
+        }
+        return database.compileStatement(sql.toString()).use { statement ->
+            statement.bindLong(1, now)
+            statement.bindLong(2, now)
+            receivedMessageIds.forEachIndexed { index, messageId ->
+                statement.bindString(index + 3, messageId)
+            }
+            statement.executeUpdateDelete()
+        }
+    }
+
     private fun PendingMessage.toValues(): ContentValues {
         return ContentValues().apply {
             put("message_id", messageId)
