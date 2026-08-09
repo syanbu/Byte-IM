@@ -1,6 +1,6 @@
 # IM 客户端开发状态索引
 
-最后更新时间：2026-06-04
+最后更新时间：2026-08-09
 
 本文是 IM 客户端开发进度的顶层索引，项目目标见
 [`ProjectTarget.md`](ProjectTarget.md)。各功能模块的详细状态记录在
@@ -23,10 +23,10 @@
 | B4 | 本地历史消息分页；服务端历史查询暂缓 | 部分完成 | [B4-history-pagination.md](../status/B4-history-pagination.md) |
 | B5 | 使用 SQLite 持久化消息，不使用 Room | 已完成 | [B5-local-persistence.md](../status/B5-local-persistence.md) |
 | B5.5 | mock-server 消息持久化和重启恢复 | 已完成 | [B5.5-mock-server-message-persistence.md](../status/B5.5-mock-server-message-persistence.md) |
-| B6 | 自定义二进制协议，包含 header、body、CRC | 已完成 | [B6-binary-protocol.md](../status/B6-binary-protocol.md) |
+| B6 | 自定义二进制协议，包含 header、body、CRC | 已被 Protobuf v2 替代（2026-08-09） | [websocket-protobuf-protocol.md](../status/websocket-protobuf-protocol.md) |
 | B7 | 心跳和断线重连 | 已完成 | [B7-heartbeat-reconnect.md](../status/B7-heartbeat-reconnect.md) |
 | B8 | 基于 client seq / server ACK 的消息有序性 | 已完成 | [B8-message-ordering.md](../status/B8-message-ordering.md) |
-| B9 | ACK、重试、去重等可靠性能力 | 发送侧首版已完成 | [B9-message-reliability.md](../status/B9-message-reliability.md) |
+| B9 | ACK、重试、去重等可靠性能力 | 发送侧已完成；2026-08-09 升级为事件驱动 outbox + 心跳对账 | [B9-message-reliability.md](../status/B9-message-reliability.md) |
 | B9.5 | 接收侧 DELIVERY_ACK | 已完成 | [B9.5-delivery-ack.md](../status/B9.5-delivery-ack.md) |
 | Mock server | 本地 Netty 服务，支持鉴权、WebSocket、持久化重放和当前 demo 联调能力 | 当前 B1-B9.5 路径已完成，并被后续功能继续扩展 | [mock-server.md](../status/mock-server.md) |
 | B10 | 群聊、群创建和 @ 提醒基础能力 | 部分完成 | [B10-group-chat-and-mention.md](../status/B10-group-chat-and-mention.md) |
@@ -103,15 +103,24 @@ B4 本地历史分页已经在当前 SQLite 聊天路径实现：
   - mock-server 暴露已鉴权 group HTTP endpoint；Android 的发起群聊流程通过 `GroupApi`/`GroupRepository` 调用 `POST /groups`，不再创建纯本地群。
   - Android 可以通过 `PATCH /groups/{groupId}` 重命名群，会话列表通过 `GET /groups` 刷新群名。
   - 多端成员同步、完整群成员 UI、@ composer/highlight 体验仍未完全收敛。
-- B4 服务端历史消息尚未接入。后续如果需要远端历史，应使用 `HISTORY_QUERY` 和 `HISTORY_RESULT`。
+- B4 服务端历史消息尚未接入。旧协议的 `HISTORY_QUERY`/`HISTORY_RESULT` 命令已随 Protobuf v2 迁移删除且未迁入 proto schema；后续如需远端历史，需要先在 `im_protocol.proto` 新增对应 payload（使用新字段号）。
 - 最新 self-design Profile/Chat UI 仍需要手工模拟器验证。
 
 ## 未开始
 
 - Phase 10 性能、抓包和稳定性证据。
+- Protobuf v2 切换后的端到端真机/模拟器冒烟（登录、收发文字/图片、断网重连补发、心跳对账日志）。
 
 ## 最近完成
 
+- 2026-08-09 WebSocket Protobuf v2 迁移（三个阶段全部完成）：
+  - 新增 `protocol-schema` 共享 proto 模块，双端代码生成（Android javalite / mock-server protobuf-java）。
+  - 线格式从自研 `Magic + Length + Cmd + JSON + CRC32` 切换为"一个 WebSocket 二进制消息 = 一个版本化 `ImEnvelope`（oneof payload）"，旧协议文件双端已删除。
+  - 心跳对账字段 `unacked_message_ids`/`received_message_ids` 已迁入 proto。
+  - 详见 [websocket-protobuf-protocol.md](../status/websocket-protobuf-protocol.md)；**端到端真机冒烟尚未执行**，下次联调若连通异常优先排查协议切换。
+- 2026-08-09 事件驱动 outbox + 心跳对账：删除 1 秒固定轮询，改为修订号信号 + 最早 deadline 睡眠；心跳捎带未确认 id 对账兜底（B9）。
+- 2026-08-09 接收侧缩略图改由 Coil 磁盘缓存承载（`CoilChatThumbnailCache` 取代手工 `URL.openStream` 下载，消除双重缓存；B11）。
+- 2026-08-09 修复 mock-server 推送预览键名不一致（写 `type` 读 `messageType`）导致图片推送预览恒为 TEXT 的问题。
 - B1 refresh-token rotation 修复：
   - mock-server `/refresh` 现在同时签发新的 access token 和 refresh token。
   - 旧 refresh token 在同一个 SQLite rotation transaction 中废弃，不能再复用。
