@@ -10,7 +10,7 @@ Done on the Android client.
 
 ## Existing Support
 
-- Protocol command ids include `HEARTBEAT` and `HEARTBEAT_ACK`.
+- Protocol v2 envelopes carry typed `heartbeat` / `heartbeat_ack` payloads (no numeric command ids).
 - Mock server can respond to heartbeat packets.
 - Connection state is exposed to UI as a `StateFlow`.
 
@@ -19,8 +19,8 @@ Done on the Android client.
 - Added `ReconnectPolicy` with delays of 1s, 2s, 4s, 8s, 16s, and a 30s cap.
 - Added `ConnectionLifecycleManager` as the single Android connection supervisor. It wraps `ImConnection`, forwards packets and sends, and exposes managed connection state.
 - Added `ConnectionState.Reconnecting(delayMillis, reason)` so UI state can distinguish reconnecting from connecting, authenticated, disconnected, and failed.
-- After `ConnectionState.Authenticated`, the client sends `HEARTBEAT` every 15 seconds in the foreground and every 75 seconds in the background.
-- `HEARTBEAT_ACK` refreshes heartbeat liveness.
+- After `ConnectionState.Authenticated`, the client sends a `heartbeat` envelope every 15 seconds in the foreground and every 75 seconds in the background.
+- `heartbeat_ack` refreshes heartbeat liveness and carries `received_message_ids` for outbox reconciliation.
 - If 2 heartbeat intervals pass without an ACK, the manager disconnects the socket and reconnects through `ReconnectPolicy`.
 - `Disconnected`, `Failed`, heartbeat timeout, and failed WebSocket writes automatically reconnect while the app process is running, including the 75s-heartbeat background state.
 - If `connection.send(...)` returns `false` for a message or heartbeat packet, the manager treats it as a transport failure, disconnects the stale socket, enters `Reconnecting(delayMillis, "send failed")`, and reconnects through the same backoff policy instead of waiting for the next heartbeat timeout or screen lifecycle check.

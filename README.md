@@ -1,7 +1,7 @@
 # ByteIM
 
 一个本地自研的 IM（Instant Messaging）项目，包含一个 **Android 客户端** 和一个配套的 **Java/Netty 后端**（源码在 `mock-server/`）。
-项目的目标是自己在 Android 上把 IM 客户端的核心链路（鉴权、长连接、自定义二进制协议、心跳/重连、消息可靠投递、本地持久化、会话/群聊/图片消息/撤回/已读回执等）从头实现一遍，并配套实现一个独立运行的后端服务，提供账号、好友、群、消息收发、媒体上传等完整的本地联调能力。
+项目的目标是自己在 Android 上把 IM 客户端的核心链路（鉴权、长连接、OkHttp WebSocket + 版本化 Protobuf oneof envelope（协议 v2）线协议、心跳/重连、消息可靠投递、本地持久化、会话/群聊/图片消息/撤回/已读回执等）从头实现一遍，并配套实现一个独立运行的后端服务，提供账号、好友、群、消息收发、媒体上传等完整的本地联调能力。
 
 模块与文档入口：
 
@@ -17,7 +17,7 @@
 - 包名：`com.buyansong.im`
 - 技术栈：Kotlin、Coroutines、Flow、Jetpack Compose、手写 `SQLiteOpenHelper`（**不**使用 Room，也**不**接入任何第三方 IM SDK）
 - 主要能力：登录/注册、access/refresh token 与登录态恢复、单聊、会话列表与未读、本地历史分页、消息 ACK / 重试 / 去重 / `serverSeq` 排序、消息撤回、已读回执、群聊基础能力、图片消息（相册多选 + OSS 上传）、应用内消息 toast 弹窗
-- 客户端通过 HTTP（`/login` `/register` 等）与 WebSocket（`/ws`）和后端通信
+- 客户端通过 HTTP（`/login` `/register` 等）与 WebSocket（`/ws`）和后端通信；WebSocket 线协议为版本化 Protobuf `ImEnvelope`（v2，一个二进制消息 = 一个 envelope，`oneof payload` 为唯一类型判别），schema 见 `protocol-schema/`
 
 ### 后端（`mock-server/`）
 

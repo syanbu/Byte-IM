@@ -34,7 +34,7 @@ Done.
 - Access token signing currently uses symmetric `HS256` (`HmacSHA256`) with a shared mock-server secret, not asymmetric `RS256` signing/verification.
 - Refresh token hashes are persisted in SQLite and marked revoked on logout or refresh-token rotation.
 - `POST /refresh` now rotates both the access token and refresh token, and invalidates the previous refresh token in the same SQLite transaction.
-- WebSocket `AUTH` validates access token signature and expiry.
+- WebSocket `auth` envelope (protocol v2 Protobuf `ImEnvelope`) validates access token signature and expiry.
 
 ## Verification
 

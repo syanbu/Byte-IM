@@ -11,8 +11,8 @@ Android `ConnectionState` 是客户端本地用于描述连接生命周期的 UI
 两者不能混在一起理解：
 
 ```text
-Protocol message:
-  AUTH / AUTH_ACK / SEND_MESSAGE / MESSAGE_ACK / RECEIVE_MESSAGE / ...
+Protocol message (ImEnvelope payload):
+  auth / auth_ack / send_message / message_ack / receive_message / ...
 
 Android local state:
   Disconnected / Connecting / Authenticating / Authenticated / Reconnecting / Failed
@@ -22,26 +22,26 @@ Android local state:
 
 ## WebSocket 协议消息类型
 
-当前协议命令由 `ImCommand` 表示，核心命令包括：
+协议 v2 起，所有线上消息都是 Protobuf `ImEnvelope`（schema 见 `protocol-schema/src/main/proto/im/v2/im_protocol.proto`）：一个 WebSocket 二进制消息 = 一个 envelope，消息类型由 `oneof payload` 唯一标识，不再存在数值 cmd。核心 payload 包括：
 
-| 命令 | 方向 | 含义 |
+| payload | 方向 | 含义 |
 |---|---|---|
-| `AUTH` | client -> server | WebSocket 建立后，客户端发送 access token 做鉴权 |
-| `AUTH_ACK` | server -> client | 服务端鉴权成功 |
-| `AUTH_NACK` | server -> client | 服务端鉴权失败 |
-| `SEND_MESSAGE` | client -> server | 客户端发送聊天消息 |
-| `MESSAGE_ACK` | server -> sender | 服务端接受消息并分配 `serverSeq` |
-| `RECEIVE_MESSAGE` | server -> receiver | 服务端向接收方转发消息 |
-| `DELIVERY_ACK` | receiver -> server | 接收方已将消息本地持久化 |
-| `HEARTBEAT` | client -> server | 客户端心跳；body 为 `{"clientTime":...,"unackedMessageIds":[...]}`，捎带发送方未确认消息 id（上限 100 条）用于对账 |
-| `HEARTBEAT_ACK` | server -> client | 服务端心跳响应；body 为 `{"serverTime":...,"receivedMessageIds":[...]}`，返回服务端已持久化接受的 id 子集（仅当请求携带 `unackedMessageIds` 时返回该字段） |
-| `READ_ACK` | receiver -> server -> sender | 已读回执 |
-| `RECALL_MESSAGE` | client -> server | 请求撤回消息 |
-| `RECALL_ACK` | server -> requester | 撤回结果 |
-| `RECALL_NOTIFY` | server -> peer | 通知对方消息已撤回 |
-| `RECALL_NOTIFY_ACK` | receiver -> server | 接收方已将撤回状态本地持久化 |
+| `auth` | client -> server | WebSocket 建立后，客户端发送 access token 做鉴权 |
+| `auth_ack` | server -> client | 服务端鉴权成功 |
+| `auth_nack` | server -> client | 服务端鉴权失败 |
+| `send_message` | client -> server | 客户端发送聊天消息 |
+| `message_ack` | server -> sender | 服务端接受消息并分配 `server_seq` |
+| `receive_message` | server -> receiver | 服务端向接收方转发消息 |
+| `delivery_ack` | receiver -> server | 接收方已将消息本地持久化 |
+| `heartbeat` | client -> server | 客户端心跳；字段为 `client_time` + `unacked_message_ids`，捎带发送方未确认消息 id（上限 100 条）用于对账 |
+| `heartbeat_ack` | server -> client | 服务端心跳响应；字段为 `server_time` + `received_message_ids`，返回服务端已持久化接受的 id 子集（仅当请求携带 `unacked_message_ids` 时返回该字段） |
+| `read_ack` | receiver -> server -> sender | 已读回执 |
+| `recall_message` | client -> server | 请求撤回消息 |
+| `recall_ack` | server -> requester | 撤回结果 |
+| `recall_notify` | server -> peer | 通知对方消息已撤回 |
+| `recall_notify_ack` | receiver -> server | 接收方已将撤回状态本地持久化 |
 
-这些命令都被封装在自定义二进制协议帧中。协议帧包含 header、body 和 CRC。
+每个 envelope 带 `protocol_version = 2`，恰好设置一个 `oneof payload`，编解码大小上限 64 KiB。没有应用层 magic/length/CRC：消息边界由 WebSocket 保证，生产环境完整性由 WSS/TLS 保证。
 
 ## Android `ConnectionState`
 
@@ -56,7 +56,7 @@ Android 本地连接状态用于驱动 UI 和重连逻辑，不等同于协议�
 - `Reconnecting`：连接失效后等待重连。
 - `Failed`：不可恢复或当前无法继续的失败状态。
 
-页面 UI 应根据本地 `ConnectionState` 展示连接状态；协议处理器应根据 `ImCommand` 处理网络 packet。
+页面 UI 应根据本地 `ConnectionState` 展示连接状态；协议处理器应根据 envelope 的 `payloadCase` 分发网络消息。
 
 ## 启动流程
 
@@ -84,8 +84,8 @@ B7 在 raw OkHttp connection 外包了一层 Android-side `ConnectionLifecycleMa
 
 - 前台使用较短心跳间隔。
 - 后台使用较长心跳间隔。
-- 发送 `HEARTBEAT`（捎带未确认消息 id 列表）。
-- 等待 `HEARTBEAT_ACK`（解析 `receivedMessageIds` 并回调给 Outbox 做对账）。
+- 发送 `heartbeat`（捎带未确认消息 id 列表）。
+- 等待 `heartbeat_ack`（读取 `received_message_ids` 并回调给 Outbox 做对账）。
 - 如果心跳 ACK 超时，断开并进入重连。
 - 连接失败后按指数退避重连。
 - 网络恢复时唤醒已有重连等待。
@@ -129,7 +129,7 @@ accepted chat messages 另存在：
 mock-server/data/mock-im-messages.sqlite
 ```
 
-该存储保留 sender `messageId` 幂等和 receiver 未投递重放状态，不改变 `MESSAGE_ACK` 或 `DELIVERY_ACK` 的含义。
+该存储保留 sender `messageId` 幂等和 receiver 未投递重放状态，不改变 `message_ack` 或 `delivery_ack` 的含义。
 
 Android 展示排序策略：
 
@@ -155,8 +155,8 @@ Outgoing 消息流程：
 ```text
 create local row
   -> SENDING 或 UPLOADING
-  -> SEND_MESSAGE
-  -> MESSAGE_ACK
+  -> send_message
+  -> message_ack
   -> SENT
 ```
 
@@ -170,53 +170,48 @@ SENDING   -> FAILED
 Incoming 消息流程：
 
 ```text
-RECEIVE_MESSAGE
+receive_message
   -> persist message locally
   -> RECEIVED
-  -> send DELIVERY_ACK
+  -> send delivery_ack
 ```
 
-`MESSAGE_ACK` 只表示 server 接受 sender 的消息。它不表示 receiver 已收到，更不表示 receiver 已读。
+`message_ack` 只表示 server 接受 sender 的消息。它不表示 receiver 已收到，更不表示 receiver 已读。
 
-`DELIVERY_ACK` 只表示 receiver 设备已经持久化消息。它不表示用户已经看到消息。
+`delivery_ack` 只表示 receiver 设备已经持久化消息。它不表示用户已经看到消息。
 
 ## 已读回执
 
-B12 使用 `READ_ACK` 表示已读回执，并且明确和 `DELIVERY_ACK` 分离。
+B12 使用 `read_ack` payload 表示已读回执，并且明确和 `delivery_ack` 分离。
 
-`READ_ACK` (cmd = 13) - sender tells the server it has read up to a given serverSeq.
+**单聊字段（`ReadAck`）：**
 
-**Body (single chat, legacy - preserved for compatibility):**
-
-```json
-{
-  "conversationId": "single:u_1001:u_1002",
-  "readerId": "13900113900",
-  "peerId": "u_1002",
-  "readUpToServerSeq": 1010,
-  "readAt": 1717000000000
-}
+```text
+conversation_id          = "single:u_1001:u_1002"
+conversation_type        = CONVERSATION_TYPE_SINGLE
+reader_id                = "13900113900"
+peer_id                  = "u_1002"
+read_up_to_server_seq    = 1010
+read_at                  = 1717000000000
 ```
 
-Server forwards this packet verbatim to the peer identified by `peerId` (if online). B12 behavior.
+Server forwards this envelope verbatim to the peer identified by `peer_id` (if online). B12 behavior.
 
-**Body (group chat - new in B12-G):**
+**群聊字段（B12-G 新增路径）：**
 
-```json
-{
-  "conversationId": "group:g_1001",
-  "conversationType": "GROUP",
-  "readerId": "13900113900",
-  "readUpToServerSeq": 1010,
-  "readAt": 1717000000000
-}
+```text
+conversation_id          = "group:g_1001"
+conversation_type        = CONVERSATION_TYPE_GROUP
+reader_id                = "13900113900"
+read_up_to_server_seq    = 1010
+read_at                  = 1717000000000
 ```
 
-`conversationType` MUST be `GROUP` for the new group path. The server:
+群路径 `conversation_type` 必须是 `CONVERSATION_TYPE_GROUP`。The server:
 1. Upserts `(groupId, readerId) -> (readUpToServerSeq, readAt)` monotonically (`>` only).
-2. If the upsert actually advanced, broadcasts the same JSON to every online group member.
+2. If the upsert actually advanced, broadcasts the same payload to every online group member.
 
-When `conversationType` is absent, the server treats it as `SINGLE` (legacy fallback).
+当 `conversation_type` 未设置（`UNSPECIFIED`）时，server 按单聊处理（legacy fallback）。
 
 Android 在 conversation 上保存 peer read cursor，并且只允许它向前移动。
 
@@ -234,24 +229,22 @@ B12 的撤回是状态更新，不是删除消息。
 
 Android 保留原始 `messages` row，只标记为 recalled；UI 渲染撤回提示，而不是原始文本或图片。
 
-撤回相关命令：
+撤回相关 payload：
 
 ```text
-RECALL_MESSAGE = 15
-RECALL_ACK     = 16
-RECALL_NOTIFY  = 17
-RECALL_NOTIFY_ACK = 18
+recall_message
+recall_ack
+recall_notify
+recall_notify_ack
 ```
 
-成功的 `RECALL_ACK` 和 `RECALL_NOTIFY` 包含：
+成功的 `recall_ack` 和 `recall_notify` 包含：
 
-```json
-{
-  "messageId": "m1",
-  "conversationId": "single:u1:u2",
-  "recalledBy": "u1",
-  "recalledAt": 1717000000000
-}
+```text
+message_id       = "m1"
+conversation_id  = "single:u1:u2"
+recalled_by      = "u1"
+recalled_at      = 1717000000000
 ```
 
 本地收到成功撤回结果后：
@@ -261,102 +254,92 @@ RECALL_NOTIFY_ACK = 18
 - 如果该消息仍是 conversation 最新消息，更新 conversation preview。
 - 聊天 UI 渲染居中撤回提示。
 
-接收方处理 `RECALL_NOTIFY` 并成功持久化本地撤回状态后，发送
-`RECALL_NOTIFY_ACK`：
+接收方处理 `recall_notify` 并成功持久化本地撤回状态后，发送
+`recall_notify_ack`：
 
-```json
-{
-  "messageId": "m1",
-  "conversationId": "single:u1:u2",
-  "receiverId": "u2",
-  "recalledAt": 1717000000000
-}
+```text
+message_id       = "m1"
+conversation_id  = "single:u1:u2"
+receiver_id      = "u2"
+recalled_at      = 1717000000000
 ```
 
-`RECALL_NOTIFY_ACK` 的语义与 `DELIVERY_ACK` 平行但不混用：
+`recall_notify_ack` 的语义与 `delivery_ack` 平行但不混用：
 
-- `DELIVERY_ACK`：原消息内容已经写入接收端本地库。
-- `RECALL_NOTIFY_ACK`：撤回状态已经写入接收端本地库。
+- `delivery_ack`：原消息内容已经写入接收端本地库。
+- `recall_notify_ack`：撤回状态已经写入接收端本地库。
 
 Mock server 会按 `(message_id, receiver_id)` 追踪 `recall_notified`，未
 ACK 的撤回通知会在接收方 auth/reconnect 后重放。
 
 ## 群文本和群图片消息
 
-B10 群文本和群图片消息复用既有 message 命令：
+B10 群文本和群图片消息复用既有消息 payload：
 
 ```text
-SEND_MESSAGE
-MESSAGE_ACK
-RECEIVE_MESSAGE
-DELIVERY_ACK
+send_message
+message_ack
+receive_message
+delivery_ack
 ```
 
-首个群消息 slice 不需要新的 command id。消息 body 通过字段携带群会话信息：
+首个群消息 slice 不需要新的 payload 类型。`ChatMessagePayload` 通过字段携带群会话信息：
 
-```json
-{
-  "conversationId": "group:g_1001",
-  "conversationType": "GROUP",
-  "groupId": "g_1001",
-  "senderId": "u1",
-  "receiverId": "g_1001",
-  "type": "TEXT",
-  "content": "hello",
-  "mentionedUserIds": ["u2"],
-  "timestamp": 1717000000000
+```text
+conversation_id       = "group:g_1001"
+conversation_type     = CONVERSATION_TYPE_GROUP
+group_id              = "g_1001"
+sender_id             = "u1"
+receiver_id           = "g_1001"
+message_type          = MESSAGE_TYPE_TEXT
+content               = "hello"
+mentioned_user_ids    = ["u2"]
+client_time           = 1717000000000
+```
+
+Server ACK（`MessageAck`）保持和单聊相同的形态：
+
+```text
+message_id       = "m1"
+conversation_id  = "group:g_1001"
+server_seq       = 1008
+server_time      = 1717000000100
+```
+
+转发给群成员的 `receive_message` 保留 group `conversation_id`，但 `receiver_id` 使用具体接收人 user id，这样 `delivery_ack` 仍然可以按具体 receiver 清除：
+
+```text
+message_id          = "m1"
+conversation_id     = "group:g_1001"
+conversation_type   = CONVERSATION_TYPE_GROUP
+group_id            = "g_1001"
+sender_id           = "u1"
+receiver_id         = "u2"
+server_seq          = 1008
+message_type        = MESSAGE_TYPE_TEXT
+content             = "hello"
+client_time         = 1717000000000
+```
+
+群图片消息复用单聊图片的 `image`（`ImagePayload`），同时保留 group 字段：
+
+```text
+conversation_id     = "group:g_1001"
+conversation_type   = CONVERSATION_TYPE_GROUP
+group_id            = "g_1001"
+message_type        = MESSAGE_TYPE_IMAGE
+content             = "[image]"
+image = {
+  image_url      = "https://example.com/origin.jpg"
+  thumbnail_url  = "https://example.com/thumb.jpg"
+  width          = 1280
+  height         = 960
+  mime_type      = "image/jpeg"
+  size_bytes     = 123456
 }
 ```
 
-Server ACK 保持和单聊相同的形态：
-
-```json
-{
-  "messageId": "m1",
-  "conversationId": "group:g_1001",
-  "serverSeq": 1008,
-  "serverTime": 1717000000100
-}
-```
-
-转发给群成员的 `RECEIVE_MESSAGE` 保留 group `conversationId`，但 `receiverId` 使用具体接收人 user id，这样 `DELIVERY_ACK` 仍然可以按具体 receiver 清除：
-
-```json
-{
-  "messageId": "m1",
-  "conversationId": "group:g_1001",
-  "conversationType": "GROUP",
-  "groupId": "g_1001",
-  "senderId": "u1",
-  "receiverId": "u2",
-  "serverSeq": 1008,
-  "type": "TEXT",
-  "content": "hello",
-  "timestamp": 1717000000000
-}
-```
-
-群图片消息复用单聊图片的 `image` payload，同时保留 group envelope：
-
-```json
-{
-  "conversationId": "group:g_1001",
-  "conversationType": "GROUP",
-  "groupId": "g_1001",
-  "type": "IMAGE",
-  "content": "[image]",
-  "image": {
-    "imageUrl": "https://example.com/origin.jpg",
-    "thumbnailUrl": "https://example.com/thumb.jpg",
-    "width": 1280,
-    "height": 960,
-    "mimeType": "image/jpeg",
-    "sizeBytes": 123456
-  }
-}
-```
-
-Android 按 packet 中的 `conversationId` 存储群消息。单聊为了兼容旧 packet，仍然会根据 sender/receiver 本地 canonicalize 成 `single:<a>:<b>`。
+Android 按 payload 中的 `conversation_id` 存储群消息。单聊为了兼容本地既有数据，仍然会根据 sender/receiver 本地 canonicalize 成 `single:<a>:<b>`。
 
 mock-server 群聊 slice 将 group metadata 持久化到：
 
@@ -364,7 +347,7 @@ mock-server 群聊 slice 将 group metadata 持久化到：
 data/mock-im-groups.sqlite
 ```
 
-accepted group message delivery 按具体接收人持久化在 `accepted_messages` 中，主键使用 `(message_id, receiver_id)`。因此群消息的 `DELIVERY_ACK` 只清除对应 receiver 的未投递状态，离线重放也能跨 server 重启保留。
+accepted group message delivery 按具体接收人持久化在 `accepted_messages` 中，主键使用 `(message_id, receiver_id)`。因此群消息的 `delivery_ack` 只清除对应 receiver 的未投递状态，离线重放也能跨 server 重启保留。
 
 群创建当前使用已鉴权 HTTP endpoint，而不是 WebSocket command：
 
@@ -393,4 +376,4 @@ GET /groups/{groupId}/members
 [IM] RECEIVE_MESSAGE ...
 ```
 
-这些日志只是诊断信息。真实网络协议仍然是上面描述的 `ImCommand` packet stream。
+这些日志只是诊断信息。真实网络协议是上面描述的 Protobuf `ImEnvelope` 消息流。

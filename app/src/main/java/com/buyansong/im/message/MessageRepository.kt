@@ -1107,8 +1107,8 @@ class MessageRepository(
     }
 
     private companion object {
-        // Legacy ImCommand.SEND_MESSAGE value, kept only to validate durable
-        // pending_messages.packet_cmd rows written before the Protobuf cutover.
+        // Pre-Protobuf wire cmd value for SEND_MESSAGE, kept only to validate
+        // durable pending_messages.packet_cmd rows written before the cutover.
         const val PENDING_SEND_MESSAGE_CMD = 10
         const val DEFAULT_ACK_TIMEOUT_MS = 5_000L
         const val DEFAULT_RETRY_BATCH_SIZE = 50
