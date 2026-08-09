@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package buyansong.im.v2;
+
+option java_package = "com.buyansong.im.protocol.v2";
+option java_outer_classname = "ImProtocolProto";
+option java_multiple_files = true;
+
+message ImEnvelope {
+  uint32 protocol_version = 1;
+
+  oneof payload {
+    Auth auth = 10;
+    AuthAck auth_ack = 11;
+    AuthNack auth_nack = 12;
+    Heartbeat heartbeat = 20;
+    HeartbeatAck heartbeat_ack = 21;
+    SendMessage send_message = 30;
+    MessageAck message_ack = 31;
+    ReceiveMessage receive_message = 32;
+    DeliveryAck delivery_ack = 33;
+    ReadAck read_ack = 34;
+    RecallMessage recall_message = 40;
+    RecallAck recall_ack = 41;
+    RecallNotify recall_notify = 42;
+    RecallNotifyAck recall_notify_ack = 43;
+  }
+}
+
+message Auth { string access_token = 1; }
+message AuthAck { string user_id = 1; uint64 server_time = 2; }
+message AuthNack { AuthFailureReason reason = 1; }
+
+enum AuthFailureReason {
+  AUTH_FAILURE_REASON_UNSPECIFIED = 0;
+  AUTH_FAILURE_REASON_TOKEN_EXPIRED = 1;
+  AUTH_FAILURE_REASON_TOKEN_INVALID = 2;
+  AUTH_FAILURE_REASON_TOKEN_MISSING = 3;
+}
+
+message Heartbeat {
+  uint64 client_time = 1;
+  repeated string unacked_message_ids = 2;
+}
+message HeartbeatAck {
+  uint64 server_time = 1;
+  repeated string received_message_ids = 2;
+}
+
+enum ConversationType {
+  CONVERSATION_TYPE_UNSPECIFIED = 0;
+  CONVERSATION_TYPE_SINGLE = 1;
+  CONVERSATION_TYPE_GROUP = 2;
+}
+
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_TEXT = 1;
+  MESSAGE_TYPE_IMAGE = 2;
+}
+
+message ImagePayload {
+  string image_url = 1;
+  string thumbnail_url = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  string mime_type = 5;
+  uint64 size_bytes = 6;
+}
+
+message ChatMessagePayload {
+  string message_id = 1;
+  string conversation_id = 2;
+  ConversationType conversation_type = 3;
+  string group_id = 4;
+  string group_name = 5;
+  string sender_id = 6;
+  string receiver_id = 7;
+  uint64 client_seq = 8;
+  optional uint64 server_seq = 9;
+  MessageType message_type = 10;
+  string content = 11;
+  ImagePayload image = 12;
+  repeated string mentioned_user_ids = 13;
+  uint64 client_time = 14;
+  optional uint64 server_time = 15;
+  optional uint64 sender_profile_version = 16;
+}
+
+message SendMessage { ChatMessagePayload message = 1; }
+message ReceiveMessage { ChatMessagePayload message = 1; }
+
+message MessageAck {
+  string message_id = 1;
+  string conversation_id = 2;
+  uint64 client_seq = 3;
+  uint64 server_seq = 4;
+  uint64 server_time = 5;
+}
+
+message DeliveryAck {
+  string message_id = 1;
+  string conversation_id = 2;
+  uint64 server_seq = 3;
+  string receiver_id = 4;
+}
+
+message ReadAck {
+  string conversation_id = 1;
+  ConversationType conversation_type = 2;
+  string reader_id = 3;
+  string peer_id = 4;
+  uint64 read_up_to_server_seq = 5;
+  uint64 read_at = 6;
+}
+
+message RecallMessage {
+  string message_id = 1;
+  string conversation_id = 2;
+  string requester_id = 3;
+}
+
+message RecallAck {
+  string message_id = 1;
+  string conversation_id = 2;
+  bool success = 3;
+  string reason = 4;
+  string recalled_by = 5;
+  uint64 recalled_at = 6;
+}
+
+message RecallNotify {
+  string message_id = 1;
+  string conversation_id = 2;
+  string recalled_by = 3;
+  uint64 recalled_at = 4;
+}
+
+message RecallNotifyAck {
+  string message_id = 1;
+  string conversation_id = 2;
+  string receiver_id = 3;
+  uint64 recalled_at = 4;
+}
