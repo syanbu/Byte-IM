@@ -53,11 +53,13 @@ public class SQLitePushNotificationStoreTest {
     public void imageMessage_usesImagePreview() throws Exception {
         SQLitePushNotificationStore store = newStore();
         JsonObject message = textMessage("m_img", "ignored");
-        message.addProperty("messageType", "IMAGE");
+        message.addProperty("type", "IMAGE");
 
         store.enqueueIfAbsent("u_receiver", message, 1_000L);
 
-        assertEquals("[图片]", store.pending("u_receiver", 0L, 50).get(0).preview());
+        PushNotificationStore.PushNotificationRecord record = store.pending("u_receiver", 0L, 50).get(0);
+        assertEquals("IMAGE", record.messageType());
+        assertEquals("[图片]", record.preview());
     }
 
     private static JsonObject textMessage(String messageId, String content) {
@@ -65,7 +67,7 @@ public class SQLitePushNotificationStoreTest {
         message.addProperty("senderId", "u_sender");
         message.addProperty("conversationId", "single:u_sender:u_receiver");
         message.addProperty("messageId", messageId);
-        message.addProperty("messageType", "TEXT");
+        message.addProperty("type", "TEXT");
         message.addProperty("content", content);
         message.addProperty("serverSeq", 42L);
         message.addProperty("serverTime", 123_456L);

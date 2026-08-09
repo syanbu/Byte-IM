@@ -54,7 +54,7 @@ public final class InMemoryPushNotificationStore implements PushNotificationStor
     }
 
     static PushNotificationRecord fromMessage(long pushId, String userId, JsonObject message, long createdAt) {
-        String messageType = readString(message, "messageType", "TEXT");
+        String messageType = readString(message, "type", "TEXT");
         return new PushNotificationRecord(
                 pushId,
                 userId,

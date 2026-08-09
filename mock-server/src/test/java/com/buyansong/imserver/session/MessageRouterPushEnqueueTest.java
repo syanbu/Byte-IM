@@ -2,6 +2,7 @@ package com.buyansong.imserver.session;
 
 import com.buyansong.im.protocol.v2.ChatMessagePayload;
 import com.buyansong.im.protocol.v2.ConversationType;
+import com.buyansong.im.protocol.v2.ImagePayload;
 import com.buyansong.im.protocol.v2.MessageType;
 import com.buyansong.im.protocol.v2.SendMessage;
 import com.buyansong.imserver.auth.TokenService;
@@ -45,6 +46,38 @@ public class MessageRouterPushEnqueueTest {
 
         assertEquals(0, pushStore.pending("u_online", 0L, 50).size());
         assertEquals(1, pushStore.pending("u_offline", 0L, 50).size());
+    }
+
+    @Test
+    public void handleSendMessage_offlineImageMessage_enqueuesImagePreview() {
+        ClientSessionRegistry registry = new ClientSessionRegistry();
+        InMemoryPushNotificationStore pushStore = new InMemoryPushNotificationStore();
+        AtomicLong clock = new AtomicLong(1_000L);
+        MessageRouter router = router(registry, pushStore, new GroupService(new InMemoryGroupStore(), clock::get), clock);
+
+        router.handleSendMessage("u_sender", SendMessage.newBuilder()
+                .setMessage(ChatMessagePayload.newBuilder()
+                        .setMessageId("m_img")
+                        .setConversationType(ConversationType.CONVERSATION_TYPE_SINGLE)
+                        .setSenderId("u_sender")
+                        .setReceiverId("u_receiver")
+                        .setConversationId("single:u_sender:u_receiver")
+                        .setClientSeq(1L)
+                        .setMessageType(MessageType.MESSAGE_TYPE_IMAGE)
+                        .setContent("[图片]")
+                        .setImage(ImagePayload.newBuilder()
+                                .setImageUrl("https://example.test/origin.jpg")
+                                .setThumbnailUrl("https://example.test/thumb.jpg")
+                                .setWidth(640)
+                                .setHeight(480)
+                                .setMimeType("image/jpeg")
+                                .setSizeBytes(1234L)))
+                .build());
+
+        var pending = pushStore.pending("u_receiver", 0L, 50);
+        assertEquals(1, pending.size());
+        assertEquals("IMAGE", pending.get(0).messageType());
+        assertEquals("[图片]", pending.get(0).preview());
     }
 
     private static MessageRouter router(
