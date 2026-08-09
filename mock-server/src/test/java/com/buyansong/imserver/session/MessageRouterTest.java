@@ -1,28 +1,28 @@
 package com.buyansong.imserver.session;
 
-import com.buyansong.imserver.protocol.ImCommand;
-import com.buyansong.imserver.protocol.ImPacket;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.buyansong.im.protocol.v2.ChatMessagePayload;
+import com.buyansong.im.protocol.v2.ConversationType;
+import com.buyansong.im.protocol.v2.Heartbeat;
+import com.buyansong.im.protocol.v2.HeartbeatAck;
+import com.buyansong.im.protocol.v2.ImEnvelope;
+import com.buyansong.im.protocol.v2.MessageType;
+import com.buyansong.im.protocol.v2.SendMessage;
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class MessageRouterTest {
 
     private static final class RecordingClient implements OutboundClient {
-        final List<ImPacket> sent = new ArrayList<>();
+        final List<ImEnvelope> sent = new ArrayList<>();
 
         @Override
-        public void send(ImPacket packet) {
-            sent.add(packet);
+        public void send(ImEnvelope envelope) {
+            sent.add(envelope);
         }
     }
 
@@ -31,35 +31,30 @@ public class MessageRouterTest {
     }
 
     private static void sendSingleMessage(MessageRouter router, String senderId, String messageId, String receiverId) {
-        JsonObject message = new JsonObject();
-        message.addProperty("messageId", messageId);
-        message.addProperty("conversationType", "SINGLE");
-        message.addProperty("senderId", senderId);
-        message.addProperty("receiverId", receiverId);
-        message.addProperty("conversationId", "single:" + senderId + ":" + receiverId);
-        message.addProperty("clientSeq", 1L);
-        message.addProperty("content", "hello");
-        router.handleSendMessage(senderId, new ImPacket(
-                ImCommand.SEND_MESSAGE.value(),
-                message.toString().getBytes(StandardCharsets.UTF_8)
-        ));
+        router.handleSendMessage(senderId, SendMessage.newBuilder()
+                .setMessage(ChatMessagePayload.newBuilder()
+                        .setMessageId(messageId)
+                        .setConversationType(ConversationType.CONVERSATION_TYPE_SINGLE)
+                        .setSenderId(senderId)
+                        .setReceiverId(receiverId)
+                        .setConversationId("single:" + senderId + ":" + receiverId)
+                        .setClientSeq(1L)
+                        .setMessageType(MessageType.MESSAGE_TYPE_TEXT)
+                        .setContent("hello"))
+                .build());
     }
 
-    private static byte[] heartbeatBody(String... unackedMessageIds) {
-        JsonObject body = new JsonObject();
-        body.addProperty("clientTime", 1L);
-        JsonArray ids = new JsonArray();
-        for (String messageId : unackedMessageIds) {
-            ids.add(messageId);
-        }
-        body.add("unackedMessageIds", ids);
-        return body.toString().getBytes(StandardCharsets.UTF_8);
+    private static Heartbeat heartbeat(String... unackedMessageIds) {
+        return Heartbeat.newBuilder()
+                .setClientTime(1L)
+                .addAllUnackedMessageIds(List.of(unackedMessageIds))
+                .build();
     }
 
-    private static JsonObject lastHeartbeatAck(RecordingClient client) {
-        ImPacket packet = client.sent.get(client.sent.size() - 1);
-        assertEquals(ImCommand.HEARTBEAT_ACK.value(), packet.cmd());
-        return JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
+    private static HeartbeatAck lastHeartbeatAck(RecordingClient client) {
+        ImEnvelope envelope = client.sent.get(client.sent.size() - 1);
+        assertEquals(ImEnvelope.PayloadCase.HEARTBEAT_ACK, envelope.getPayloadCase());
+        return envelope.getHeartbeatAck();
     }
 
     @Test
@@ -70,13 +65,11 @@ public class MessageRouterTest {
         registry.register("u_a", client);
         sendSingleMessage(router, "u_a", "m_1", "u_b");
 
-        router.handleHeartbeat(client, heartbeatBody("m_1"));
+        router.handleHeartbeat(client, heartbeat("m_1"));
 
-        JsonObject ack = lastHeartbeatAck(client);
-        assertTrue(ack.has("serverTime"));
-        JsonArray received = ack.getAsJsonArray("receivedMessageIds");
-        assertEquals(1, received.size());
-        assertEquals("m_1", received.get(0).getAsString());
+        HeartbeatAck ack = lastHeartbeatAck(client);
+        assertTrue(ack.getServerTime() > 0L);
+        assertEquals(List.of("m_1"), ack.getReceivedMessageIdsList());
     }
 
     @Test
@@ -87,12 +80,10 @@ public class MessageRouterTest {
         registry.register("u_a", client);
         sendSingleMessage(router, "u_a", "m_1", "u_b");
 
-        router.handleHeartbeat(client, heartbeatBody("m_1", "m_unknown"));
+        router.handleHeartbeat(client, heartbeat("m_1", "m_unknown"));
 
-        JsonObject ack = lastHeartbeatAck(client);
-        JsonArray received = ack.getAsJsonArray("receivedMessageIds");
-        assertEquals(1, received.size());
-        assertEquals("m_1", received.get(0).getAsString());
+        HeartbeatAck ack = lastHeartbeatAck(client);
+        assertEquals(List.of("m_1"), ack.getReceivedMessageIdsList());
     }
 
     @Test
@@ -105,10 +96,10 @@ public class MessageRouterTest {
         registry.register("u_b", clientB);
         sendSingleMessage(router, "u_a", "m_1", "u_b");
 
-        router.handleHeartbeat(clientB, heartbeatBody("m_1"));
+        router.handleHeartbeat(clientB, heartbeat("m_1"));
 
-        JsonObject ack = lastHeartbeatAck(clientB);
-        assertEquals(0, ack.getAsJsonArray("receivedMessageIds").size());
+        HeartbeatAck ack = lastHeartbeatAck(clientB);
+        assertEquals(0, ack.getReceivedMessageIdsCount());
     }
 
     @Test
@@ -118,12 +109,10 @@ public class MessageRouterTest {
         RecordingClient client = new RecordingClient();
         registry.register("u_a", client);
 
-        JsonObject legacyBody = new JsonObject();
-        legacyBody.addProperty("clientTime", 1L);
-        router.handleHeartbeat(client, legacyBody.toString().getBytes(StandardCharsets.UTF_8));
+        router.handleHeartbeat(client, Heartbeat.newBuilder().setClientTime(1L).build());
 
-        JsonObject ack = lastHeartbeatAck(client);
-        assertTrue(ack.has("serverTime"));
-        assertFalse(ack.has("receivedMessageIds"));
+        HeartbeatAck ack = lastHeartbeatAck(client);
+        assertTrue(ack.getServerTime() > 0L);
+        assertEquals(0, ack.getReceivedMessageIdsCount());
     }
 }

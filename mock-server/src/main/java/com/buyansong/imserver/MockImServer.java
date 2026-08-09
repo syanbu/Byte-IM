@@ -13,6 +13,7 @@ import com.buyansong.imserver.groupread.GroupReadCursorStore;
 import com.buyansong.imserver.groupread.SQLiteGroupReadCursorStore;
 import com.buyansong.imserver.netty.HttpAuthHandler;
 import com.buyansong.imserver.netty.WebSocketFrameHandler;
+import com.buyansong.imserver.protocol.ImEnvelopeCodec;
 import com.buyansong.imserver.session.ClientSessionRegistry;
 import com.buyansong.imserver.session.MessageRouter;
 import com.buyansong.imserver.push.PushService;
@@ -27,6 +28,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 
 public final class MockImServer {
@@ -89,7 +91,8 @@ public final class MockImServer {
                                     .addLast(new HttpServerCodec())
                                     .addLast(new HttpObjectAggregator(64 * 1024))
                                     .addLast(new HttpAuthHandler(authService, new com.buyansong.imserver.oss.OssUploadService(), groupService, friendService, pushService))
-                                    .addLast(new WebSocketServerProtocolHandler("/ws", null, true))
+                                    .addLast(new WebSocketServerProtocolHandler("/ws", null, true, ImEnvelopeCodec.MAX_ENVELOPE_BYTES))
+                                    .addLast(new WebSocketFrameAggregator(ImEnvelopeCodec.MAX_ENVELOPE_BYTES))
                                     .addLast(new WebSocketFrameHandler(registry, messageRouter));
                         }
                     })

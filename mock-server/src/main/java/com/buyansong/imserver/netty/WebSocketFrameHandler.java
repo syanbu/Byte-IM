@@ -1,19 +1,16 @@
 package com.buyansong.imserver.netty;
 
+import com.buyansong.im.protocol.v2.ImEnvelope;
 import com.buyansong.imserver.ImServerLogger;
 import com.buyansong.imserver.auth.TokenService.AuthFailureReason;
-import com.buyansong.imserver.protocol.ImCommand;
-import com.buyansong.imserver.protocol.ImPacket;
-import com.buyansong.imserver.protocol.ImPacketCodec;
+import com.buyansong.imserver.protocol.ImEnvelopeCodec;
+import com.buyansong.imserver.protocol.ProtocolException;
 import com.buyansong.imserver.session.ClientSessionRegistry;
+import com.buyansong.imserver.session.MessageProtoMapper;
 import com.buyansong.imserver.session.MessageRouter;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
-
-import java.nio.charset.StandardCharsets;
 
 public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<BinaryWebSocketFrame> {
     private final ClientSessionRegistry registry;
@@ -26,77 +23,81 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
 
     @Override
     protected void channelRead0(ChannelHandlerContext context, BinaryWebSocketFrame frame) {
+        ChannelOutboundClient client = new ChannelOutboundClient(context.channel());
+        ImEnvelope envelope;
         try {
             byte[] bytes = new byte[frame.content().readableBytes()];
             frame.content().readBytes(bytes);
-            ImPacket packet = ImPacketCodec.decode(bytes);
-            ChannelOutboundClient client = new ChannelOutboundClient(context.channel());
-
-            if (packet.cmd() == ImCommand.AUTH.value()) {
-                JsonObject body = JsonParser.parseString(new String(packet.body(), StandardCharsets.UTF_8)).getAsJsonObject();
-                AuthFailureReason reason = messageRouter.handleAuth(body.has("token") ? body.get("token").getAsString() : null, client);
-                if (reason != null) {
-                    context.writeAndFlush(new BinaryWebSocketFrame(context.alloc().buffer().writeBytes(
-                            ImPacketCodec.encode(authNack(reason))
-                    )));
+            envelope = ImEnvelopeCodec.decode(bytes);
+        } catch (ProtocolException error) {
+            ImServerLogger.log("[IM] WebSocket protocol failure: %s", error.getMessage());
+            context.close();
+            return;
+        }
+        try {
+            switch (envelope.getPayloadCase()) {
+                case AUTH -> {
+                    AuthFailureReason reason = messageRouter.handleAuth(envelope.getAuth().getAccessToken(), client);
+                    if (reason != null) {
+                        client.send(MessageProtoMapper.authNackEnvelope(toProtoReason(reason)));
+                        context.close();
+                    }
+                }
+                case HEARTBEAT -> {
+                    if (registry.userIdOf(client).isEmpty()) {
+                        ImServerLogger.log("[IM] HEARTBEAT rejected unauthenticated client");
+                        return;
+                    }
+                    messageRouter.handleHeartbeat(client, envelope.getHeartbeat());
+                }
+                case SEND_MESSAGE -> {
+                    String senderUserId = registry.userIdOf(client).orElse(null);
+                    if (senderUserId == null) {
+                        ImServerLogger.log("[IM] SEND_MESSAGE rejected unauthenticated client");
+                        return;
+                    }
+                    messageRouter.handleSendMessage(senderUserId, envelope.getSendMessage());
+                }
+                case DELIVERY_ACK -> {
+                    String receiverUserId = registry.userIdOf(client).orElse(null);
+                    if (receiverUserId == null) {
+                        ImServerLogger.log("[IM] DELIVERY_ACK rejected unauthenticated client");
+                        return;
+                    }
+                    messageRouter.handleDeliveryAck(receiverUserId, envelope.getDeliveryAck());
+                }
+                case READ_ACK -> {
+                    String readerUserId = registry.userIdOf(client).orElse(null);
+                    if (readerUserId == null) {
+                        ImServerLogger.log("[IM] READ_ACK rejected unauthenticated client");
+                        return;
+                    }
+                    messageRouter.handleReadAck(readerUserId, envelope.getReadAck());
+                }
+                case RECALL_MESSAGE -> {
+                    String requesterUserId = registry.userIdOf(client).orElse(null);
+                    if (requesterUserId == null) {
+                        ImServerLogger.log("[IM] RECALL_MESSAGE rejected unauthenticated client");
+                        return;
+                    }
+                    messageRouter.handleRecallMessage(requesterUserId, envelope.getRecallMessage());
+                }
+                case RECALL_NOTIFY_ACK -> {
+                    String receiverUserId = registry.userIdOf(client).orElse(null);
+                    if (receiverUserId == null) {
+                        ImServerLogger.log("[IM] RECALL_NOTIFY_ACK rejected unauthenticated client");
+                        return;
+                    }
+                    messageRouter.handleRecallNotifyAck(receiverUserId, envelope.getRecallNotifyAck());
+                }
+                default -> {
+                    ImServerLogger.log("[IM] Protocol failure: unexpected client payload %s", envelope.getPayloadCase());
                     context.close();
                 }
-                return;
             }
-            if (packet.cmd() == ImCommand.HEARTBEAT.value()) {
-                if (registry.userIdOf(client).isEmpty()) {
-                    ImServerLogger.log("[IM] HEARTBEAT rejected unauthenticated client");
-                    return;
-                }
-                messageRouter.handleHeartbeat(client, packet.body());
-                return;
-            }
-            if (packet.cmd() == ImCommand.SEND_MESSAGE.value()) {
-                String senderUserId = registry.userIdOf(client).orElse(null);
-                if (senderUserId == null) {
-                    ImServerLogger.log("[IM] SEND_MESSAGE rejected unauthenticated client");
-                    return;
-                }
-                messageRouter.handleSendMessage(senderUserId, packet);
-                return;
-            }
-            if (packet.cmd() == ImCommand.DELIVERY_ACK.value()) {
-                String receiverUserId = registry.userIdOf(client).orElse(null);
-                if (receiverUserId == null) {
-                    ImServerLogger.log("[IM] DELIVERY_ACK rejected unauthenticated client");
-                    return;
-                }
-                messageRouter.handleDeliveryAck(receiverUserId, packet);
-                return;
-            }
-            if (packet.cmd() == ImCommand.READ_ACK.value()) {
-                String readerUserId = registry.userIdOf(client).orElse(null);
-                if (readerUserId == null) {
-                    ImServerLogger.log("[IM] READ_ACK rejected unauthenticated client");
-                    return;
-                }
-                messageRouter.handleReadAck(readerUserId, packet);
-                return;
-            }
-            if (packet.cmd() == ImCommand.RECALL_MESSAGE.value()) {
-                String requesterUserId = registry.userIdOf(client).orElse(null);
-                if (requesterUserId == null) {
-                    ImServerLogger.log("[IM] RECALL_MESSAGE rejected unauthenticated client");
-                    return;
-                }
-                messageRouter.handleRecallMessage(requesterUserId, packet);
-                return;
-            }
-            if (packet.cmd() == ImCommand.RECALL_NOTIFY_ACK.value()) {
-                String receiverUserId = registry.userIdOf(client).orElse(null);
-                if (receiverUserId == null) {
-                    ImServerLogger.log("[IM] RECALL_NOTIFY_ACK rejected unauthenticated client");
-                    return;
-                }
-                messageRouter.handleRecallNotifyAck(receiverUserId, packet);
-                return;
-            }
-            ImServerLogger.log("[IM] Unknown packet cmd=%d", packet.cmd());
+        } catch (ProtocolException error) {
+            ImServerLogger.log("[IM] WebSocket protocol failure: %s", error.getMessage());
+            context.close();
         } catch (RuntimeException error) {
             ImServerLogger.log("[IM] WebSocket packet error: %s", error.getMessage());
             error.printStackTrace(System.out);
@@ -115,9 +116,11 @@ public final class WebSocketFrameHandler extends SimpleChannelInboundHandler<Bin
         context.close();
     }
 
-    private ImPacket authNack(AuthFailureReason reason) {
-        JsonObject body = new JsonObject();
-        body.addProperty("reason", reason.name());
-        return new ImPacket(ImCommand.AUTH_NACK.value(), body.toString().getBytes(StandardCharsets.UTF_8));
+    private static com.buyansong.im.protocol.v2.AuthFailureReason toProtoReason(AuthFailureReason reason) {
+        return switch (reason) {
+            case TOKEN_EXPIRED -> com.buyansong.im.protocol.v2.AuthFailureReason.AUTH_FAILURE_REASON_TOKEN_EXPIRED;
+            case TOKEN_INVALID -> com.buyansong.im.protocol.v2.AuthFailureReason.AUTH_FAILURE_REASON_TOKEN_INVALID;
+            case TOKEN_MISSING -> com.buyansong.im.protocol.v2.AuthFailureReason.AUTH_FAILURE_REASON_TOKEN_MISSING;
+        };
     }
 }

@@ -1,10 +1,10 @@
 package com.buyansong.imserver.session;
 
+import com.buyansong.im.protocol.v2.ImEnvelope;
 import com.buyansong.imserver.ImServerLogger;
-import com.buyansong.imserver.protocol.ImPacket;
 
 public interface OutboundClient {
-    void send(ImPacket packet);
+    void send(ImEnvelope envelope);
 
     default void recordStatus(String status) {
         ImServerLogger.log("[IM] STATUS %s", status);

@@ -1,7 +1,7 @@
 package com.buyansong.imserver.netty;
 
-import com.buyansong.imserver.protocol.ImPacket;
-import com.buyansong.imserver.protocol.ImPacketCodec;
+import com.buyansong.im.protocol.v2.ImEnvelope;
+import com.buyansong.imserver.protocol.ImEnvelopeCodec;
 import com.buyansong.imserver.session.OutboundClient;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -15,8 +15,8 @@ public final class ChannelOutboundClient implements OutboundClient {
     }
 
     @Override
-    public void send(ImPacket packet) {
-        channel.writeAndFlush(new BinaryWebSocketFrame(Unpooled.wrappedBuffer(ImPacketCodec.encode(packet))));
+    public void send(ImEnvelope envelope) {
+        channel.writeAndFlush(new BinaryWebSocketFrame(Unpooled.wrappedBuffer(ImEnvelopeCodec.encode(envelope))));
     }
 
     @Override

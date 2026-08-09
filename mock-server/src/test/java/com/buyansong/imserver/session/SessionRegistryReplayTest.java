@@ -1,14 +1,14 @@
 package com.buyansong.imserver.session;
 
+import com.buyansong.im.protocol.v2.ConversationType;
+import com.buyansong.im.protocol.v2.ImEnvelope;
+import com.buyansong.im.protocol.v2.ReadAck;
 import com.buyansong.imserver.auth.TokenService;
 import com.buyansong.imserver.group.GroupService;
 import com.buyansong.imserver.group.InMemoryGroupStore;
 import com.buyansong.imserver.groupread.InMemoryGroupReadCursorStore;
-import com.buyansong.imserver.protocol.ImCommand;
-import com.buyansong.imserver.protocol.ImPacket;
 import org.junit.Test;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -18,11 +18,11 @@ import static org.junit.Assert.assertTrue;
 public class SessionRegistryReplayTest {
 
     private static final class CapturingClient implements OutboundClient {
-        final java.util.List<ImPacket> sent = new java.util.ArrayList<>();
+        final java.util.List<ImEnvelope> sent = new java.util.ArrayList<>();
 
         @Override
-        public void send(ImPacket packet) {
-            sent.add(packet);
+        public void send(ImEnvelope envelope) {
+            sent.add(envelope);
         }
     }
 
@@ -54,13 +54,13 @@ public class SessionRegistryReplayTest {
         router.replayGroupReadCursorsFor("u_b", uBReconnect);
 
         long readAcks = uBReconnect.sent.stream()
-                .filter(p -> p.cmd() == ImCommand.READ_ACK.value())
+                .filter(envelope -> envelope.getPayloadCase() == ImEnvelope.PayloadCase.READ_ACK)
                 .count();
         assertEquals(2L, readAcks);
-        for (ImPacket packet : uBReconnect.sent) {
-            String body = new String(packet.body(), StandardCharsets.UTF_8);
-            assertTrue(body.contains("\"conversationType\":\"GROUP\""));
-            assertTrue(body.contains("\"conversationId\":\"group:"));
+        for (ImEnvelope envelope : uBReconnect.sent) {
+            ReadAck ack = envelope.getReadAck();
+            assertEquals(ConversationType.CONVERSATION_TYPE_GROUP, ack.getConversationType());
+            assertTrue(ack.getConversationId().startsWith("group:"));
         }
     }
 }

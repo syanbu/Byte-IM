@@ -11,14 +11,21 @@ import com.buyansong.imserver.groupread.GroupReadCursorStore;
 import com.buyansong.imserver.groupread.InMemoryGroupReadCursorStore;
 import com.buyansong.imserver.push.InMemoryPushNotificationStore;
 import com.buyansong.imserver.push.PushNotificationStore;
-import com.buyansong.imserver.protocol.ImCommand;
-import com.buyansong.imserver.protocol.ImPacket;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import com.buyansong.im.protocol.v2.ChatMessagePayload;
+import com.buyansong.im.protocol.v2.ConversationType;
+import com.buyansong.im.protocol.v2.DeliveryAck;
+import com.buyansong.im.protocol.v2.Heartbeat;
+import com.buyansong.im.protocol.v2.MessageAck;
+import com.buyansong.im.protocol.v2.MessageType;
+import com.buyansong.im.protocol.v2.ReadAck;
+import com.buyansong.im.protocol.v2.RecallAck;
+import com.buyansong.im.protocol.v2.RecallMessage;
+import com.buyansong.im.protocol.v2.RecallNotify;
+import com.buyansong.im.protocol.v2.RecallNotifyAck;
+import com.buyansong.im.protocol.v2.SendMessage;
+import com.buyansong.imserver.protocol.ProtocolException;
 import com.google.gson.JsonParser;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -144,31 +151,31 @@ public final class MessageRouter {
         restoreAcceptedMessages();
     }
 
-    public synchronized void handleSendMessage(String senderUserId, ImPacket packet) {
-        JsonObject message = JsonParser
-                .parseString(new String(packet.body(), StandardCharsets.UTF_8))
-                .getAsJsonObject();
-        String messageId = message.get("messageId").getAsString();
-        String conversationType = optionalString(message, "conversationType", "SINGLE");
+    public synchronized void handleSendMessage(String senderUserId, SendMessage request) {
+        ChatMessagePayload requestMessage = request.getMessage();
+        requireConversationType(requestMessage.getConversationType());
+        requireMessageType(requestMessage.getMessageType());
+        String messageId = requestMessage.getMessageId();
+        boolean isGroup = requestMessage.getConversationType() == ConversationType.CONVERSATION_TYPE_GROUP;
         AcceptedMessage accepted = acceptedMessagesById.get(messageId);
         if (accepted != null) {
             sendAck(senderUserId, accepted.ack());
             ImServerLogger.log(
                     "[IM] %s duplicate sender=%s messageId=%s serverSeq=%d ackOnly=true",
-                    "GROUP".equals(conversationType) ? "GROUP_SEND" : "SEND_MESSAGE",
+                    isGroup ? "GROUP_SEND" : "SEND_MESSAGE",
                     senderUserId,
                     messageId,
                     accepted.serverSeq()
             );
             return;
         }
-        if ("GROUP".equals(conversationType)) {
-            handleGroupSendMessage(senderUserId, messageId, message);
+        if (isGroup) {
+            handleGroupSendMessage(senderUserId, requestMessage);
             return;
         }
-        String receiverId = message.get("receiverId").getAsString();
-        String conversationId = message.get("conversationId").getAsString();
-        long clientSeq = message.get("clientSeq").getAsLong();
+        String receiverId = requestMessage.getReceiverId();
+        String conversationId = requestMessage.getConversationId();
+        long clientSeq = requestMessage.getClientSeq();
         long nextServerSeq = nextServerSeq(conversationId);
         long serverTime = clock.getAsLong();
 
@@ -180,22 +187,27 @@ public final class MessageRouter {
                 messageId,
                 clientSeq,
                 nextServerSeq,
-                message.get("content").getAsString()
+                requestMessage.getContent()
         );
 
-        JsonObject ack = new JsonObject();
-        ack.addProperty("messageId", messageId);
-        ack.addProperty("conversationId", conversationId);
-        ack.addProperty("clientSeq", clientSeq);
-        ack.addProperty("serverSeq", nextServerSeq);
-        ack.addProperty("serverTime", serverTime);
+        MessageAck ack = MessageAck.newBuilder()
+                .setMessageId(messageId)
+                .setConversationId(conversationId)
+                .setClientSeq(clientSeq)
+                .setServerSeq(nextServerSeq)
+                .setServerTime(serverTime)
+                .build();
 
-        message.addProperty("serverSeq", nextServerSeq);
-        message.addProperty("serverTime", serverTime);
-        addSenderProfileVersion(message, senderUserId);
+        // Sender identity always comes from the authenticated socket, never the payload.
+        ChatMessagePayload.Builder messageBuilder = requestMessage.toBuilder()
+                .setSenderId(senderUserId)
+                .setServerSeq(nextServerSeq)
+                .setServerTime(serverTime);
+        addSenderProfileVersion(messageBuilder, senderUserId);
+        ChatMessagePayload message = messageBuilder.build();
         AcceptedMessage newlyAccepted = new AcceptedMessage(
-                ack.deepCopy(),
-                message.deepCopy(),
+                ack,
+                message,
                 receiverId,
                 nextServerSeq,
                 false
@@ -226,10 +238,11 @@ public final class MessageRouter {
         deliverOrKeepPending(receiverId, messageId, message, nextServerSeq);
     }
 
-    private void handleGroupSendMessage(String senderUserId, String messageId, JsonObject message) {
-        String groupId = message.get("groupId").getAsString();
-        String conversationId = message.get("conversationId").getAsString();
-        long clientSeq = message.get("clientSeq").getAsLong();
+    private void handleGroupSendMessage(String senderUserId, ChatMessagePayload requestMessage) {
+        String messageId = requestMessage.getMessageId();
+        String groupId = requestMessage.getGroupId();
+        String conversationId = requestMessage.getConversationId();
+        long clientSeq = requestMessage.getClientSeq();
         if (!groupService.isMember(groupId, senderUserId)) {
             ImServerLogger.log("[IM] GROUP_SEND rejected non-member sender=%s groupId=%s messageId=%s", senderUserId, groupId, messageId);
             return;
@@ -247,28 +260,31 @@ public final class MessageRouter {
                 clientSeq,
                 nextServerSeq,
                 recipients.size(),
-                message.get("content").getAsString()
+                requestMessage.getContent()
         );
 
-        JsonObject ack = new JsonObject();
-        ack.addProperty("messageId", messageId);
-        ack.addProperty("conversationId", conversationId);
-        ack.addProperty("clientSeq", clientSeq);
-        ack.addProperty("serverSeq", nextServerSeq);
-        ack.addProperty("serverTime", serverTime);
+        MessageAck ack = MessageAck.newBuilder()
+                .setMessageId(messageId)
+                .setConversationId(conversationId)
+                .setClientSeq(clientSeq)
+                .setServerSeq(nextServerSeq)
+                .setServerTime(serverTime)
+                .build();
 
-        message.addProperty("serverSeq", nextServerSeq);
-        message.addProperty("serverTime", serverTime);
-        message.addProperty("groupName", groupService.groupName(groupId));
-        addSenderProfileVersion(message, senderUserId);
+        ChatMessagePayload.Builder messageBuilder = requestMessage.toBuilder()
+                .setSenderId(senderUserId)
+                .setServerSeq(nextServerSeq)
+                .setServerTime(serverTime)
+                .setGroupName(groupService.groupName(groupId));
+        addSenderProfileVersion(messageBuilder, senderUserId);
+        ChatMessagePayload message = messageBuilder.build();
 
-        JsonObject firstRecipientMessage = message.deepCopy();
-        if (!recipients.isEmpty()) {
-            firstRecipientMessage.addProperty("receiverId", recipients.get(0));
-        }
+        ChatMessagePayload firstRecipientMessage = recipients.isEmpty()
+                ? message
+                : message.toBuilder().setReceiverId(recipients.get(0)).build();
         AcceptedMessage senderAccepted = new AcceptedMessage(
-                ack.deepCopy(),
-                firstRecipientMessage.deepCopy(),
+                ack,
+                firstRecipientMessage,
                 recipients.isEmpty() ? groupId : recipients.get(0),
                 nextServerSeq,
                 recipients.isEmpty()
@@ -291,11 +307,10 @@ public final class MessageRouter {
         sendAck(senderUserId, ack);
         for (int index = 0; index < recipients.size(); index++) {
             String receiverId = recipients.get(index);
-            JsonObject recipientMessage = message.deepCopy();
-            recipientMessage.addProperty("receiverId", receiverId);
+            ChatMessagePayload recipientMessage = message.toBuilder().setReceiverId(receiverId).build();
             AcceptedMessage receiverAccepted = new AcceptedMessage(
-                    ack.deepCopy(),
-                    recipientMessage.deepCopy(),
+                    ack,
+                    recipientMessage,
                     receiverId,
                     nextServerSeq,
                     false
@@ -310,22 +325,19 @@ public final class MessageRouter {
         }
     }
 
-    public synchronized void handleDeliveryAck(String receiverUserId, ImPacket packet) {
-        JsonObject ack = JsonParser
-                .parseString(new String(packet.body(), StandardCharsets.UTF_8))
-                .getAsJsonObject();
-        String messageId = ack.get("messageId").getAsString();
-        long serverSeq = ack.get("serverSeq").getAsLong();
+    public synchronized void handleDeliveryAck(String receiverUserId, DeliveryAck ack) {
+        String messageId = ack.getMessageId();
+        long serverSeq = ack.getServerSeq();
         acceptedMessageStore.markDelivered(messageId, receiverUserId);
         AcceptedMessage receiverAccepted = undeliveredMessagesByReceiver
                 .getOrDefault(receiverUserId, new ConcurrentHashMap<>())
                 .get(messageId);
         if (receiverAccepted != null) {
-            JsonObject message = receiverAccepted.message();
-            if ("GROUP".equals(optionalString(message, "conversationType", "SINGLE"))) {
+            ChatMessagePayload message = receiverAccepted.message();
+            if (message.getConversationType() == ConversationType.CONVERSATION_TYPE_GROUP) {
                 ImServerLogger.log(
                         "[IM] GROUP_DELIVERY_ACK received groupId=%s receiver=%s messageId=%s serverSeq=%d",
-                        optionalString(message, "groupId", ""),
+                        message.getGroupId(),
                         receiverUserId,
                         messageId,
                         serverSeq
@@ -348,41 +360,37 @@ public final class MessageRouter {
         });
     }
 
-    public synchronized void handleReadAck(String socketUserId, ImPacket packet) {
-        JsonObject ack = JsonParser
-                .parseString(new String(packet.body(), StandardCharsets.UTF_8))
-                .getAsJsonObject();
-        String readerId = ack.get("readerId").getAsString();
+    public synchronized void handleReadAck(String socketUserId, ReadAck ack) {
+        String readerId = ack.getReaderId();
         if (!socketUserId.equals(readerId)) {
             ImServerLogger.log("[IM] READ_ACK rejected socketUserId=%s readerId=%s", socketUserId, readerId);
             return;
         }
-        String conversationType = optionalString(ack, "conversationType", "SINGLE");
-        if ("GROUP".equals(conversationType)) {
+        if (ack.getConversationType() == ConversationType.CONVERSATION_TYPE_GROUP) {
             handleGroupReadAck(ack);
             return;
         }
-        String peerId = ack.get("peerId").getAsString();
+        String peerId = ack.getPeerId();
         registry.find(peerId).ifPresentOrElse(
                 client -> {
-                    client.send(packet(ImCommand.READ_ACK, ack));
+                    client.send(MessageProtoMapper.readAckEnvelope(ack));
                     ImServerLogger.log(
                             "[IM] READ_ACK forwarded reader=%s peer=%s readUpToServerSeq=%d",
                             readerId,
                             peerId,
-                            ack.get("readUpToServerSeq").getAsLong()
+                            ack.getReadUpToServerSeq()
                     );
                 },
                 () -> ImServerLogger.log("[IM] READ_ACK skipped peer offline reader=%s peer=%s", readerId, peerId)
         );
     }
 
-    private void handleGroupReadAck(JsonObject ack) {
-        String conversationId = ack.get("conversationId").getAsString();
+    private void handleGroupReadAck(ReadAck ack) {
+        String conversationId = ack.getConversationId();
         String groupId = conversationId.startsWith("group:") ? conversationId.substring("group:".length()) : conversationId;
-        String readerId = ack.get("readerId").getAsString();
-        long readUpToServerSeq = ack.get("readUpToServerSeq").getAsLong();
-        long readAt = ack.get("readAt").getAsLong();
+        String readerId = ack.getReaderId();
+        long readUpToServerSeq = ack.getReadUpToServerSeq();
+        long readAt = ack.getReadAt();
         if (!groupService.isMember(groupId, readerId)) {
             ImServerLogger.log("[IM] GROUP_READ_ACK rejected non-member reader=%s groupId=%s", readerId, groupId);
             return;
@@ -393,18 +401,15 @@ public final class MessageRouter {
             return;
         }
         for (String memberId : groupService.membersForReadAck(groupId)) {
-            registry.find(memberId).ifPresent(client -> client.send(packet(ImCommand.READ_ACK, ack)));
+            registry.find(memberId).ifPresent(client -> client.send(MessageProtoMapper.readAckEnvelope(ack)));
         }
         ImServerLogger.log("[IM] GROUP_READ_ACK broadcast reader=%s groupId=%s seq=%d", readerId, groupId, readUpToServerSeq);
     }
 
-    public synchronized void handleRecallMessage(String socketUserId, ImPacket packet) {
-        JsonObject request = JsonParser
-                .parseString(new String(packet.body(), StandardCharsets.UTF_8))
-                .getAsJsonObject();
-        String messageId = request.get("messageId").getAsString();
-        String requesterId = request.get("requesterId").getAsString();
-        String conversationId = request.get("conversationId").getAsString();
+    public synchronized void handleRecallMessage(String socketUserId, RecallMessage request) {
+        String messageId = request.getMessageId();
+        String requesterId = request.getRequesterId();
+        String conversationId = request.getConversationId();
         AcceptedMessage accepted = acceptedMessagesById.get(messageId);
         if (!socketUserId.equals(requesterId)) {
             sendRecallFailure(socketUserId, messageId, conversationId, "REQUESTER_MISMATCH");
@@ -414,12 +419,12 @@ public final class MessageRouter {
             sendRecallFailure(socketUserId, messageId, conversationId, "NOT_FOUND");
             return;
         }
-        String senderId = accepted.message().get("senderId").getAsString();
+        String senderId = accepted.message().getSenderId();
         if (!requesterId.equals(senderId)) {
             sendRecallFailure(socketUserId, messageId, conversationId, "NOT_SENDER");
             return;
         }
-        if (!conversationId.equals(accepted.message().get("conversationId").getAsString())) {
+        if (!conversationId.equals(accepted.message().getConversationId())) {
             sendRecallFailure(socketUserId, messageId, conversationId, "CONVERSATION_MISMATCH");
             return;
         }
@@ -427,7 +432,7 @@ public final class MessageRouter {
             sendRecallSuccess(socketUserId, accepted);
             return;
         }
-        long serverTime = accepted.ack().get("serverTime").getAsLong();
+        long serverTime = accepted.ack().getServerTime();
         long recalledAt = clock.getAsLong();
         if (recalledAt - serverTime > RECALL_WINDOW_MS) {
             sendRecallFailure(socketUserId, messageId, conversationId, "EXPIRED");
@@ -441,12 +446,9 @@ public final class MessageRouter {
         deliverPendingRecallNotifiesToOnlineReceivers(messageId);
     }
 
-    public synchronized void handleRecallNotifyAck(String socketUserId, ImPacket packet) {
-        JsonObject ack = JsonParser
-                .parseString(new String(packet.body(), StandardCharsets.UTF_8))
-                .getAsJsonObject();
-        String receiverId = ack.get("receiverId").getAsString();
-        String messageId = ack.get("messageId").getAsString();
+    public synchronized void handleRecallNotifyAck(String socketUserId, RecallNotifyAck ack) {
+        String receiverId = ack.getReceiverId();
+        String messageId = ack.getMessageId();
         if (!socketUserId.equals(receiverId)) {
             ImServerLogger.log("[IM] RECALL_NOTIFY_ACK rejected socketUserId=%s receiverId=%s messageId=%s", socketUserId, receiverId, messageId);
             return;
@@ -465,47 +467,39 @@ public final class MessageRouter {
         ImServerLogger.log("[IM] RECALL_NOTIFY_ACK received receiver=%s messageId=%s", receiverId, messageId);
     }
 
-    private void sendAck(String senderUserId, JsonObject ack) {
-        String messageId = ack.get("messageId").getAsString();
-        long clientSeq = ack.get("clientSeq").getAsLong();
-        long serverSeq = ack.get("serverSeq").getAsLong();
+    private void sendAck(String senderUserId, MessageAck ack) {
         registry.find(senderUserId).ifPresentOrElse(
                 client -> {
-                    client.send(packet(ImCommand.MESSAGE_ACK, ack));
+                    client.send(MessageProtoMapper.messageAckEnvelope(ack));
                     ImServerLogger.log(
                             "[IM] MESSAGE_ACK sent sender=%s messageId=%s clientSeq=%d serverSeq=%d",
                             senderUserId,
-                            messageId,
-                            clientSeq,
-                            serverSeq
+                            ack.getMessageId(),
+                            ack.getClientSeq(),
+                            ack.getServerSeq()
                     );
                 },
-                () -> ImServerLogger.log("[IM] MESSAGE_ACK skipped sender offline sender=%s messageId=%s", senderUserId, messageId)
+                () -> ImServerLogger.log("[IM] MESSAGE_ACK skipped sender offline sender=%s messageId=%s", senderUserId, ack.getMessageId())
         );
     }
 
-    public void handleHeartbeat(OutboundClient client) {
-        handleHeartbeat(client, null);
-    }
-
-    public void handleHeartbeat(OutboundClient client, byte[] heartbeatBody) {
+    public void handleHeartbeat(OutboundClient client, Heartbeat heartbeat) {
         String userId = registry.userIdOf(client).orElse(null);
         if (userId == null) {
             ImServerLogger.log("[IM] HEARTBEAT rejected unauthenticated client");
             return;
         }
         ImServerLogger.log("[IM] HEARTBEAT received userId=%s", userId);
-        JsonObject body = new JsonObject();
-        body.addProperty("serverTime", clock.getAsLong());
-        List<String> unackedMessageIds = parseUnackedMessageIds(heartbeatBody);
-        if (unackedMessageIds != null) {
-            JsonArray receivedMessageIds = new JsonArray();
+        long serverTime = clock.getAsLong();
+        List<String> unackedMessageIds = heartbeat.getUnackedMessageIdsList();
+        List<String> receivedMessageIds = null;
+        if (!unackedMessageIds.isEmpty()) {
+            receivedMessageIds = new ArrayList<>();
             for (String messageId : unackedMessageIds) {
                 if (acceptedMessageStore.existsForSender(messageId, userId)) {
                     receivedMessageIds.add(messageId);
                 }
             }
-            body.add("receivedMessageIds", receivedMessageIds);
             ImServerLogger.log(
                     "[IM] HEARTBEAT reconcile userId=%s unacked=%d received=%d",
                     userId,
@@ -513,32 +507,8 @@ public final class MessageRouter {
                     receivedMessageIds.size()
             );
         }
-        client.send(packet(ImCommand.HEARTBEAT_ACK, body));
+        client.send(MessageProtoMapper.heartbeatAckEnvelope(serverTime, receivedMessageIds));
         ImServerLogger.log("[IM] HEARTBEAT_ACK sent userId=%s", userId);
-    }
-
-    private static List<String> parseUnackedMessageIds(byte[] heartbeatBody) {
-        if (heartbeatBody == null || heartbeatBody.length == 0) {
-            return null;
-        }
-        try {
-            JsonObject heartbeat = JsonParser
-                    .parseString(new String(heartbeatBody, StandardCharsets.UTF_8))
-                    .getAsJsonObject();
-            if (!heartbeat.has("unackedMessageIds") || !heartbeat.get("unackedMessageIds").isJsonArray()) {
-                return null;
-            }
-            List<String> messageIds = new ArrayList<>();
-            for (JsonElement element : heartbeat.getAsJsonArray("unackedMessageIds")) {
-                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
-                    messageIds.add(element.getAsString());
-                }
-            }
-            return messageIds;
-        } catch (RuntimeException error) {
-            ImServerLogger.log("[IM] HEARTBEAT body parse failed: %s", error.getMessage());
-            return null;
-        }
     }
 
     public AuthFailureReason handleAuth(String token, OutboundClient client) {
@@ -550,10 +520,7 @@ public final class MessageRouter {
             return reason;
         }
         registry.register(userId, client);
-        JsonObject body = new JsonObject();
-        body.addProperty("userId", userId);
-        body.addProperty("serverTime", System.currentTimeMillis());
-        client.send(packet(ImCommand.AUTH_ACK, body));
+        client.send(MessageProtoMapper.authAckEnvelope(userId, System.currentTimeMillis()));
         client.recordStatus("AUTHENTICATED userId=" + userId + " authAck=sent");
         deliverQueuedMessages(userId, client);
         deliverPendingRecallNotifies(userId, client);
@@ -567,12 +534,12 @@ public final class MessageRouter {
             return;
         }
         for (AcceptedMessage accepted : receiverMessages.values()) {
-            client.send(packet(ImCommand.RECEIVE_MESSAGE, accepted.message()));
+            client.send(MessageProtoMapper.receiveMessageEnvelope(accepted.message()));
             ImServerLogger.log(
                     "[IM] RECEIVE_MESSAGE delivered queued receiver=%s messageId=%s serverSeq=%d",
                     userId,
-                    accepted.message().get("messageId").getAsString(),
-                    accepted.message().get("serverSeq").getAsLong()
+                    accepted.message().getMessageId(),
+                    accepted.message().getServerSeq()
             );
         }
     }
@@ -583,7 +550,7 @@ public final class MessageRouter {
             return;
         }
         for (RecallNotifyEvent event : receiverEvents.values()) {
-            client.send(packet(ImCommand.RECALL_NOTIFY, recallNotifyBody(event)));
+            client.send(MessageProtoMapper.recallNotifyEnvelope(recallNotifyOf(event)));
             ImServerLogger.log(
                     "[IM] RECALL_NOTIFY delivered queued receiver=%s messageId=%s",
                     userId,
@@ -602,13 +569,13 @@ public final class MessageRouter {
             groupIds.add(group.groupId());
         }
         for (GroupReadCursor cursor : groupReadCursorStore.findByMemberOf(groupIds)) {
-            JsonObject body = new JsonObject();
-            body.addProperty("conversationId", "group:" + cursor.groupId());
-            body.addProperty("conversationType", "GROUP");
-            body.addProperty("readerId", cursor.readerId());
-            body.addProperty("readUpToServerSeq", cursor.readUpToServerSeq());
-            body.addProperty("readAt", cursor.readAt());
-            client.send(packet(ImCommand.READ_ACK, body));
+            client.send(MessageProtoMapper.readAckEnvelope(ReadAck.newBuilder()
+                    .setConversationId("group:" + cursor.groupId())
+                    .setConversationType(ConversationType.CONVERSATION_TYPE_GROUP)
+                    .setReaderId(cursor.readerId())
+                    .setReadUpToServerSeq(cursor.readUpToServerSeq())
+                    .setReadAt(cursor.readAt())
+                    .build()));
         }
     }
 
@@ -622,15 +589,15 @@ public final class MessageRouter {
         return messageIds;
     }
 
-    private void deliverOrKeepPending(String receiverId, String messageId, JsonObject message, long serverSeq) {
-        boolean isGroup = "GROUP".equals(optionalString(message, "conversationType", "SINGLE"));
+    private void deliverOrKeepPending(String receiverId, String messageId, ChatMessagePayload message, long serverSeq) {
+        boolean isGroup = message.getConversationType() == ConversationType.CONVERSATION_TYPE_GROUP;
         registry.find(receiverId).ifPresentOrElse(
                 client -> {
-                    client.send(packet(ImCommand.RECEIVE_MESSAGE, message));
+                    client.send(MessageProtoMapper.receiveMessageEnvelope(message));
                     if (isGroup) {
                         ImServerLogger.log(
                                 "[IM] GROUP_RECEIVE forwarded groupId=%s receiver=%s messageId=%s serverSeq=%d",
-                                optionalString(message, "groupId", ""),
+                                message.getGroupId(),
                                 receiverId,
                                 messageId,
                                 serverSeq
@@ -645,11 +612,17 @@ public final class MessageRouter {
                     }
                 },
                 () -> {
-                    pushNotificationStore.enqueueIfAbsent(receiverId, message, clock.getAsLong());
+                    // Push store keeps the legacy camelCase JSON snapshot; the mapper
+                    // produces it from the typed payload at this persistence boundary.
+                    pushNotificationStore.enqueueIfAbsent(
+                            receiverId,
+                            MessageProtoMapper.messageToStoredJson(message),
+                            clock.getAsLong()
+                    );
                     if (isGroup) {
                         ImServerLogger.log(
                                 "[IM] GROUP_RECEIVE queued groupId=%s receiver=%s messageId=%s serverSeq=%d",
-                                optionalString(message, "groupId", ""),
+                                message.getGroupId(),
                                 receiverId,
                                 messageId,
                                 serverSeq
@@ -670,12 +643,12 @@ public final class MessageRouter {
         return serverSeqStore.next(conversationId);
     }
 
-    private void addSenderProfileVersion(JsonObject message, String senderUserId) {
+    private void addSenderProfileVersion(ChatMessagePayload.Builder message, String senderUserId) {
         if (userStore == null) {
             return;
         }
         userStore.findByPhone(senderUserId)
-                .ifPresent(sender -> message.addProperty("senderProfileVersion", sender.profileVersion()));
+                .ifPresent(sender -> message.setSenderProfileVersion(sender.profileVersion()));
     }
 
     private void removeUndelivered(String receiverUserId, String messageId) {
@@ -685,47 +658,49 @@ public final class MessageRouter {
         });
     }
 
-    private ImPacket packet(ImCommand command, JsonObject body) {
-        return new ImPacket(command.value(), body.toString().getBytes(StandardCharsets.UTF_8));
-    }
-
     private void sendRecallFailure(String requesterId, String messageId, String conversationId, String reason) {
-        JsonObject body = new JsonObject();
-        body.addProperty("messageId", messageId);
-        body.addProperty("conversationId", conversationId);
-        body.addProperty("success", false);
-        body.addProperty("reason", reason);
-        registry.find(requesterId).ifPresent(client -> client.send(packet(ImCommand.RECALL_ACK, body)));
+        RecallAck ack = RecallAck.newBuilder()
+                .setMessageId(messageId)
+                .setConversationId(conversationId)
+                .setSuccess(false)
+                .setReason(reason)
+                .build();
+        registry.find(requesterId).ifPresent(client -> client.send(MessageProtoMapper.recallAckEnvelope(ack)));
     }
 
     private void sendRecallSuccess(String requesterId, AcceptedMessage accepted) {
-        JsonObject body = recallNotifyBody(accepted);
-        body.addProperty("success", true);
-        registry.find(requesterId).ifPresent(client -> client.send(packet(ImCommand.RECALL_ACK, body)));
+        RecallAck ack = RecallAck.newBuilder()
+                .setMessageId(accepted.message().getMessageId())
+                .setConversationId(accepted.message().getConversationId())
+                .setSuccess(true)
+                .setRecalledBy(accepted.recalledBy())
+                .setRecalledAt(accepted.recalledAt())
+                .build();
+        registry.find(requesterId).ifPresent(client -> client.send(MessageProtoMapper.recallAckEnvelope(ack)));
     }
 
-    private JsonObject recallNotifyBody(AcceptedMessage accepted) {
-        JsonObject body = new JsonObject();
-        body.addProperty("messageId", accepted.message().get("messageId").getAsString());
-        body.addProperty("conversationId", accepted.message().get("conversationId").getAsString());
-        body.addProperty("recalledBy", accepted.recalledBy());
-        body.addProperty("recalledAt", accepted.recalledAt());
-        return body;
+    private RecallNotify recallNotifyOf(AcceptedMessage accepted) {
+        return RecallNotify.newBuilder()
+                .setMessageId(accepted.message().getMessageId())
+                .setConversationId(accepted.message().getConversationId())
+                .setRecalledBy(accepted.recalledBy())
+                .setRecalledAt(accepted.recalledAt())
+                .build();
     }
 
-    private JsonObject recallNotifyBody(RecallNotifyEvent event) {
-        JsonObject body = new JsonObject();
-        body.addProperty("messageId", event.messageId());
-        body.addProperty("conversationId", event.conversationId());
-        body.addProperty("recalledBy", event.recalledBy());
-        body.addProperty("recalledAt", event.recalledAt());
-        return body;
+    private RecallNotify recallNotifyOf(RecallNotifyEvent event) {
+        return RecallNotify.newBuilder()
+                .setMessageId(event.messageId())
+                .setConversationId(event.conversationId())
+                .setRecalledBy(event.recalledBy())
+                .setRecalledAt(event.recalledAt())
+                .build();
     }
 
     private void queuePendingRecallNotifies(String messageId) {
         for (StoredAcceptedMessage stored : acceptedMessageStore.loadAll()) {
             AcceptedMessage accepted = stored.accepted();
-            if (!messageId.equals(accepted.message().get("messageId").getAsString()) || !accepted.recalled() || accepted.recallNotified()) {
+            if (!messageId.equals(accepted.message().getMessageId()) || !accepted.recalled() || accepted.recallNotified()) {
                 continue;
             }
             pendingRecallNotifiesByReceiver
@@ -740,7 +715,8 @@ public final class MessageRouter {
             if (event == null) {
                 continue;
             }
-            registry.find(event.receiverId()).ifPresent(client -> client.send(packet(ImCommand.RECALL_NOTIFY, recallNotifyBody(event))));
+            registry.find(event.receiverId()).ifPresent(client ->
+                    client.send(MessageProtoMapper.recallNotifyEnvelope(recallNotifyOf(event))));
         }
     }
 
@@ -760,13 +736,25 @@ public final class MessageRouter {
         }
     }
 
-    private static String optionalString(JsonObject body, String name, String fallback) {
-        return body.has(name) && !body.get(name).isJsonNull() ? body.get(name).getAsString() : fallback;
+    private static void requireConversationType(ConversationType type) {
+        switch (type) {
+            case CONVERSATION_TYPE_SINGLE, CONVERSATION_TYPE_GROUP -> {
+            }
+            default -> throw new ProtocolException("Unsupported conversation type: " + type);
+        }
+    }
+
+    private static void requireMessageType(MessageType type) {
+        switch (type) {
+            case MESSAGE_TYPE_TEXT, MESSAGE_TYPE_IMAGE -> {
+            }
+            default -> throw new ProtocolException("Unsupported message type: " + type);
+        }
     }
 
     static record AcceptedMessage(
-            JsonObject ack,
-            JsonObject message,
+            MessageAck ack,
+            ChatMessagePayload message,
             String receiverUserId,
             long serverSeq,
             boolean delivered,
@@ -775,7 +763,7 @@ public final class MessageRouter {
             long recalledAt,
             boolean recallNotified
     ) {
-        public AcceptedMessage(JsonObject ack, JsonObject message, String receiverUserId, long serverSeq, boolean delivered) {
+        public AcceptedMessage(MessageAck ack, ChatMessagePayload message, String receiverUserId, long serverSeq, boolean delivered) {
             this(ack, message, receiverUserId, serverSeq, delivered, false, null, 0L, false);
         }
 
@@ -801,8 +789,8 @@ public final class MessageRouter {
     ) {
         private static RecallNotifyEvent from(AcceptedMessage accepted) {
             return new RecallNotifyEvent(
-                    accepted.message().get("messageId").getAsString(),
-                    accepted.message().get("conversationId").getAsString(),
+                    accepted.message().getMessageId(),
+                    accepted.message().getConversationId(),
                     accepted.receiverUserId(),
                     accepted.recalledBy(),
                     accepted.recalledAt()
@@ -853,7 +841,7 @@ public final class MessageRouter {
         @Override
         public void markRecalled(String messageId, String recalledBy, long recalledAt) {
             acceptedMessagesById.replaceAll((ignored, accepted) ->
-                    messageId.equals(accepted.message().get("messageId").getAsString())
+                    messageId.equals(accepted.message().getMessageId())
                             ? accepted.markRecalled(recalledBy, recalledAt)
                             : accepted
             );
@@ -862,7 +850,7 @@ public final class MessageRouter {
         @Override
         public void markRecallNotified(String messageId, String receiverUserId) {
             acceptedMessagesById.replaceAll((ignored, accepted) ->
-                    messageId.equals(accepted.message().get("messageId").getAsString()) && receiverUserId.equals(accepted.receiverUserId())
+                    messageId.equals(accepted.message().getMessageId()) && receiverUserId.equals(accepted.receiverUserId())
                             ? accepted.markRecallNotified()
                             : accepted
             );
@@ -871,15 +859,13 @@ public final class MessageRouter {
         @Override
         public boolean existsForSender(String messageId, String senderUserId) {
             AcceptedMessage accepted = acceptedMessagesById.get(messageId);
-            return accepted != null
-                    && accepted.message().has("senderId")
-                    && senderUserId.equals(accepted.message().get("senderId").getAsString());
+            return accepted != null && senderUserId.equals(accepted.message().getSenderId());
         }
 
         @Override
         public List<StoredAcceptedMessage> loadAll() {
             return acceptedMessagesById.entrySet().stream()
-                    .map(entry -> new StoredAcceptedMessage(entry.getValue().message().get("messageId").getAsString(), entry.getValue()))
+                    .map(entry -> new StoredAcceptedMessage(entry.getValue().message().getMessageId(), entry.getValue()))
                     .toList();
         }
 
@@ -1069,8 +1055,10 @@ public final class MessageRouter {
                  ResultSet resultSet = statement.executeQuery()) {
                 List<StoredAcceptedMessage> restored = new ArrayList<>();
                 while (resultSet.next()) {
-                    JsonObject ack = JsonParser.parseString(resultSet.getString("ack_json")).getAsJsonObject();
-                    JsonObject message = JsonParser.parseString(resultSet.getString("message_json")).getAsJsonObject();
+                    MessageAck ack = MessageProtoMapper.storedJsonToAck(
+                            JsonParser.parseString(resultSet.getString("ack_json")).getAsJsonObject());
+                    ChatMessagePayload message = MessageProtoMapper.storedJsonToMessage(
+                            JsonParser.parseString(resultSet.getString("message_json")).getAsJsonObject());
                     restored.add(new StoredAcceptedMessage(
                             resultSet.getString("message_id"),
                             new AcceptedMessage(
@@ -1118,24 +1106,24 @@ public final class MessageRouter {
                          ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                          """
                  )) {
-                JsonObject message = accepted.message();
-                JsonObject ack = accepted.ack();
+                ChatMessagePayload message = accepted.message();
+                MessageAck ack = accepted.ack();
                 statement.setString(1, messageId);
-                statement.setString(2, stringField(message, "conversationId"));
-                statement.setString(3, stringField(message, "senderId"));
+                statement.setString(2, message.getConversationId());
+                statement.setString(3, message.getSenderId());
                 statement.setString(4, accepted.receiverUserId());
-                statement.setLong(5, longField(message, "clientSeq"));
+                statement.setLong(5, message.getClientSeq());
                 statement.setLong(6, accepted.serverSeq());
-                statement.setString(7, stringField(message, "content"));
-                statement.setLong(8, longField(message, "timestamp"));
-                statement.setLong(9, longField(ack, "serverTime"));
+                statement.setString(7, message.getContent());
+                statement.setLong(8, message.getClientTime());
+                statement.setLong(9, ack.getServerTime());
                 statement.setInt(10, accepted.delivered() ? 1 : 0);
                 statement.setInt(11, accepted.recalled() ? 1 : 0);
                 statement.setString(12, accepted.recalledBy());
                 statement.setLong(13, accepted.recalledAt());
                 statement.setInt(14, accepted.recallNotified() ? 1 : 0);
-                statement.setString(15, ack.toString());
-                statement.setString(16, message.toString());
+                statement.setString(15, MessageProtoMapper.ackToStoredJson(ack).toString());
+                statement.setString(16, MessageProtoMapper.messageToStoredJson(message).toString());
                 return statement.executeUpdate() == 1;
             } catch (SQLException error) {
                 throw new IllegalStateException("Unable to persist accepted message", error);
@@ -1168,8 +1156,10 @@ public final class MessageRouter {
                         return Optional.empty();
                     }
                     return Optional.of(new AcceptedMessage(
-                            JsonParser.parseString(resultSet.getString("ack_json")).getAsJsonObject(),
-                            JsonParser.parseString(resultSet.getString("message_json")).getAsJsonObject(),
+                            MessageProtoMapper.storedJsonToAck(
+                                    JsonParser.parseString(resultSet.getString("ack_json")).getAsJsonObject()),
+                            MessageProtoMapper.storedJsonToMessage(
+                                    JsonParser.parseString(resultSet.getString("message_json")).getAsJsonObject()),
                             resultSet.getString("receiver_id"),
                             resultSet.getLong("server_seq"),
                             resultSet.getInt("delivered") == 1,
@@ -1309,14 +1299,6 @@ public final class MessageRouter {
             if (!columns.contains(columnName)) {
                 statement.executeUpdate("ALTER TABLE accepted_messages ADD COLUMN " + columnName + " " + columnDefinition);
             }
-        }
-
-        private static String stringField(JsonObject body, String name) {
-            return body.get(name).getAsString();
-        }
-
-        private static long longField(JsonObject body, String name) {
-            return body.get(name).getAsLong();
         }
     }
 
