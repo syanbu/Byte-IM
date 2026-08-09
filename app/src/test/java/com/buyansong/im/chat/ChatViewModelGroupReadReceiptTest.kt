@@ -29,7 +29,7 @@ import com.buyansong.im.storage.MessageDirection
 import com.buyansong.im.storage.MessageStatus
 import com.buyansong.im.storage.MessageType
 import com.buyansong.im.storage.TransactionRunner
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.v2.ImEnvelope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -45,10 +45,10 @@ class ChatViewModelGroupReadReceiptTest {
 
     private class FakeConnection : ImConnection {
         override val states = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
-        override val incomingPackets = MutableSharedFlow<ImPacket>()
+        override val incomingPackets = MutableSharedFlow<ImEnvelope>()
         override fun connect(token: String) = Unit
         override fun disconnect() = Unit
-        override fun send(packet: ImPacket): Boolean = true
+        override fun send(envelope: ImEnvelope): Boolean = true
     }
 
     private class FakeProfileApi : ProfileApi {

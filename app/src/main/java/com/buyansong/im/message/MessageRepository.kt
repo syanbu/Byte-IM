@@ -7,8 +7,14 @@ import com.buyansong.im.connection.ImConnection
 import com.buyansong.im.group.GroupCreateResult
 import com.buyansong.im.group.GroupReadCursorRepository
 import com.buyansong.im.profile.ProfileRepository
-import com.buyansong.im.protocol.ImCommand
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.ProtocolException
+import com.buyansong.im.protocol.v2.ChatMessagePayload
+import com.buyansong.im.protocol.v2.ImEnvelope
+import com.buyansong.im.protocol.v2.MessageAck
+import com.buyansong.im.protocol.v2.ReadAck
+import com.buyansong.im.protocol.v2.RecallAck
+import com.buyansong.im.protocol.v2.RecallNotify
+import com.buyansong.im.protocol.v2.ConversationType as ProtoConversationType
 import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.Conversation
 import com.buyansong.im.storage.ConversationType
@@ -20,8 +26,6 @@ import com.buyansong.im.storage.MessageType
 import com.buyansong.im.storage.PendingMessage
 import com.buyansong.im.storage.PendingMessageDao
 import com.buyansong.im.storage.TransactionRunner
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
 import java.util.Collections
 import java.util.LinkedHashMap
 import kotlinx.coroutines.CoroutineDispatcher
@@ -88,15 +92,15 @@ class MessageRepository(
             createdAt = now,
             updatedAt = now
         )
-        val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = message.toSendBody().toByteArray())
+        val envelope = MessageProtoMapper.sendEnvelope(message)
         transactionRunner.runInTransaction {
             messageDao.insertOrIgnore(message)
             conversationDao.upsertFromMessage(message, incrementUnread = false)
             pendingMessageDao.upsert(
                 PendingMessage(
                     messageId = message.messageId,
-                    packetCmd = packet.cmd,
-                    packetBody = packet.body.decodeToString(),
+                    packetCmd = PENDING_SEND_MESSAGE_CMD,
+                    packetBody = message.toSendBody(),
                     retryCount = 0,
                     nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
                     createdAt = now
@@ -105,7 +109,7 @@ class MessageRepository(
         }
         outboxChangeSignal.notifyChanged()
         notifyConversationChanged(conversationId)
-        connection.send(packet)
+        connection.send(envelope)
         return message
     }
 
@@ -139,15 +143,15 @@ class MessageRepository(
             groupId = trimmedGroupId,
             mentionedUserIds = normalizedMentions
         )
-        val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = message.toSendBody().toByteArray())
+        val envelope = MessageProtoMapper.sendEnvelope(message)
         transactionRunner.runInTransaction {
             messageDao.insertOrIgnore(message)
             conversationDao.upsertFromMessage(message, incrementUnread = false)
             pendingMessageDao.upsert(
                 PendingMessage(
                     messageId = message.messageId,
-                    packetCmd = packet.cmd,
-                    packetBody = packet.body.decodeToString(),
+                    packetCmd = PENDING_SEND_MESSAGE_CMD,
+                    packetBody = message.toSendBody(),
                     retryCount = 0,
                     nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
                     createdAt = now
@@ -156,7 +160,7 @@ class MessageRepository(
         }
         outboxChangeSignal.notifyChanged()
         notifyConversationChanged(conversationId)
-        connection.send(packet)
+        connection.send(envelope)
         return message
     }
 
@@ -327,7 +331,7 @@ class MessageRepository(
             status = MessageStatus.SENDING,
             updatedAt = now
         )
-        val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = packetMessage.toSendBody().toByteArray())
+        val envelope = MessageProtoMapper.sendEnvelope(packetMessage)
         transactionRunner.runInTransaction {
             messageDao.updateImageUploadResult(
                 messageId = messageId,
@@ -343,8 +347,8 @@ class MessageRepository(
             pendingMessageDao.upsert(
                 PendingMessage(
                     messageId = messageId,
-                    packetCmd = packet.cmd,
-                    packetBody = packet.body.decodeToString(),
+                    packetCmd = PENDING_SEND_MESSAGE_CMD,
+                    packetBody = packetMessage.toSendBody(),
                     retryCount = 0,
                     nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
                     createdAt = packetMessage.createdAt
@@ -353,7 +357,7 @@ class MessageRepository(
         }
         outboxChangeSignal.notifyChanged()
         notifyConversationChanged(message.conversationId)
-        connection.send(packet)
+        connection.send(envelope)
     }
 
     fun requeueImageMessageSend(messageId: String, now: Long): Boolean {
@@ -365,14 +369,14 @@ class MessageRepository(
             status = MessageStatus.SENDING,
             updatedAt = now
         )
-        val packet = ImPacket(cmd = ImCommand.SEND_MESSAGE.value, body = packetMessage.toSendBody().toByteArray())
+        val envelope = MessageProtoMapper.sendEnvelope(packetMessage)
         transactionRunner.runInTransaction {
             messageDao.markStatus(messageId, MessageStatus.SENDING, now)
             pendingMessageDao.upsert(
                 PendingMessage(
                     messageId = messageId,
-                    packetCmd = packet.cmd,
-                    packetBody = packet.body.decodeToString(),
+                    packetCmd = PENDING_SEND_MESSAGE_CMD,
+                    packetBody = packetMessage.toSendBody(),
                     retryCount = 0,
                     nextRetryAt = now + DEFAULT_ACK_TIMEOUT_MS,
                     createdAt = message.createdAt
@@ -381,7 +385,7 @@ class MessageRepository(
         }
         outboxChangeSignal.notifyChanged()
         notifyConversationChanged(message.conversationId)
-        connection.send(packet)
+        connection.send(envelope)
         return true
     }
 
@@ -407,13 +411,14 @@ class MessageRepository(
         return messageDao.findByMessageId(messageId)
     }
 
-    fun handlePacket(packet: ImPacket) {
-        when (packet.cmd) {
-            ImCommand.MESSAGE_ACK.value -> handleAck(packet.body.decodeToString())
-            ImCommand.RECEIVE_MESSAGE.value -> handleIncoming(packet.body.decodeToString())
-            ImCommand.READ_ACK.value -> handleReadAck(packet.body.decodeToString())
-            ImCommand.RECALL_ACK.value -> handleRecallAck(packet.body.decodeToString())
-            ImCommand.RECALL_NOTIFY.value -> handleRecallNotify(packet.body.decodeToString())
+    fun handlePacket(envelope: ImEnvelope) {
+        when (envelope.payloadCase) {
+            ImEnvelope.PayloadCase.MESSAGE_ACK -> handleAck(envelope.messageAck)
+            ImEnvelope.PayloadCase.RECEIVE_MESSAGE -> handleIncoming(envelope.receiveMessage.message)
+            ImEnvelope.PayloadCase.READ_ACK -> handleReadAck(envelope.readAck)
+            ImEnvelope.PayloadCase.RECALL_ACK -> handleRecallAck(envelope.recallAck)
+            ImEnvelope.PayloadCase.RECALL_NOTIFY -> handleRecallNotify(envelope.recallNotify)
+            else -> Unit
         }
     }
 
@@ -620,13 +625,23 @@ class MessageRepository(
                 return@forEach
             }
 
+            // packet_body 是持久化 outbox 快照（旧 JSON 发送格式），不是线上格式；
+            // 重试时从快照重建 Protobuf envelope。快照损坏或 cmd 异常按重试耗尽路径
+            // 标记失败，绝不能让 outbox worker 崩溃。
+            val envelope = pendingSendEnvelope(pending)
+            if (envelope == null) {
+                if (messageDao.markFailed(pending.messageId, now)) {
+                    changed = true
+                    changedConversationIds += current.conversationId
+                }
+                if (pendingMessageDao.delete(pending.messageId)) {
+                    changed = true
+                    changedConversationIds += current.conversationId
+                }
+                return@forEach
+            }
             val retryAttempt = pending.retryCount + 1
-            connection.send(
-                ImPacket(
-                    cmd = pending.packetCmd,
-                    body = pending.packetBody.toByteArray()
-                )
-            )
+            connection.send(envelope)
             val latest = messageDao.findByMessageId(pending.messageId)
             if (latest?.status == MessageStatus.SENT && latest.serverSeq != null) {
                 if (pendingMessageDao.delete(pending.messageId)) {
@@ -715,17 +730,10 @@ class MessageRepository(
             return false
         }
         return connection.send(
-            ImPacket(
-                cmd = ImCommand.RECALL_MESSAGE.value,
-                body = """
-                    {
-                      "messageId":"${message.messageId.escapeJson()}",
-                      "conversationId":"${message.conversationId.escapeJson()}",
-                      "requesterId":"${requesterId.escapeJson()}",
-                      "requestAt":$now
-                    }
-                """.trimIndent().replace(Regex("\\s+"), "")
-                    .toByteArray()
+            MessageProtoMapper.recallMessageEnvelope(
+                messageId = message.messageId,
+                conversationId = message.conversationId,
+                requesterId = requesterId
             )
         )
     }
@@ -742,11 +750,10 @@ class MessageRepository(
         return "group:$creatorUserId:$now:$memberHash"
     }
 
-    private fun handleAck(json: String) {
-        val body = JsonParser.parseString(json).asJsonObject
-        val messageId = body.requiredString("messageId")
-        val serverSeq = body.requiredLong("serverSeq")
-        val serverTime = body.optionalLong("serverTime") ?: System.currentTimeMillis()
+    private fun handleAck(ack: MessageAck) {
+        val messageId = ack.messageId
+        val serverSeq = ack.serverSeq
+        val serverTime = if (ack.serverTime != 0L) ack.serverTime else System.currentTimeMillis()
         val conversationId = messageDao.findByMessageId(messageId)?.conversationId
         messageDao.markAcked(messageId, serverSeq, serverTime)
         if (pendingMessageDao.delete(messageId)) {
@@ -755,86 +762,34 @@ class MessageRepository(
         notifyConversationChanged(conversationId)
     }
 
-    private fun handleIncoming(json: String) {
-        val body = JsonParser.parseString(json).asJsonObject
-        val timestamp = body.optionalLong("timestamp") ?: System.currentTimeMillis()
-        val senderId = body.requiredString("senderId")
-        val receiverId = body.requiredString("receiverId")
-        val serverSeq = body.optionalLong("serverSeq")
-        val conversationType = body.optionalString("conversationType")
-            ?.takeIf { it.isNotBlank() }
-            ?.let { ConversationType.valueOf(it) }
-            ?: ConversationType.SINGLE
-        val groupId = body.optionalString("groupId")
-        val groupName = body.optionalString("groupName")
-            ?: body.optionalString("groupTitle")
-            ?: body.optionalString("name")
-        val conversationId = when (conversationType) {
-            ConversationType.GROUP -> body.requiredString("conversationId")
-            ConversationType.SINGLE -> conversationIdFor(senderId, receiverId)
-        }
-        val mentionedUserIds = body.optionalStringArray("mentionedUserIds")
-        val type = body.optionalString("type")
-            ?.takeIf { it.isNotBlank() }
-            ?.let { MessageType.valueOf(it) }
-            ?: MessageType.TEXT
-        val imagePayload = body.optionalObject("image")
-        val message = ChatMessage(
-            messageId = body.requiredString("messageId"),
-            conversationId = conversationId,
-            senderId = senderId,
-            receiverId = receiverId,
-            clientSeq = body.optionalLong("clientSeq") ?: 0L,
-            serverSeq = serverSeq,
-            content = body.requiredString("content"),
-            status = MessageStatus.RECEIVED,
-            direction = MessageDirection.INCOMING,
-            createdAt = timestamp,
-            updatedAt = timestamp,
-            type = type,
-            imageUrl = imagePayload?.optionalString("imageUrl"),
-            thumbnailUrl = imagePayload?.optionalString("thumbnailUrl"),
-            imageWidth = imagePayload?.optionalInt("width"),
-            imageHeight = imagePayload?.optionalInt("height"),
-            mimeType = imagePayload?.optionalString("mimeType"),
-            fileSizeBytes = imagePayload?.optionalLong("sizeBytes"),
-            conversationType = conversationType,
-            groupId = groupId,
-            groupName = groupName,
-            mentionedUserIds = mentionedUserIds,
-            senderProfileVersion = body.optionalLong("senderProfileVersion")
-        )
+    private fun handleIncoming(payload: ChatMessagePayload) {
+        val message = MessageProtoMapper.incomingMessage(payload)
+        val serverSeq = message.serverSeq
         val inserted = messageDao.insertOrIgnore(message)
         if (inserted) {
             val incrementUnread = message.conversationId != activeConversationId
             conversationDao.upsertFromMessage(
                 message = message,
                 incrementUnread = incrementUnread,
-                incrementMentionUnread = incrementUnread && receiverId in mentionedUserIds
+                incrementMentionUnread = incrementUnread && message.receiverId in message.mentionedUserIds
             )
             emitIncomingAlertIfNeeded(message = message, shouldAlert = incrementUnread)
             notifyConversationChanged(message.conversationId)
         }
         if (serverSeq != null) {
             connection.send(
-                ImPacket(
-                    cmd = ImCommand.DELIVERY_ACK.value,
-                    body = """
-                        {
-                          "messageId":"${message.messageId.escapeJson()}",
-                          "conversationId":"${message.conversationId.escapeJson()}",
-                          "serverSeq":$serverSeq,
-                          "receiverId":"${receiverId.escapeJson()}"
-                        }
-                    """.trimIndent().replace(Regex("\\s+"), "")
-                        .toByteArray()
+                MessageProtoMapper.deliveryAckEnvelope(
+                    messageId = message.messageId,
+                    conversationId = message.conversationId,
+                    serverSeq = serverSeq,
+                    receiverId = message.receiverId
                 )
             )
         }
         if (message.conversationType == ConversationType.SINGLE && message.conversationId == activeConversationId && serverSeq != null) {
-            val readerId = activeUserId ?: receiverId
-            val peerId = activePeerId ?: senderId
-            sendReadAckIfAdvanced(message.conversationId, readerId, peerId, timestamp)
+            val readerId = activeUserId ?: message.receiverId
+            val peerId = activePeerId ?: message.senderId
+            sendReadAckIfAdvanced(message.conversationId, readerId, peerId, message.createdAt)
         }
         enqueueIncomingThumbnailIfNeeded(
             inserted = inserted,
@@ -892,23 +847,21 @@ class MessageRepository(
         )
     }
 
-    private fun handleReadAck(json: String) {
-        val body = JsonParser.parseString(json).asJsonObject
-        val conversationType = body.optionalString("conversationType")?.takeIf { it.isNotBlank() }
-        if (conversationType == "GROUP") {
-            val conversationId = body.requiredString("conversationId")
+    private fun handleReadAck(ack: ReadAck) {
+        if (ack.conversationType == ProtoConversationType.CONVERSATION_TYPE_GROUP) {
+            val conversationId = ack.conversationId
             val groupId = conversationId.removePrefix("group:")
-            val readerId = body.requiredString("readerId")
-            val readUpToServerSeq = body.requiredLong("readUpToServerSeq")
-            val readAt = body.optionalLong("readAt") ?: System.currentTimeMillis()
+            val readerId = ack.readerId
+            val readUpToServerSeq = ack.readUpToServerSeq
+            val readAt = if (ack.readAt != 0L) ack.readAt else System.currentTimeMillis()
             runBlocking {
                 applyIncomingGroupReadAck(groupId, readerId, readUpToServerSeq, readAt)
             }
             return
         }
-        val conversationId = body.requiredString("conversationId")
-        val readUpToServerSeq = body.requiredLong("readUpToServerSeq")
-        val readAt = body.optionalLong("readAt") ?: System.currentTimeMillis()
+        val conversationId = ack.conversationId
+        val readUpToServerSeq = ack.readUpToServerSeq
+        val readAt = if (ack.readAt != 0L) ack.readAt else System.currentTimeMillis()
         val changed = conversationDao.updatePeerReadCursor(conversationId, readUpToServerSeq, readAt)
         if (changed) {
             notifyConversationChanged(conversationId)
@@ -925,18 +878,13 @@ class MessageRepository(
         }
         lastSentGroupReadCursorByGroup[groupId] = readUpToServerSeq
         connection.send(
-            ImPacket(
-                cmd = ImCommand.READ_ACK.value,
-                body = """
-                    {
-                      "conversationId":"${conversationId.escapeJson()}",
-                      "conversationType":"GROUP",
-                      "readerId":"${readerId.escapeJson()}",
-                      "readUpToServerSeq":$readUpToServerSeq,
-                      "readAt":$now
-                    }
-                """.trimIndent().replace(Regex("\\s+"), "")
-                    .toByteArray()
+            MessageProtoMapper.readAckEnvelope(
+                conversationId = conversationId,
+                conversationType = ConversationType.GROUP,
+                readerId = readerId,
+                peerId = "",
+                readUpToServerSeq = readUpToServerSeq,
+                readAt = now
             )
         )
     }
@@ -954,27 +902,25 @@ class MessageRepository(
         return groupReadCursorRepository?.observeByGroup(groupId) ?: flowOf(emptyList())
     }
 
-    private fun handleRecallAck(json: String) {
-        val body = JsonParser.parseString(json).asJsonObject
-        if (body.optionalBoolean("success") == false) {
+    private fun handleRecallAck(ack: RecallAck) {
+        if (!ack.success) {
             mutableRecallFailures.tryEmit(RECALL_FAILURE_MESSAGE)
             return
         }
         markMessageRecalled(
-            messageId = body.requiredString("messageId"),
-            recalledBy = body.requiredString("recalledBy"),
-            recalledAt = body.optionalLong("recalledAt") ?: System.currentTimeMillis()
+            messageId = ack.messageId,
+            recalledBy = ack.recalledBy,
+            recalledAt = if (ack.recalledAt != 0L) ack.recalledAt else System.currentTimeMillis()
         )
     }
 
-    private fun handleRecallNotify(json: String) {
-        val body = JsonParser.parseString(json).asJsonObject
-        val messageId = body.requiredString("messageId")
-        val conversationId = body.requiredString("conversationId")
-        val recalledAt = body.optionalLong("recalledAt") ?: System.currentTimeMillis()
+    private fun handleRecallNotify(notify: RecallNotify) {
+        val messageId = notify.messageId
+        val conversationId = notify.conversationId
+        val recalledAt = if (notify.recalledAt != 0L) notify.recalledAt else System.currentTimeMillis()
         markMessageRecalled(
             messageId = messageId,
-            recalledBy = body.requiredString("recalledBy"),
+            recalledBy = notify.recalledBy,
             recalledAt = recalledAt
         )
         sendRecallNotifyAck(
@@ -1001,17 +947,11 @@ class MessageRepository(
     private fun sendRecallNotifyAck(messageId: String, conversationId: String, recalledAt: Long) {
         val message = messageDao.findByMessageId(messageId) ?: return
         connection.send(
-            ImPacket(
-                cmd = ImCommand.RECALL_NOTIFY_ACK.value,
-                body = """
-                    {
-                      "messageId":"${messageId.escapeJson()}",
-                      "conversationId":"${conversationId.escapeJson()}",
-                      "receiverId":"${message.receiverId.escapeJson()}",
-                      "recalledAt":$recalledAt
-                    }
-                """.trimIndent().replace(Regex("\\s+"), "")
-                    .toByteArray()
+            MessageProtoMapper.recallNotifyAckEnvelope(
+                messageId = messageId,
+                conversationId = conversationId,
+                receiverId = message.receiverId,
+                recalledAt = recalledAt
             )
         )
     }
@@ -1024,18 +964,13 @@ class MessageRepository(
         }
         lastSentReadCursorByConversation[conversationId] = readUpToServerSeq
         connection.send(
-            ImPacket(
-                cmd = ImCommand.READ_ACK.value,
-                body = """
-                    {
-                      "conversationId":"${conversationId.escapeJson()}",
-                      "readerId":"${readerId.escapeJson()}",
-                      "peerId":"${peerId.escapeJson()}",
-                      "readUpToServerSeq":$readUpToServerSeq,
-                      "readAt":$readAt
-                    }
-                """.trimIndent().replace(Regex("\\s+"), "")
-                    .toByteArray()
+            MessageProtoMapper.readAckEnvelope(
+                conversationId = conversationId,
+                conversationType = ConversationType.SINGLE,
+                readerId = readerId,
+                peerId = peerId,
+                readUpToServerSeq = readUpToServerSeq,
+                readAt = readAt
             )
         )
     }
@@ -1078,6 +1013,12 @@ class MessageRepository(
         mutableConversationUpdates.tryEmit(Unit)
     }
 
+    /**
+     * Durable outbox snapshot stored in `pending_messages.packet_body`. This is
+     * an internal persistence format, NOT the WebSocket wire format: retries
+     * rebuild a Protobuf envelope from it via
+     * [MessageProtoMapper.sendEnvelopeFromPendingJson].
+     */
     private fun ChatMessage.toSendBody(): String {
         if (conversationType == ConversationType.GROUP) {
             val imageJson = if (type == MessageType.IMAGE) {
@@ -1146,48 +1087,15 @@ class MessageRepository(
         """.trimIndent()
     }
 
-    private fun JsonObject.requiredString(name: String): String {
-        return get(name)?.asString ?: error("Missing $name")
-    }
-
-    private fun JsonObject.requiredLong(name: String): Long {
-        return get(name)?.asLong ?: error("Missing $name")
-    }
-
-    private fun JsonObject.optionalLong(name: String): Long? {
-        return get(name)?.asLong
-    }
-
-    private fun JsonObject.optionalInt(name: String): Int? {
-        return get(name)?.asInt
-    }
-
-    private fun JsonObject.optionalString(name: String): String? {
-        val value = get(name) ?: return null
-        return if (value.isJsonNull) null else value.asString
-    }
-
-    private fun JsonObject.optionalBoolean(name: String): Boolean? {
-        val value = get(name) ?: return null
-        return if (value.isJsonNull) null else value.asBoolean
-    }
-
-    private fun JsonObject.optionalObject(name: String): JsonObject? {
-        val value = get(name) ?: return null
-        return if (value.isJsonObject) value.asJsonObject else null
-    }
-
-    private fun JsonObject.optionalStringArray(name: String): List<String> {
-        val value = get(name) ?: return emptyList()
-        if (!value.isJsonArray) {
-            return emptyList()
+    private fun pendingSendEnvelope(pending: PendingMessage): ImEnvelope? {
+        if (pending.packetCmd != PENDING_SEND_MESSAGE_CMD) {
+            return null
         }
-        return value.asJsonArray
-            .mapNotNull { element ->
-                if (element.isJsonPrimitive && element.asJsonPrimitive.isString) element.asString else null
-            }
-            .filter { it.isNotBlank() }
-            .distinct()
+        return try {
+            MessageProtoMapper.sendEnvelopeFromPendingJson(pending.packetBody)
+        } catch (error: ProtocolException) {
+            null
+        }
     }
 
     private fun String.escapeJson(): String {
@@ -1199,6 +1107,9 @@ class MessageRepository(
     }
 
     private companion object {
+        // Legacy ImCommand.SEND_MESSAGE value, kept only to validate durable
+        // pending_messages.packet_cmd rows written before the Protobuf cutover.
+        const val PENDING_SEND_MESSAGE_CMD = 10
         const val DEFAULT_ACK_TIMEOUT_MS = 5_000L
         const val DEFAULT_RETRY_BATCH_SIZE = 50
         const val DEFAULT_UNACKED_HEARTBEAT_LIMIT = 100

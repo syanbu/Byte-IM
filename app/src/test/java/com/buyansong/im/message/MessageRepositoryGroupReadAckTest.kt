@@ -3,8 +3,7 @@ package com.buyansong.im.message
 import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
 import com.buyansong.im.group.DefaultGroupReadCursorRepository
-import com.buyansong.im.protocol.ImCommand
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.v2.ImEnvelope
 import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.ConversationType
 import com.buyansong.im.storage.InMemoryConversationDao
@@ -18,19 +17,18 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageRepositoryGroupReadAckTest {
 
     private class FakeConnection : ImConnection {
-        val sent = mutableListOf<ImPacket>()
+        val sent = mutableListOf<ImEnvelope>()
         override val states = MutableStateFlow(ConnectionState.Disconnected)
-        override val incomingPackets = MutableSharedFlow<ImPacket>()
+        override val incomingPackets = MutableSharedFlow<ImEnvelope>()
         override fun connect(token: String) = Unit
         override fun disconnect() = Unit
-        override fun send(packet: ImPacket): Boolean {
-            sent += packet
+        override fun send(envelope: ImEnvelope): Boolean {
+            sent += envelope
             return true
         }
     }
@@ -105,9 +103,12 @@ class MessageRepositoryGroupReadAckTest {
         repository.sendGroupReadAck("g_1", "u_a", now = 2L)
 
         assertEquals(1, conn.sent.size)
-        val packet = conn.sent.single()
-        assertEquals(ImCommand.READ_ACK.value, packet.cmd)
-        val body = packet.body.decodeToString()
-        assertTrue(body.contains("\"conversationType\":\"GROUP\""))
+        val envelope = conn.sent.single()
+        assertEquals(ImEnvelope.PayloadCase.READ_ACK, envelope.payloadCase)
+        assertEquals("group:g_1", envelope.readAck.conversationId)
+        assertEquals(
+            com.buyansong.im.protocol.v2.ConversationType.CONVERSATION_TYPE_GROUP,
+            envelope.readAck.conversationType
+        )
     }
 }

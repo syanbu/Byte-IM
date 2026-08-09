@@ -1,6 +1,6 @@
 package com.buyansong.im.connection
 
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.v2.ImEnvelope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -14,7 +14,7 @@ import org.junit.Test
 class ConnectionLifecycleManagerTest {
     private class FakeConnection : ImConnection {
         override val states = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
-        override val incomingPackets = MutableSharedFlow<ImPacket>()
+        override val incomingPackets = MutableSharedFlow<ImEnvelope>()
         var disconnectCount = 0
 
         override fun connect(token: String) {
@@ -26,7 +26,7 @@ class ConnectionLifecycleManagerTest {
             states.value = ConnectionState.Disconnected
         }
 
-        override fun send(packet: ImPacket): Boolean = true
+        override fun send(envelope: ImEnvelope): Boolean = true
     }
 
     @Test

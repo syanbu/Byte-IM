@@ -1,15 +1,14 @@
 package com.buyansong.im.connection
 
-import com.buyansong.im.protocol.ImCommand
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.ImEnvelopeCodec
+import com.buyansong.im.protocol.v2.Auth
+import com.buyansong.im.protocol.v2.ImEnvelope
 
 object AuthPacketFactory {
-    fun create(token: String): ImPacket {
-        val body = """{"token":"${token.escapeJson()}"}""".toByteArray()
-        return ImPacket(cmd = ImCommand.AUTH.value, body = body)
-    }
-
-    private fun String.escapeJson(): String {
-        return replace("\\", "\\\\").replace("\"", "\\\"")
+    fun create(token: String): ImEnvelope {
+        return ImEnvelope.newBuilder()
+            .setProtocolVersion(ImEnvelopeCodec.PROTOCOL_VERSION)
+            .setAuth(Auth.newBuilder().setAccessToken(token))
+            .build()
     }
 }

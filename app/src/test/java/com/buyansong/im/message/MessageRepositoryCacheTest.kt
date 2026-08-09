@@ -2,9 +2,13 @@ package com.buyansong.im.message
 
 import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
-import com.buyansong.im.protocol.ImCommand
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.v2.ChatMessagePayload
+import com.buyansong.im.protocol.v2.ImagePayload
+import com.buyansong.im.protocol.v2.ImEnvelope
+import com.buyansong.im.protocol.v2.ReceiveMessage
 import com.buyansong.im.storage.ChatMessage
+import com.buyansong.im.protocol.v2.ConversationType as ProtoConversationType
+import com.buyansong.im.protocol.v2.MessageType as ProtoMessageType
 import com.buyansong.im.storage.InMemoryConversationDao
 import com.buyansong.im.storage.InMemoryMessageDao
 import com.buyansong.im.storage.InMemoryPendingMessageDao
@@ -112,13 +116,13 @@ class MessageRepositoryCacheTest {
     }
 
     private class FakeConnection : ImConnection {
-        val sent = mutableListOf<ImPacket>()
+        val sent = mutableListOf<ImEnvelope>()
         override val states = MutableStateFlow(ConnectionState.Disconnected)
-        override val incomingPackets = MutableSharedFlow<ImPacket>()
+        override val incomingPackets = MutableSharedFlow<ImEnvelope>()
         override fun connect(token: String) = Unit
         override fun disconnect() = Unit
-        override fun send(packet: ImPacket): Boolean {
-            sent += packet
+        override fun send(envelope: ImEnvelope): Boolean {
+            sent += envelope
             return true
         }
     }
@@ -318,20 +322,23 @@ class MessageRepositoryCacheTest {
         repository.historyPageByConversationId("single:u_a:u_b", null, 20)
 
         repository.handlePacket(
-            ImPacket(
-                cmd = ImCommand.RECEIVE_MESSAGE.value,
-                body = """
-                    {
-                      "messageId":"m2",
-                      "senderId":"u_a",
-                      "receiverId":"u_b",
-                      "clientSeq":2,
-                      "serverSeq":2,
-                      "content":"fresh",
-                      "timestamp":2
-                    }
-                """.trimIndent().toByteArray()
-            )
+            ImEnvelope.newBuilder()
+                .setProtocolVersion(2)
+                .setReceiveMessage(
+                    ReceiveMessage.newBuilder().setMessage(
+                        ChatMessagePayload.newBuilder()
+                            .setMessageId("m2")
+                            .setSenderId("u_a")
+                            .setReceiverId("u_b")
+                            .setClientSeq(2L)
+                            .setServerSeq(2L)
+                            .setContent("fresh")
+                            .setClientTime(2L)
+                            .setConversationType(ProtoConversationType.CONVERSATION_TYPE_SINGLE)
+                            .setMessageType(ProtoMessageType.MESSAGE_TYPE_TEXT)
+                    )
+                )
+                .build()
         )
 
         assertNull(repository.getCachedInitialPage("single:u_a:u_b"))
@@ -343,7 +350,7 @@ class MessageRepositoryCacheTest {
         val scheduler = CapturingThumbnailScheduler()
         val repository = repository(messageDao, scheduler)
 
-        repository.handlePacket(imagePacket(messageId = "img1", senderId = "u_a", receiverId = "u_b"))
+        repository.handlePacket(imageEnvelope(messageId = "img1", senderId = "u_a", receiverId = "u_b"))
         scheduler.onCached?.invoke("img1", "/cache/img1.jpg")
 
         assertEquals("/cache/img1.jpg", messageDao.findByMessageId("img1")?.localThumbnailPath)
@@ -361,29 +368,32 @@ class MessageRepositoryCacheTest {
         assertNull(repository.getCachedInitialPage("single:u_a:u_b"))
     }
 
-    private fun imagePacket(messageId: String, senderId: String, receiverId: String): ImPacket {
-        return ImPacket(
-            cmd = ImCommand.RECEIVE_MESSAGE.value,
-            body = """
-                {
-                  "messageId":"$messageId",
-                  "senderId":"$senderId",
-                  "receiverId":"$receiverId",
-                  "clientSeq":1,
-                  "serverSeq":1,
-                  "content":"[图片]",
-                  "timestamp":1,
-                  "type":"IMAGE",
-                  "image":{
-                    "imageUrl":"https://example.test/$messageId-original.jpg",
-                    "thumbnailUrl":"https://example.test/$messageId-thumb.jpg",
-                    "width":640,
-                    "height":480,
-                    "mimeType":"image/jpeg",
-                    "fileSizeBytes":1234
-                  }
-                }
-            """.trimIndent().toByteArray()
-        )
+    private fun imageEnvelope(messageId: String, senderId: String, receiverId: String): ImEnvelope {
+        return ImEnvelope.newBuilder()
+            .setProtocolVersion(2)
+            .setReceiveMessage(
+                ReceiveMessage.newBuilder().setMessage(
+                    ChatMessagePayload.newBuilder()
+                        .setMessageId(messageId)
+                        .setSenderId(senderId)
+                        .setReceiverId(receiverId)
+                        .setClientSeq(1L)
+                        .setServerSeq(1L)
+                        .setContent("[图片]")
+                        .setClientTime(1L)
+                        .setConversationType(ProtoConversationType.CONVERSATION_TYPE_SINGLE)
+                        .setMessageType(ProtoMessageType.MESSAGE_TYPE_IMAGE)
+                        .setImage(
+                            ImagePayload.newBuilder()
+                                .setImageUrl("https://example.test/$messageId-original.jpg")
+                                .setThumbnailUrl("https://example.test/$messageId-thumb.jpg")
+                                .setWidth(640)
+                                .setHeight(480)
+                                .setMimeType("image/jpeg")
+                                .setSizeBytes(1234L)
+                        )
+                )
+            )
+            .build()
     }
 }

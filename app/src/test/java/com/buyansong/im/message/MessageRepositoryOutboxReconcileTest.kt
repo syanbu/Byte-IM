@@ -2,7 +2,7 @@ package com.buyansong.im.message
 
 import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.v2.ImEnvelope
 import com.buyansong.im.storage.InMemoryConversationDao
 import com.buyansong.im.storage.InMemoryMessageDao
 import com.buyansong.im.storage.InMemoryPendingMessageDao
@@ -16,10 +16,10 @@ class MessageRepositoryOutboxReconcileTest {
 
     private class FakeConnection : ImConnection {
         override val states = MutableStateFlow(ConnectionState.Disconnected)
-        override val incomingPackets = MutableSharedFlow<ImPacket>()
+        override val incomingPackets = MutableSharedFlow<ImEnvelope>()
         override fun connect(token: String) = Unit
         override fun disconnect() = Unit
-        override fun send(packet: ImPacket): Boolean = true
+        override fun send(envelope: ImEnvelope): Boolean = true
     }
 
     private fun repo(pendingDao: InMemoryPendingMessageDao): MessageRepository {

@@ -2,8 +2,8 @@ package com.buyansong.im.message
 
 import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
-import com.buyansong.im.protocol.ImCommand
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.v2.ImEnvelope
+import com.buyansong.im.protocol.v2.MessageAck
 import com.buyansong.im.storage.InMemoryConversationDao
 import com.buyansong.im.storage.InMemoryMessageDao
 import com.buyansong.im.storage.InMemoryPendingMessageDao
@@ -22,13 +22,13 @@ import org.junit.Test
 class MessageOutboxWorkerTest {
 
     private class FakeConnection : ImConnection {
-        val sent = mutableListOf<ImPacket>()
+        val sent = mutableListOf<ImEnvelope>()
         override val states = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
-        override val incomingPackets = MutableSharedFlow<ImPacket>()
+        override val incomingPackets = MutableSharedFlow<ImEnvelope>()
         override fun connect(token: String) = Unit
         override fun disconnect() = Unit
-        override fun send(packet: ImPacket): Boolean {
-            sent += packet
+        override fun send(envelope: ImEnvelope): Boolean {
+            sent += envelope
             return true
         }
     }
@@ -103,11 +103,17 @@ class MessageOutboxWorkerTest {
         testScheduler.runCurrent()
 
         repository.handlePacket(
-            ImPacket(
-                cmd = ImCommand.MESSAGE_ACK.value,
-                body = """{"messageId":"${message.messageId}","serverSeq":1001,"serverTime":100}"""
-                    .toByteArray()
-            )
+            ImEnvelope.newBuilder()
+                .setProtocolVersion(2)
+                .setMessageAck(
+                    MessageAck.newBuilder()
+                        .setMessageId(message.messageId)
+                        .setConversationId(message.conversationId)
+                        .setClientSeq(message.clientSeq)
+                        .setServerSeq(1001L)
+                        .setServerTime(100L)
+                )
+                .build()
         )
         testScheduler.runCurrent()
 

@@ -1,8 +1,8 @@
 package com.buyansong.im.connection
 
-import com.buyansong.im.protocol.ImPacket
-import com.buyansong.im.protocol.ImPacketCodec
+import com.buyansong.im.protocol.ImEnvelopeCodec
 import com.buyansong.im.protocol.ProtocolException
+import com.buyansong.im.protocol.v2.ImEnvelope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -24,8 +24,8 @@ class OkHttpImConnection(
     private val mutableStates = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val states: StateFlow<ConnectionState> = mutableStates.asStateFlow()
 
-    private val mutableIncomingPackets = MutableSharedFlow<ImPacket>(extraBufferCapacity = 64)
-    override val incomingPackets: SharedFlow<ImPacket> = mutableIncomingPackets.asSharedFlow()
+    private val mutableIncomingPackets = MutableSharedFlow<ImEnvelope>(extraBufferCapacity = 64)
+    override val incomingPackets: SharedFlow<ImEnvelope> = mutableIncomingPackets.asSharedFlow()
 
     private var webSocket: WebSocket? = null
 
@@ -42,8 +42,8 @@ class OkHttpImConnection(
         mutableStates.value = ConnectionState.Disconnected
     }
 
-    override fun send(packet: ImPacket): Boolean {
-        val bytes = ImPacketCodec.encode(packet).toByteString()
+    override fun send(envelope: ImEnvelope): Boolean {
+        val bytes = ImEnvelopeCodec.encode(envelope).toByteString()
         return webSocket?.send(bytes) ?: false
     }
 
@@ -55,9 +55,9 @@ class OkHttpImConnection(
 
         override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
             try {
-                val packet = ImPacketCodec.decode(bytes.toByteArray())
-                ConnectionStateReducer.stateAfterIncomingPacket(packet)?.let { mutableStates.value = it }
-                mutableIncomingPackets.tryEmit(packet)
+                val envelope = ImEnvelopeCodec.decode(bytes.toByteArray())
+                ConnectionStateReducer.stateAfterIncomingPacket(envelope)?.let { mutableStates.value = it }
+                mutableIncomingPackets.tryEmit(envelope)
             } catch (error: ProtocolException) {
                 mutableStates.value = ConnectionState.Failed(error.message ?: "protocol error")
             }

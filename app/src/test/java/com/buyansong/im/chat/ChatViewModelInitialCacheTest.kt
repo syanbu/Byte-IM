@@ -10,7 +10,7 @@ import com.buyansong.im.profile.ProfileApi
 import com.buyansong.im.profile.ProfileBatchResult
 import com.buyansong.im.profile.ProfileRepository
 import com.buyansong.im.profile.ProfileResult
-import com.buyansong.im.protocol.ImPacket
+import com.buyansong.im.protocol.v2.ImEnvelope
 import com.buyansong.im.storage.ChatMessage
 import com.buyansong.im.storage.InMemoryConversationDao
 import com.buyansong.im.storage.InMemoryMessageDao
@@ -33,10 +33,10 @@ class ChatViewModelInitialCacheTest {
 
     private class FakeConnection : ImConnection {
         override val states = MutableStateFlow(ConnectionState.Disconnected)
-        override val incomingPackets = MutableSharedFlow<ImPacket>()
+        override val incomingPackets = MutableSharedFlow<ImEnvelope>()
         override fun connect(token: String) = Unit
         override fun disconnect() = Unit
-        override fun send(packet: ImPacket): Boolean = true
+        override fun send(envelope: ImEnvelope): Boolean = true
     }
 
     private class FakeProfileApi(

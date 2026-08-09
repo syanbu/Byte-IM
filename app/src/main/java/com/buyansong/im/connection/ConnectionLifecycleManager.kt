@@ -1,8 +1,6 @@
 package com.buyansong.im.connection
 
-import com.buyansong.im.protocol.ImCommand
-import com.buyansong.im.protocol.ImPacket
-import com.google.gson.JsonParser
+import com.buyansong.im.protocol.v2.ImEnvelope
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -28,7 +26,7 @@ class ConnectionLifecycleManager(
 ) : ImConnection {
     private val mutableStates = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val states: StateFlow<ConnectionState> = mutableStates.asStateFlow()
-    override val incomingPackets: SharedFlow<ImPacket> = connection.incomingPackets
+    override val incomingPackets: SharedFlow<ImEnvelope> = connection.incomingPackets
 
     // Access-token hint for the current connection lifecycle. It identifies which
     // authenticated session reconnect/heartbeat-timeout/network-recovery should keep
@@ -133,8 +131,8 @@ class ConnectionLifecycleManager(
         }
     }
 
-    override fun send(packet: ImPacket): Boolean {
-        return sendPacket(packet)
+    override fun send(envelope: ImEnvelope): Boolean {
+        return sendPacket(envelope)
     }
 
     private fun restartHeartbeatLoop(initialDelayMillis: Long = 0L) {
@@ -159,26 +157,13 @@ class ConnectionLifecycleManager(
             return
         }
         packetJob = scope.launch(dispatcher, start = CoroutineStart.UNDISPATCHED) {
-            connection.incomingPackets.collect { packet ->
-                if (packet.cmd == ImCommand.HEARTBEAT_ACK.value) {
+            connection.incomingPackets.collect { envelope ->
+                if (envelope.payloadCase == ImEnvelope.PayloadCase.HEARTBEAT_ACK) {
                     heartbeatAckGeneration += 1
-                    heartbeatReconcileConsumer(parseReceivedMessageIds(packet.body))
+                    heartbeatReconcileConsumer(envelope.heartbeatAck.receivedMessageIdsList)
                 }
             }
         }
-    }
-
-    private fun parseReceivedMessageIds(body: ByteArray): List<String> {
-        return runCatching {
-            val json = JsonParser.parseString(body.decodeToString()).asJsonObject
-            val element = json.get("receivedMessageIds") ?: return emptyList()
-            if (!element.isJsonArray) {
-                return emptyList()
-            }
-            element.asJsonArray.mapNotNull { item ->
-                if (item.isJsonPrimitive && item.asJsonPrimitive.isString) item.asString else null
-            }
-        }.getOrDefault(emptyList())
     }
 
     private fun handleConnectionState(state: ConnectionState) {
@@ -245,8 +230,8 @@ class ConnectionLifecycleManager(
         }
     }
 
-    private fun sendPacket(packet: ImPacket): Boolean {
-        val sent = connection.send(packet)
+    private fun sendPacket(envelope: ImEnvelope): Boolean {
+        val sent = connection.send(envelope)
         if (!sent) {
             scheduleReconnectAfterSendFailure()
         }
