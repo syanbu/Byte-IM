@@ -5,7 +5,6 @@ data class ChatMessage(
     val conversationId: String,
     val senderId: String,
     val receiverId: String,
-    val clientSeq: Long,
     val serverSeq: Long?,
     val content: String,
     val status: MessageStatus,

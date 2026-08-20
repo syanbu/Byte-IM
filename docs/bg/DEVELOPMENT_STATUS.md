@@ -83,7 +83,7 @@ B4 本地历史分页已经在当前 SQLite 聊天路径实现：
 - B5 SQLite 持久化基础已完成。
 - B6 二进制协议编解码已完成，并记录在 `docs/feature-notes/WEBSOCKET_PROTOCOL_AND_STATES.md`。
 - B7 Android 心跳和重连已完成：前台 15 秒心跳、后台 75 秒心跳、心跳 ACK 存活判断、超时断开、指数退避重连和 `Reconnecting` UI 状态。
-- B8 消息有序性已完成：sender-side `clientSeq` 仅作为本地/ACK 关联元数据，mock server 按会话分配 `serverSeq`，Android 查询/合并路径按 `serverSeq` 排序。
+- B8 消息有序性已完成：`clientSeq` 已全栈移除（协议字段已 reserved），mock server 按会话分配 `serverSeq` 作为权威排序键，Android 查询/合并路径按 `serverSeq` 排序，同毫秒本地消息由单调递增 `createdAt` 保序。
 - B9 发送侧可靠性首版已完成：Android 持久化 pending outbox，在 `Authenticated` 后重试到期消息，超过重试次数标记 `FAILED`，刷新聊天发送状态；mock server 基于 `messageId` 保持幂等。
 - 本地 Java/Netty mock server 支持当前鉴权和单聊 WebSocket 路径。
 - Self-design Profile/Chat UI 已实现，包括 Messages/Contacts/Me tab、资料展示/编辑、头像上传链路、昵称头像展示、向量 tab 图标、头像缓存、聊天输入栏优化和 Back 语义修正。

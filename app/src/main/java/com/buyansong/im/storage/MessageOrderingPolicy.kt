@@ -180,10 +180,6 @@ object MessageOrderingPolicy {
         if (serverSeqOrder != 0) {
             return serverSeqOrder
         }
-        val clientSeqOrder = right.clientSeq.compareTo(left.clientSeq)
-        if (clientSeqOrder != 0) {
-            return clientSeqOrder
-        }
         return right.messageId.compareTo(left.messageId)
     }
 
@@ -204,10 +200,6 @@ object MessageOrderingPolicy {
         val serverSeqOrder = compareNullableLongOldestFirst(left.serverSeq, right.serverSeq)
         if (serverSeqOrder != 0) {
             return serverSeqOrder
-        }
-        val clientSeqOrder = left.clientSeq.compareTo(right.clientSeq)
-        if (clientSeqOrder != 0) {
-            return clientSeqOrder
         }
         return left.messageId.compareTo(right.messageId)
     }

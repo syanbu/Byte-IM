@@ -99,7 +99,6 @@ public final class MessageProtoMapper {
         }
         json.addProperty("senderId", message.getSenderId());
         json.addProperty("receiverId", message.getReceiverId());
-        json.addProperty("clientSeq", message.getClientSeq());
         json.addProperty("type", messageTypeName(message.getMessageType()));
         json.addProperty("content", message.getContent());
         if (message.hasImage()) {
@@ -145,7 +144,6 @@ public final class MessageProtoMapper {
                 .setConversationType(parseConversationType(optionalString(json, "conversationType", "SINGLE")))
                 .setSenderId(requiredString(json, "senderId"))
                 .setReceiverId(requiredString(json, "receiverId"))
-                .setClientSeq(optionalLong(json, "clientSeq", 0L))
                 .setMessageType(parseMessageType(optionalString(json, "type", "TEXT")))
                 .setContent(optionalString(json, "content", ""))
                 .setClientTime(optionalLong(json, "timestamp", 0L));
@@ -192,7 +190,6 @@ public final class MessageProtoMapper {
         JsonObject json = new JsonObject();
         json.addProperty("messageId", ack.getMessageId());
         json.addProperty("conversationId", ack.getConversationId());
-        json.addProperty("clientSeq", ack.getClientSeq());
         json.addProperty("serverSeq", ack.getServerSeq());
         json.addProperty("serverTime", ack.getServerTime());
         return json;
@@ -202,7 +199,6 @@ public final class MessageProtoMapper {
         return MessageAck.newBuilder()
                 .setMessageId(requiredString(json, "messageId"))
                 .setConversationId(requiredString(json, "conversationId"))
-                .setClientSeq(optionalLong(json, "clientSeq", 0L))
                 .setServerSeq(optionalLong(json, "serverSeq", 0L))
                 .setServerTime(optionalLong(json, "serverTime", 0L))
                 .build();

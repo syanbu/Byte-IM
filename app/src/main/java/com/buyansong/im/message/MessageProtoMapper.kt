@@ -55,7 +55,6 @@ object MessageProtoMapper {
             conversationId = conversationId,
             senderId = payload.senderId,
             receiverId = payload.receiverId,
-            clientSeq = payload.clientSeq,
             serverSeq = if (payload.hasServerSeq()) payload.serverSeq else null,
             content = payload.content,
             status = MessageStatus.RECEIVED,
@@ -172,7 +171,6 @@ object MessageProtoMapper {
             conversationId = body.requiredString("conversationId"),
             senderId = body.requiredString("senderId"),
             receiverId = body.requiredString("receiverId"),
-            clientSeq = body.optionalLong("clientSeq") ?: 0L,
             serverSeq = null,
             content = body.optionalString("content") ?: "",
             status = MessageStatus.SENDING,
@@ -200,7 +198,6 @@ object MessageProtoMapper {
             .setConversationType(message.conversationType.toProto())
             .setSenderId(message.senderId)
             .setReceiverId(message.receiverId)
-            .setClientSeq(message.clientSeq)
             .setMessageType(message.type.toProto())
             .setContent(message.content)
             .setClientTime(message.createdAt)

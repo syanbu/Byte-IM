@@ -5,7 +5,6 @@ import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
 import com.buyansong.im.message.MessageIdGenerator
 import com.buyansong.im.message.MessageRepository
-import com.buyansong.im.message.SeqGenerator
 import com.buyansong.im.profile.ProfileApi
 import com.buyansong.im.profile.ProfileBatchResult
 import com.buyansong.im.profile.ProfileRepository
@@ -76,7 +75,6 @@ class ChatViewModelInitialCacheTest {
             conversationId = "single:u_a:u_b",
             senderId = "u_b",
             receiverId = "u_a",
-            clientSeq = createdAt,
             serverSeq = createdAt,
             content = id,
             status = MessageStatus.RECEIVED,
@@ -93,7 +91,6 @@ class ChatViewModelInitialCacheTest {
             conversationId = "group:g1",
             senderId = senderId,
             receiverId = "g1",
-            clientSeq = createdAt,
             serverSeq = createdAt,
             content = id,
             status = MessageStatus.RECEIVED,
@@ -114,8 +111,7 @@ class ChatViewModelInitialCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
         (1L..25L).forEach { createdAt ->
             messageDao.insertOrIgnore(
@@ -154,8 +150,7 @@ class ChatViewModelInitialCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
 
         val viewModel = ChatViewModel(
@@ -182,8 +177,7 @@ class ChatViewModelInitialCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
 
         val viewModel = ChatViewModel(
@@ -210,8 +204,7 @@ class ChatViewModelInitialCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
         messageDao.insertOrIgnore(groupMessage("m1", 1L))
         repository.preloadInitialPage("group:g1")
@@ -240,8 +233,7 @@ class ChatViewModelInitialCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
         val viewModel = ChatViewModel(
             session = session(),
@@ -268,8 +260,7 @@ class ChatViewModelInitialCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
         val viewModel = ChatViewModel(
             session = session(),
@@ -314,8 +305,7 @@ class ChatViewModelInitialCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
 
         val viewModel = ChatViewModel(
@@ -364,8 +354,7 @@ class ChatViewModelInitialCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
 
         val viewModel = ChatViewModel(

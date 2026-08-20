@@ -193,7 +193,6 @@ class ChatDisplayPolicyTest {
             conversationId = "conversation-1",
             senderId = "sender-1",
             receiverId = "receiver-1",
-            clientSeq = createdAt,
             serverSeq = createdAt,
             content = "hello",
             status = MessageStatus.SENT,

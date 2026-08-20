@@ -28,8 +28,7 @@ class MessageRepositoryOutboxReconcileTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = pendingDao,
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
     }
 

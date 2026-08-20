@@ -42,7 +42,6 @@ class MessageRepositoryGroupReadAckTest {
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = conn,
             messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator(),
             transactionRunner = object : TransactionRunner {
                 override fun runInTransaction(block: () -> Unit) = block()
             },
@@ -75,7 +74,6 @@ class MessageRepositoryGroupReadAckTest {
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = conn,
             messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator(),
             transactionRunner = object : TransactionRunner {
                 override fun runInTransaction(block: () -> Unit) = block()
             },
@@ -87,7 +85,6 @@ class MessageRepositoryGroupReadAckTest {
                 conversationId = "group:g_1",
                 senderId = "u_b",
                 receiverId = "u_a",
-                clientSeq = 1L,
                 serverSeq = 100L,
                 content = "hello",
                 status = MessageStatus.RECEIVED,

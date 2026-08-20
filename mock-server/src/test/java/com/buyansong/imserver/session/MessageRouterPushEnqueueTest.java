@@ -62,7 +62,6 @@ public class MessageRouterPushEnqueueTest {
                         .setSenderId("u_sender")
                         .setReceiverId("u_receiver")
                         .setConversationId("single:u_sender:u_receiver")
-                        .setClientSeq(1L)
                         .setMessageType(MessageType.MESSAGE_TYPE_IMAGE)
                         .setContent("[图片]")
                         .setImage(ImagePayload.newBuilder()
@@ -107,7 +106,6 @@ public class MessageRouterPushEnqueueTest {
                         .setSenderId("u_sender")
                         .setReceiverId(receiverId)
                         .setConversationId("single:u_sender:" + receiverId)
-                        .setClientSeq(1L)
                         .setMessageType(MessageType.MESSAGE_TYPE_TEXT)
                         .setContent("hello"))
                 .build();
@@ -121,7 +119,6 @@ public class MessageRouterPushEnqueueTest {
                         .setSenderId("u_sender")
                         .setConversationId("group:" + groupId)
                         .setGroupId(groupId)
-                        .setClientSeq(1L)
                         .setMessageType(MessageType.MESSAGE_TYPE_TEXT)
                         .setContent("hello group"))
                 .build();

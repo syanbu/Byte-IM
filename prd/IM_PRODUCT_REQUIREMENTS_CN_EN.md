@@ -305,7 +305,7 @@ Chat(group) -> 点击右上角 ... -> 修改群名称弹窗
 用户输入文本后点击 `Send`：
 
 1. 客户端生成 `messageId`。
-2. 客户端按会话生成本地 `clientSeq`。
+2. 客户端分配严格单调递增的 `createdAt`（`max(now, 上一条 + 1)`），用于同毫秒本地消息保序。
 3. 消息以 `SENDING` 状态写入 `messages`。
 4. 更新 `conversations` 会话摘要，不增加未读。
 5. 写入 `pending_messages`，用于 ACK 超时重试。
@@ -601,7 +601,6 @@ single:<较小用户ID>:<较大用户ID>
 - `conversation_id`
 - `sender_id`
 - `receiver_id`
-- `client_seq`
 - `server_seq`
 - `content`
 - `message_type`
@@ -703,15 +702,15 @@ mock server 负责本地联调所需的可靠性基础。
 
 ## 11. 消息排序规则
 
-排序使用两个序列：
+排序以服务端权威序列为准：
 
-- `clientSeq`：发送端本地会话内序号，用于发送顺序和 ACK 关联，不作为最终权威顺序。
-- `serverSeq`：服务端按 `conversationId` 分配的会话内权威顺序。
+- `serverSeq`：服务端按 `conversationId` 分配的会话内权威顺序，是 confirmed/received 消息的最终排序键。
+- 本地发送顺序由严格单调递增的 `createdAt` 表达，仅用于尚未确认的本地消息，不作为最终权威顺序。
 
 展示规则：
 
 - 已确认 outgoing 和 incoming 消息，有 `serverSeq` 时按 `serverSeq` 排序。
-- 本地 `SENDING` 且无 `serverSeq` 的消息，用 `createdAt`、`clientSeq`、`messageId` 保持临时可见。
+- 本地 `SENDING` 且无 `serverSeq` 的消息，用严格单调的 `createdAt`、`messageId` 保持临时可见。
 - 收到乱序 `RECEIVE_MESSAGE` 时，先持久化，再重新查询/合并，最终按排序策略展示。
 - 当前不实现缺口等待、gap buffer 和远端历史补拉。
 
@@ -1056,7 +1055,7 @@ Rename dialog -> tap 取消 -> close dialog
 When the user enters text and taps `Send`:
 
 1. Client generates `messageId`.
-2. Client generates local `clientSeq` for the conversation.
+2. Client assigns a strictly increasing `createdAt` (`max(now, previous + 1)`) to keep same-millisecond local messages in send order.
 3. Message is inserted into `messages` with `SENDING`.
 4. `conversations` summary is updated without increasing unread.
 5. `pending_messages` is inserted for ACK timeout retry.
@@ -1352,7 +1351,6 @@ This normalizes both sides of A/B into the same stable conversation ID.
 - `conversation_id`
 - `sender_id`
 - `receiver_id`
-- `client_seq`
 - `server_seq`
 - `content`
 - `message_type`
@@ -1454,15 +1452,15 @@ Reliability rules:
 
 ## 11. Message Ordering
 
-Two sequence fields exist:
+Ordering is based on the server-authoritative sequence:
 
-- `clientSeq`: sender-local sequence for send order and ACK correlation. It is not globally authoritative.
-- `serverSeq`: server-assigned conversation-local authoritative order.
+- `serverSeq`: server-assigned conversation-local authoritative order. It is the final ordering key for confirmed/received messages.
+- Local send order is expressed by a strictly increasing `createdAt`, used only for unconfirmed local messages. It is not authoritative.
 
 Display rules:
 
 - Confirmed outgoing and incoming messages with `serverSeq` are ordered by `serverSeq`.
-- Local `SENDING` messages without `serverSeq` remain visible using temporary `createdAt`, `clientSeq`, and `messageId` ordering.
+- Local `SENDING` messages without `serverSeq` remain visible using temporary strictly-increasing `createdAt` and `messageId` ordering.
 - Out-of-order `RECEIVE_MESSAGE` packets are persisted first, then the list is re-queried or merged according to the ordering policy.
 - Gap buffering, wait windows, and remote history backfill are not implemented in the current scope.
 

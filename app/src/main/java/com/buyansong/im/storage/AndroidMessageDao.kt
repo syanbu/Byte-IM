@@ -32,7 +32,7 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             args,
             null,
             null,
-            "created_at DESC, server_seq DESC, client_seq DESC, message_id DESC",
+            "created_at DESC, server_seq DESC, message_id DESC",
             limit.toString()
         ).use { cursor ->
             buildList {
@@ -183,7 +183,6 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             if (groupId == null) putNull("group_id") else put("group_id", groupId)
             put("sender_id", senderId)
             put("receiver_id", receiverId)
-            put("client_seq", clientSeq)
             if (serverSeq == null) putNull("server_seq") else put("server_seq", serverSeq)
             put("content", content)
             put("mentions_json", mentionedUserIds.toJsonArrayString())
@@ -226,7 +225,6 @@ class AndroidMessageDao(private val database: SQLiteDatabase) : MessageDao {
             conversationId = getString(getColumnIndexOrThrow("conversation_id")),
             senderId = getString(getColumnIndexOrThrow("sender_id")),
             receiverId = getString(getColumnIndexOrThrow("receiver_id")),
-            clientSeq = getLong(getColumnIndexOrThrow("client_seq")),
             serverSeq = if (isNull(serverSeqIndex)) null else getLong(serverSeqIndex),
             content = getString(getColumnIndexOrThrow("content")),
             status = MessageStatus.valueOf(getString(getColumnIndexOrThrow("status"))),

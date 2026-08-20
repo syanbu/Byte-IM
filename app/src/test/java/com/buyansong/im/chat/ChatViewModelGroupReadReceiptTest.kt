@@ -9,7 +9,6 @@ import com.buyansong.im.group.GroupRepository
 import com.buyansong.im.group.GroupResult
 import com.buyansong.im.message.MessageIdGenerator
 import com.buyansong.im.message.MessageRepository
-import com.buyansong.im.message.SeqGenerator
 import com.buyansong.im.profile.ProfileApi
 import com.buyansong.im.profile.ProfileBatchResult
 import com.buyansong.im.profile.ProfileRepository
@@ -129,7 +128,6 @@ class ChatViewModelGroupReadReceiptTest {
         conversationId = "group:g_1",
         senderId = senderId,
         receiverId = "g_1",
-        clientSeq = 0L,
         serverSeq = serverSeq,
         content = "x",
         status = MessageStatus.SENT,
@@ -150,7 +148,6 @@ class ChatViewModelGroupReadReceiptTest {
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
             messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator(),
             transactionRunner = object : TransactionRunner {
                 override fun runInTransaction(block: () -> Unit) = block()
             },

@@ -5,7 +5,6 @@ import com.buyansong.im.connection.ConnectionState
 import com.buyansong.im.connection.ImConnection
 import com.buyansong.im.message.MessageIdGenerator
 import com.buyansong.im.message.MessageRepository
-import com.buyansong.im.message.SeqGenerator
 import com.buyansong.im.profile.ProfileApi
 import com.buyansong.im.profile.ProfileBatchResult
 import com.buyansong.im.profile.ProfileRepository
@@ -99,7 +98,6 @@ class ConversationListViewModelTest {
                 conversationId = "single:u_a:u_b",
                 senderId = "u_b",
                 receiverId = "u_a",
-                clientSeq = 1L,
                 serverSeq = 1L,
                 content = "hello",
                 status = MessageStatus.RECEIVED,
@@ -130,8 +128,7 @@ class ConversationListViewModelTest {
             conversationDao = conversationDao,
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
         val viewModel = ConversationListViewModel(
             session = session(),

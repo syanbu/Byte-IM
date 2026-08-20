@@ -83,4 +83,4 @@ Android 客户端必须在用户已登录时持续接收并持久化当前账号
 - `READ_ACK` 才是已读回执信号。不要从 `DELIVERY_ACK` 推导 read state。
 - 重复 incoming packet 必须继续按 `messageId` 本地幂等处理，同时保持安全 ACK 行为。
 - `serverSeq` 是同一会话内 confirmed/received 消息的权威排序键。
-- sender `clientSeq` 只作为本地关联和 ACK correlation 元数据，不能替代服务端排序。
+- `clientSeq` 已从协议和双端代码移除（proto 字段已 reserved，勿复用该字段号）；同毫秒本地消息保序依赖单调递增 `createdAt` + `messageId` tiebreak。

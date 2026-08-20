@@ -112,7 +112,7 @@ B7 的重连只恢复 WebSocket session。B9 在 `ConnectionState.Authenticated`
 
 B8 定义了两个 sequence 字段，它们的信任边界不同：
 
-- `clientSeq`：客户端本地生成，用于本地发送顺序和 ACK correlation。
+- ~~`clientSeq`~~：已移除（proto 字段 reserved）。ACK 关联由 `messageId` 承担，本地发送顺序由单调递增 `createdAt` 承担。
 - `serverSeq`：服务端按 conversation 分配，是跨端展示顺序的权威依据。
 
 本地 mock server 在通过 `MockImServer` 运行时，会把每个 conversation 的最后分配序号持久化到：

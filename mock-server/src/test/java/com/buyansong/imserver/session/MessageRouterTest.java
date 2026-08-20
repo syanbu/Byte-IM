@@ -38,7 +38,6 @@ public class MessageRouterTest {
                         .setSenderId(senderId)
                         .setReceiverId(receiverId)
                         .setConversationId("single:" + senderId + ":" + receiverId)
-                        .setClientSeq(1L)
                         .setMessageType(MessageType.MESSAGE_TYPE_TEXT)
                         .setContent("hello"))
                 .build());

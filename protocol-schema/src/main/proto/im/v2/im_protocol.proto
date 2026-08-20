@@ -76,7 +76,8 @@ message ChatMessagePayload {
   string group_name = 5;
   string sender_id = 6;
   string receiver_id = 7;
-  uint64 client_seq = 8;
+  reserved 8;
+  reserved "client_seq";
   optional uint64 server_seq = 9;
   MessageType message_type = 10;
   string content = 11;
@@ -93,7 +94,8 @@ message ReceiveMessage { ChatMessagePayload message = 1; }
 message MessageAck {
   string message_id = 1;
   string conversation_id = 2;
-  uint64 client_seq = 3;
+  reserved 3;
+  reserved "client_seq";
   uint64 server_seq = 4;
   uint64 server_time = 5;
 }

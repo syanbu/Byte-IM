@@ -61,8 +61,7 @@ class MessageOutboxWorkerTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = pendingDao,
             connection = connection,
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
         val worker = MessageOutboxWorker(
             repository = repository,
@@ -109,7 +108,6 @@ class MessageOutboxWorkerTest {
                     MessageAck.newBuilder()
                         .setMessageId(message.messageId)
                         .setConversationId(message.conversationId)
-                        .setClientSeq(message.clientSeq)
                         .setServerSeq(1001L)
                         .setServerTime(100L)
                 )

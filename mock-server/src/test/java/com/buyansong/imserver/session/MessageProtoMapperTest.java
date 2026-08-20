@@ -49,7 +49,6 @@ public class MessageProtoMapperTest {
         MessageAck ack = MessageAck.newBuilder()
                 .setMessageId("m-1")
                 .setConversationId("single:alice:bob")
-                .setClientSeq(7L)
                 .setServerSeq(1001L)
                 .setServerTime(5002L)
                 .build();
@@ -128,7 +127,6 @@ public class MessageProtoMapperTest {
         legacy.addProperty("conversationId", "single:alice:bob");
         legacy.addProperty("senderId", "alice");
         legacy.addProperty("receiverId", "bob");
-        legacy.addProperty("clientSeq", 3L);
         legacy.addProperty("content", "old row");
         legacy.addProperty("timestamp", 4000L);
         legacy.addProperty("serverSeq", 1000L);
@@ -182,7 +180,6 @@ public class MessageProtoMapperTest {
         MessageAck ack = MessageAck.newBuilder()
                 .setMessageId("m-ack")
                 .setConversationId("single:alice:bob")
-                .setClientSeq(8L)
                 .setServerSeq(1002L)
                 .setServerTime(5004L)
                 .build();
@@ -230,7 +227,6 @@ public class MessageProtoMapperTest {
                 .setConversationType(ConversationType.CONVERSATION_TYPE_SINGLE)
                 .setSenderId("alice")
                 .setReceiverId("bob")
-                .setClientSeq(7L)
                 .setMessageType(MessageType.MESSAGE_TYPE_TEXT)
                 .setContent("hello")
                 .setClientTime(5000L);

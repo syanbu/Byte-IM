@@ -45,7 +45,6 @@ class MessageRepository(
     private val pendingMessageDao: PendingMessageDao,
     private val connection: ImConnection,
     private val messageIdGenerator: MessageIdGenerator,
-    private val seqGenerator: SeqGenerator,
     private val retryPolicy: MessageRetryPolicy = MessageRetryPolicy(),
     private val transactionRunner: TransactionRunner = TransactionRunner.immediate(),
     private val profileRepository: ProfileRepository? = null,
@@ -76,21 +75,37 @@ class MessageRepository(
             }
         }
     )
+    private val lastCreatedAtByConversation = mutableMapOf<String, Long>()
+
+    /**
+     * Returns a per-conversation timestamp that is strictly increasing across
+     * messages created by this repository. This takes over the same-millisecond
+     * ordering role the removed `clientSeq` used to play: when several local
+     * messages are created within one millisecond, each gets the previous
+     * `createdAt + 1` instead of the wall clock.
+     */
+    private fun nextCreatedAt(conversationId: String, now: Long): Long {
+        return synchronized(lastCreatedAtByConversation) {
+            val next = maxOf(now, (lastCreatedAtByConversation[conversationId] ?: (now - 1)) + 1)
+            lastCreatedAtByConversation[conversationId] = next
+            next
+        }
+    }
 
     fun sendText(senderId: String, receiverId: String, content: String, now: Long): ChatMessage {
         val conversationId = conversationIdFor(senderId, receiverId)
+        val createdAt = nextCreatedAt(conversationId, now)
         val message = ChatMessage(
-            messageId = messageIdGenerator.next(senderId, now),
+            messageId = messageIdGenerator.next(senderId, createdAt),
             conversationId = conversationId,
             senderId = senderId,
             receiverId = receiverId,
-            clientSeq = seqGenerator.next(conversationId),
             serverSeq = null,
             content = content,
             status = MessageStatus.SENDING,
             direction = MessageDirection.OUTGOING,
-            createdAt = now,
-            updatedAt = now
+            createdAt = createdAt,
+            updatedAt = createdAt
         )
         val envelope = MessageProtoMapper.sendEnvelope(message)
         transactionRunner.runInTransaction {
@@ -127,18 +142,18 @@ class MessageRepository(
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
+        val createdAt = nextCreatedAt(conversationId, now)
         val message = ChatMessage(
-            messageId = messageIdGenerator.next(senderId, now),
+            messageId = messageIdGenerator.next(senderId, createdAt),
             conversationId = conversationId,
             senderId = senderId,
             receiverId = trimmedGroupId,
-            clientSeq = seqGenerator.next(conversationId),
             serverSeq = null,
             content = content,
             status = MessageStatus.SENDING,
             direction = MessageDirection.OUTGOING,
-            createdAt = now,
-            updatedAt = now,
+            createdAt = createdAt,
+            updatedAt = createdAt,
             conversationType = ConversationType.GROUP,
             groupId = trimmedGroupId,
             mentionedUserIds = normalizedMentions
@@ -175,18 +190,18 @@ class MessageRepository(
         now: Long
     ): ChatMessage {
         val conversationId = conversationIdFor(senderId, receiverId)
+        val createdAt = nextCreatedAt(conversationId, now)
         val message = ChatMessage(
-            messageId = messageIdGenerator.next(senderId, now),
+            messageId = messageIdGenerator.next(senderId, createdAt),
             conversationId = conversationId,
             senderId = senderId,
             receiverId = receiverId,
-            clientSeq = seqGenerator.next(conversationId),
             serverSeq = null,
             content = IMAGE_PLACEHOLDER_CONTENT,
             status = MessageStatus.UPLOADING,
             direction = MessageDirection.OUTGOING,
-            createdAt = now,
-            updatedAt = now,
+            createdAt = createdAt,
+            updatedAt = createdAt,
             type = MessageType.IMAGE,
             imageWidth = imageWidth,
             imageHeight = imageHeight,
@@ -215,18 +230,18 @@ class MessageRepository(
         val trimmedGroupId = groupId.trim()
         require(trimmedGroupId.isNotEmpty()) { "groupId is required" }
         val conversationId = groupConversationIdFor(trimmedGroupId)
+        val createdAt = nextCreatedAt(conversationId, now)
         val message = ChatMessage(
-            messageId = messageIdGenerator.next(senderId, now),
+            messageId = messageIdGenerator.next(senderId, createdAt),
             conversationId = conversationId,
             senderId = senderId,
             receiverId = trimmedGroupId,
-            clientSeq = seqGenerator.next(conversationId),
             serverSeq = null,
             content = IMAGE_PLACEHOLDER_CONTENT,
             status = MessageStatus.UPLOADING,
             direction = MessageDirection.OUTGOING,
-            createdAt = now,
-            updatedAt = now,
+            createdAt = createdAt,
+            updatedAt = createdAt,
             type = MessageType.IMAGE,
             imageWidth = imageWidth,
             imageHeight = imageHeight,
@@ -247,10 +262,10 @@ class MessageRepository(
     /**
      * Batch counterpart of [createLocalImageMessage] / [createLocalGroupImageMessage].
      *
-     * Allocates [MessageIdGenerator] and [SeqGenerator] ids serially on the calling
-     * coroutine (they are now thread-safe, but allocation is still kept on a single
-     * coroutine so the per-row `createdAt` values stay contiguous and `clientSeq`
-     * remains strictly increasing per `conversationId`), then inserts all N rows
+     * Allocates [MessageIdGenerator] ids and per-row `createdAt` values serially on
+     * the calling coroutine (they are now thread-safe, but allocation is still kept
+     * on a single coroutine so the per-row `createdAt` values stay contiguous and
+     * strictly increasing per `conversationId`), then inserts all N rows
      * inside a single transaction and emits exactly one
      * [notifyConversationChanged] afterwards.
      *
@@ -277,13 +292,12 @@ class MessageRepository(
         }
         val resolvedReceiverId = if (isGroup) trimmedGroupId else receiverId!!
         val built = selectedImages.mapIndexed { index, image ->
-            val rowNow = nowBase + index
+            val rowNow = nextCreatedAt(conversationId, nowBase + index)
             ChatMessage(
                 messageId = messageIdGenerator.next(senderId, rowNow),
                 conversationId = conversationId,
                 senderId = senderId,
                 receiverId = resolvedReceiverId,
-                clientSeq = seqGenerator.next(conversationId),
                 serverSeq = null,
                 content = IMAGE_PLACEHOLDER_CONTENT,
                 status = MessageStatus.UPLOADING,
@@ -1043,7 +1057,6 @@ class MessageRepository(
                   "groupId":"${groupId.orEmpty().escapeJson()}",
                   "senderId":"${senderId.escapeJson()}",
                   "receiverId":"${receiverId.escapeJson()}",
-                  "clientSeq":$clientSeq,
                   "type":"${type.name}",
                   "content":"${content.escapeJson()}",
                   $imageJson
@@ -1059,7 +1072,6 @@ class MessageRepository(
                   "conversationId":"${conversationId.escapeJson()}",
                   "senderId":"${senderId.escapeJson()}",
                   "receiverId":"${receiverId.escapeJson()}",
-                  "clientSeq":$clientSeq,
                   "type":"IMAGE",
                   "content":"${content.escapeJson()}",
                   "image":{
@@ -1080,7 +1092,6 @@ class MessageRepository(
               "conversationId":"${conversationId.escapeJson()}",
               "senderId":"${senderId.escapeJson()}",
               "receiverId":"${receiverId.escapeJson()}",
-              "clientSeq":$clientSeq,
               "content":"${content.escapeJson()}",
               "timestamp":$createdAt
             }

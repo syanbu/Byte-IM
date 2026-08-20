@@ -245,12 +245,11 @@ def build_rows(
             # user_a → peer（OUTGOING）
             mid_out = f"seed-out-{peer}-{k}"
             content_out = f"[{user_a[-3:]}→{peer[-3:]}] 这是 A 发送的第 {k+1} 条消息"
-            out_client_seq = k * 2
             out_server_seq = k * 2 + 1
             messages.append((
                 mid_out, conv_id, CONV_TYPE, None,
                 user_a, peer,
-                out_client_seq, out_server_seq,
+                out_server_seq,
                 content_out, None, MSG_TYPE,
                 None, None, None, None, None, None, None, None,
                 0, None, None,
@@ -267,7 +266,7 @@ def build_rows(
             messages.append((
                 mid_in, conv_id, CONV_TYPE, None,
                 peer, user_a,
-                k * 2 + 1, k * 2 + 2,
+                k * 2 + 2,
                 content_in, None, MSG_TYPE,
                 None, None, None, None, None, None, None, None,
                 0, None, None,
@@ -326,13 +325,13 @@ def insert_all(cur: sqlite3.Cursor, messages, conversations, profiles, contacts)
     cur.executemany(
         """INSERT OR REPLACE INTO messages(
             message_id, conversation_id, conversation_type, group_id,
-            sender_id, receiver_id, client_seq, server_seq,
+            sender_id, receiver_id, server_seq,
             content, mentions_json, message_type,
             image_url, thumbnail_url, image_width, image_height,
             mime_type, file_size_bytes, local_original_path, local_thumbnail_path,
             is_recalled, recalled_at, recalled_by,
             status, direction, created_at, updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         messages,
     )
     cur.executemany(

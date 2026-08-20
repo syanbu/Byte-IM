@@ -148,8 +148,7 @@ class MessageRepositoryCacheTest {
             conversationDao = InMemoryConversationDao(),
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
-            messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator()
+            messageIdGenerator = MessageIdGenerator()
         )
     }
 
@@ -163,7 +162,6 @@ class MessageRepositoryCacheTest {
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
             messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator(),
             thumbnailDownloadScheduler = thumbnailDownloadScheduler
         )
     }
@@ -178,7 +176,6 @@ class MessageRepositoryCacheTest {
             pendingMessageDao = InMemoryPendingMessageDao(),
             connection = FakeConnection(),
             messageIdGenerator = MessageIdGenerator(),
-            seqGenerator = SeqGenerator(),
             preloadDispatcher = preloadDispatcher
         )
     }
@@ -193,7 +190,6 @@ class MessageRepositoryCacheTest {
             conversationId = conversationId,
             senderId = "u_a",
             receiverId = "u_b",
-            clientSeq = createdAt,
             serverSeq = createdAt,
             content = id,
             status = MessageStatus.SENT,
@@ -330,7 +326,6 @@ class MessageRepositoryCacheTest {
                             .setMessageId("m2")
                             .setSenderId("u_a")
                             .setReceiverId("u_b")
-                            .setClientSeq(2L)
                             .setServerSeq(2L)
                             .setContent("fresh")
                             .setClientTime(2L)
@@ -377,7 +372,6 @@ class MessageRepositoryCacheTest {
                         .setMessageId(messageId)
                         .setSenderId(senderId)
                         .setReceiverId(receiverId)
-                        .setClientSeq(1L)
                         .setServerSeq(1L)
                         .setContent("[图片]")
                         .setClientTime(1L)

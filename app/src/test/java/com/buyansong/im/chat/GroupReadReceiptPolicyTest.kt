@@ -26,7 +26,6 @@ class GroupReadReceiptPolicyTest {
         conversationId = "group:g_1",
         senderId = senderId,
         receiverId = "g_1",
-        clientSeq = 0L,
         serverSeq = serverSeq,
         content = "x",
         status = status,

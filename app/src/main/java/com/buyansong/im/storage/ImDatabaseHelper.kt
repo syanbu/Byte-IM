@@ -30,7 +30,6 @@ class ImDatabaseHelper(
               group_id TEXT,
               sender_id TEXT NOT NULL,
               receiver_id TEXT NOT NULL,
-              client_seq INTEGER NOT NULL,
               server_seq INTEGER,
               content TEXT NOT NULL,
               mentions_json TEXT,
@@ -205,6 +204,6 @@ class ImDatabaseHelper(
 
     companion object {
         const val DATABASE_NAME = "self_hosted_im.db"
-        const val DATABASE_VERSION = 11
+        const val DATABASE_VERSION = 12
     }
 }

@@ -175,17 +175,15 @@ public final class MessageRouter {
         }
         String receiverId = requestMessage.getReceiverId();
         String conversationId = requestMessage.getConversationId();
-        long clientSeq = requestMessage.getClientSeq();
         long nextServerSeq = nextServerSeq(conversationId);
         long serverTime = clock.getAsLong();
 
         ImServerLogger.log(
-                "[IM] SEND_MESSAGE sender=%s receiver=%s conversationId=%s messageId=%s clientSeq=%d serverSeq=%d content=%s",
+                "[IM] SEND_MESSAGE sender=%s receiver=%s conversationId=%s messageId=%s serverSeq=%d content=%s",
                 senderUserId,
                 receiverId,
                 conversationId,
                 messageId,
-                clientSeq,
                 nextServerSeq,
                 requestMessage.getContent()
         );
@@ -193,7 +191,6 @@ public final class MessageRouter {
         MessageAck ack = MessageAck.newBuilder()
                 .setMessageId(messageId)
                 .setConversationId(conversationId)
-                .setClientSeq(clientSeq)
                 .setServerSeq(nextServerSeq)
                 .setServerTime(serverTime)
                 .build();
@@ -242,7 +239,6 @@ public final class MessageRouter {
         String messageId = requestMessage.getMessageId();
         String groupId = requestMessage.getGroupId();
         String conversationId = requestMessage.getConversationId();
-        long clientSeq = requestMessage.getClientSeq();
         if (!groupService.isMember(groupId, senderUserId)) {
             ImServerLogger.log("[IM] GROUP_SEND rejected non-member sender=%s groupId=%s messageId=%s", senderUserId, groupId, messageId);
             return;
@@ -252,12 +248,11 @@ public final class MessageRouter {
         long serverTime = clock.getAsLong();
 
         ImServerLogger.log(
-                "[IM] GROUP_SEND sender=%s groupId=%s conversationId=%s messageId=%s clientSeq=%d serverSeq=%d recipients=%d content=%s",
+                "[IM] GROUP_SEND sender=%s groupId=%s conversationId=%s messageId=%s serverSeq=%d recipients=%d content=%s",
                 senderUserId,
                 groupId,
                 conversationId,
                 messageId,
-                clientSeq,
                 nextServerSeq,
                 recipients.size(),
                 requestMessage.getContent()
@@ -266,7 +261,6 @@ public final class MessageRouter {
         MessageAck ack = MessageAck.newBuilder()
                 .setMessageId(messageId)
                 .setConversationId(conversationId)
-                .setClientSeq(clientSeq)
                 .setServerSeq(nextServerSeq)
                 .setServerTime(serverTime)
                 .build();
@@ -472,10 +466,9 @@ public final class MessageRouter {
                 client -> {
                     client.send(MessageProtoMapper.messageAckEnvelope(ack));
                     ImServerLogger.log(
-                            "[IM] MESSAGE_ACK sent sender=%s messageId=%s clientSeq=%d serverSeq=%d",
+                            "[IM] MESSAGE_ACK sent sender=%s messageId=%s serverSeq=%d",
                             senderUserId,
                             ack.getMessageId(),
-                            ack.getClientSeq(),
                             ack.getServerSeq()
                     );
                 },
@@ -1112,7 +1105,9 @@ public final class MessageRouter {
                 statement.setString(2, message.getConversationId());
                 statement.setString(3, message.getSenderId());
                 statement.setString(4, accepted.receiverUserId());
-                statement.setLong(5, message.getClientSeq());
+                // client_seq is a legacy column kept only to avoid a destructive table
+                // rebuild; the field was removed from the protocol, always store 0.
+                statement.setLong(5, 0L);
                 statement.setLong(6, accepted.serverSeq());
                 statement.setString(7, message.getContent());
                 statement.setLong(8, message.getClientTime());

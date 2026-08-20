@@ -87,7 +87,6 @@ class ChatThumbnailPrefetchPolicyTest {
             conversationId = "single:u_a:u_b",
             senderId = "u_a",
             receiverId = "u_b",
-            clientSeq = 1L,
             serverSeq = 1L,
             content = id,
             status = MessageStatus.RECEIVED,

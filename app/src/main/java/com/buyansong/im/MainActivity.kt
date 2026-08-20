@@ -101,7 +101,6 @@ import com.buyansong.im.message.MessagePacketProcessor
 import com.buyansong.im.message.MessageRepository
 import com.buyansong.im.message.ImageUploadApi
 import com.buyansong.im.message.OkHttpImageUploadApi
-import com.buyansong.im.message.SeqGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -410,7 +409,6 @@ private class AccountScopedRepositories private constructor(
                 pendingMessageDao = AndroidPendingMessageDao(database),
                 connection = connection,
                 messageIdGenerator = MessageIdGenerator(),
-                seqGenerator = SeqGenerator(),
                 transactionRunner = AndroidTransactionRunner(database),
                 profileRepository = profileRepository,
                 thumbnailCache = thumbnailCache,

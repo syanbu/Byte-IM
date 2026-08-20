@@ -24,7 +24,6 @@ class MessageProtoMapperTest {
             conversationId = "single:alice:bob",
             senderId = "alice",
             receiverId = "bob",
-            clientSeq = 7L,
             serverSeq = null,
             content = "hello",
             status = MessageStatus.SENDING,
@@ -43,7 +42,6 @@ class MessageProtoMapperTest {
         assertEquals(ProtoConversationType.CONVERSATION_TYPE_SINGLE, payload.conversationType)
         assertEquals("alice", payload.senderId)
         assertEquals("bob", payload.receiverId)
-        assertEquals(7L, payload.clientSeq)
         assertEquals(ProtoMessageType.MESSAGE_TYPE_TEXT, payload.messageType)
         assertEquals("hello", payload.content)
         assertEquals(1000L, payload.clientTime)
@@ -58,7 +56,6 @@ class MessageProtoMapperTest {
             conversationId = "group:g-1",
             senderId = "alice",
             receiverId = "g-1",
-            clientSeq = 3L,
             serverSeq = null,
             content = "hi @bob",
             status = MessageStatus.SENDING,
@@ -85,7 +82,6 @@ class MessageProtoMapperTest {
             conversationId = "single:alice:bob",
             senderId = "alice",
             receiverId = "bob",
-            clientSeq = 9L,
             serverSeq = null,
             content = "[图片]",
             status = MessageStatus.SENDING,
@@ -124,7 +120,6 @@ class MessageProtoMapperTest {
             .setGroupName("周末群")
             .setSenderId("carol")
             .setReceiverId("alice")
-            .setClientSeq(11L)
             .setServerSeq(4100L)
             .setMessageType(ProtoMessageType.MESSAGE_TYPE_IMAGE)
             .setContent("[图片]")
@@ -153,7 +148,6 @@ class MessageProtoMapperTest {
         assertEquals("周末群", message.groupName)
         assertEquals("carol", message.senderId)
         assertEquals("alice", message.receiverId)
-        assertEquals(11L, message.clientSeq)
         assertEquals(4100L, message.serverSeq)
         assertEquals(MessageType.IMAGE, message.type)
         assertEquals(MessageStatus.RECEIVED, message.status)
@@ -197,7 +191,6 @@ class MessageProtoMapperTest {
               "groupId":"g-2",
               "senderId":"alice",
               "receiverId":"g-2",
-              "clientSeq":4,
               "type":"TEXT",
               "content":"queued while offline",
               "mentionedUserIds":["bob","bob","carol"],
@@ -226,7 +219,6 @@ class MessageProtoMapperTest {
               "conversationId":"single:alice:bob",
               "senderId":"alice",
               "receiverId":"bob",
-              "clientSeq":5,
               "type":"IMAGE",
               "content":"[图片]",
               "image":{
@@ -260,7 +252,6 @@ class MessageProtoMapperTest {
               "conversationId":"single:alice:bob",
               "senderId":"alice",
               "receiverId":"bob",
-              "clientSeq":6,
               "type":"VIDEO",
               "content":"x",
               "timestamp":8000
@@ -281,7 +272,6 @@ class MessageProtoMapperTest {
               "conversationType":"CHANNEL",
               "senderId":"alice",
               "receiverId":"c-1",
-              "clientSeq":6,
               "content":"x",
               "timestamp":8000
             }
